@@ -82,6 +82,7 @@
             name="mikrotik_pass"
             bind:value={settings.mikrotik_pass}
             class="input-modern"
+            autocomplete="off"
           />
         </div>
 

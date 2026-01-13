@@ -6,6 +6,8 @@ export interface HotspotUser {
   'limit-bytes-total'?: string;
   'bytes-in'?: string;
   'bytes-out'?: string;
+  uptime?: string;
+  comment?: string;
   disabled: string;
 }
 
@@ -49,4 +51,38 @@ export interface MikroTikConfig {
   host: string;
   username: string;
   password: string;
+}
+
+export interface MikroTikFile {
+  '.id'?: string;
+  name: string;
+  type: string;
+  size: string;
+  'creation-time': string;
+  contents?: string;
+}
+
+export interface HotspotServerProfile {
+  '.id': string;
+  name: string;
+  'html-directory': string;
+  'login-by': string;
+  'ssl-certificate'?: string;
+  'https-redirect'?: string;
+}
+
+export interface Certificate {
+  '.id': string;
+  name: string;
+  'common-name': string;
+  'days-valid'?: string;
+  'key-size'?: string;
+  fingerprint?: string;
+  'invalid-before'?: string;
+  'invalid-after'?: string;
+  'expires-after'?: string;
+  trusted?: string;
+  'ca'?: string;
+  issued?: string;
+  status?: string;
 }

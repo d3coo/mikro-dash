@@ -1,8 +1,10 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
+  import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
   import { Button } from '$lib/components/ui/button';
   import ConfirmModal from '$lib/components/confirm-modal.svelte';
-  import { Plus, Trash2, Printer, Package, Filter, CheckCircle, XCircle, Clock, Loader2, CloudOff, RefreshCw, Cloud } from 'lucide-svelte';
+  import { Plus, Trash2, Printer, Package, Filter, CheckCircle, XCircle, Clock, Loader2, CloudOff, RefreshCw, Cloud, ChevronRight, ChevronLeft } from 'lucide-svelte';
   import { toast } from 'svelte-sonner';
 
   let { data, form } = $props();
@@ -33,18 +35,24 @@
   let selectedPackage = $state('');
   let quantity = $state(10);
   let selectedIds = $state<string[]>([]);
-  let statusFilter = $state('all');
   let isGenerating = $state(false);
   let isDeleting = $state(false);
   let isSyncing = $state(false);
   let showDeleteModal = $state(false);
   let deleteFormEl: HTMLFormElement;
 
-  let filteredVouchers = $derived(
-    statusFilter === 'all'
-      ? data.vouchers
-      : data.vouchers.filter(v => v.status === statusFilter)
-  );
+  function goToPage(pageNum: number) {
+    const url = new URL($page.url);
+    url.searchParams.set('page', pageNum.toString());
+    goto(url.toString());
+  }
+
+  function setStatusFilter(status: string) {
+    const url = new URL($page.url);
+    url.searchParams.set('status', status);
+    url.searchParams.set('page', '1'); // Reset to first page when filtering
+    goto(url.toString());
+  }
 
   function toggleSelect(id: string) {
     if (selectedIds.includes(id)) {
@@ -55,10 +63,10 @@
   }
 
   function selectAll() {
-    if (selectedIds.length === filteredVouchers.length) {
+    if (selectedIds.length === data.vouchers.length) {
       selectedIds = [];
     } else {
-      selectedIds = filteredVouchers.map(v => v.id);
+      selectedIds = data.vouchers.map(v => v.id);
     }
   }
 
@@ -74,9 +82,18 @@
 
   const statusConfig: Record<string, { label: string; class: string; icon: typeof CheckCircle }> = {
     available: { label: 'متاح', class: 'badge-success', icon: CheckCircle },
-    used: { label: 'مستخدم', class: 'badge-neutral', icon: Clock },
-    expired: { label: 'منتهي', class: 'badge-danger', icon: XCircle }
+    used: { label: 'مستخدم', class: 'badge-warning', icon: Clock },
+    exhausted: { label: 'منتهي', class: 'badge-danger', icon: XCircle }
   };
+
+  // Format bytes to human readable
+  function formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
 </script>
 
 <div class="vouchers-page">
@@ -96,33 +113,11 @@
     </div>
   </header>
 
-  <!-- Unsynced Warning -->
-  {#if data.unsyncedCount > 0}
-    <div class="alert alert-warning opacity-0 animate-fade-in" style="animation-delay: 100ms">
+  <!-- Router Connection Status -->
+  {#if !data.routerConnected}
+    <div class="alert alert-danger opacity-0 animate-fade-in" style="animation-delay: 100ms">
       <CloudOff class="w-5 h-5" />
-      <span>يوجد {data.unsyncedCount} كرت غير متزامن مع الراوتر</span>
-      <form
-        method="POST"
-        action="?/sync"
-        use:enhance={() => {
-          isSyncing = true;
-          return async ({ update }) => {
-            await update();
-            isSyncing = false;
-          };
-        }}
-        class="inline-block me-auto"
-      >
-        <Button type="submit" size="sm" disabled={isSyncing}>
-          {#if isSyncing}
-            <Loader2 class="w-4 h-4 animate-spin" />
-            <span>جاري المزامنة...</span>
-          {:else}
-            <RefreshCw class="w-4 h-4" />
-            <span>مزامنة الكل</span>
-          {/if}
-        </Button>
-      </form>
+      <span>غير متصل بالراوتر - تعذر تحميل الكروت</span>
     </div>
   {/if}
 
@@ -193,16 +188,16 @@
     <div class="list-header">
       <div class="list-title">
         <h2>قائمة الكروت</h2>
-        <span class="count-badge">{filteredVouchers.length}</span>
+        <span class="count-badge">{data.totalVouchers}</span>
       </div>
       <div class="list-actions">
         <div class="filter-group">
           <Filter class="w-4 h-4 text-text-muted" />
-          <select bind:value={statusFilter} class="select-modern text-sm">
-            <option value="all">الكل</option>
-            <option value="available">متاح</option>
-            <option value="used">مستخدم</option>
-            <option value="expired">منتهي</option>
+          <select value={data.currentFilter} onchange={(e) => setStatusFilter(e.currentTarget.value)} class="select-modern text-sm">
+            <option value="all">الكل ({data.statusCounts.all})</option>
+            <option value="available">متاح ({data.statusCounts.available})</option>
+            <option value="used">مستخدم ({data.statusCounts.used})</option>
+            <option value="exhausted">منتهي ({data.statusCounts.exhausted})</option>
           </select>
         </div>
 
@@ -250,7 +245,7 @@
             <th class="w-12">
               <input
                 type="checkbox"
-                checked={selectedIds.length === filteredVouchers.length && filteredVouchers.length > 0}
+                checked={selectedIds.length === data.vouchers.length && data.vouchers.length > 0}
                 onchange={selectAll}
                 class="checkbox-modern"
               />
@@ -258,15 +253,13 @@
             <th>الكود</th>
             <th>كلمة المرور</th>
             <th>الباقة</th>
-            <th>السعر</th>
+            <th>الاستهلاك</th>
             <th>الحالة</th>
-            <th>المزامنة</th>
-            <th>تاريخ الإنشاء</th>
           </tr>
         </thead>
         <tbody>
-          {#each filteredVouchers as voucher, index}
-            {@const config = statusConfig[voucher.status]}
+          {#each data.vouchers as voucher, index}
+            {@const config = statusConfig[voucher.status] || statusConfig.available}
             <tr class="opacity-0 animate-fade-in" style="animation-delay: {250 + index * 30}ms">
               <td>
                 <input
@@ -277,49 +270,80 @@
                 />
               </td>
               <td>
-                <span class="font-mono text-primary-light">{voucher.id}</span>
+                <span class="font-mono text-primary-light">{voucher.name}</span>
               </td>
               <td>
-                <span class="font-mono">{voucher.password}</span>
+                <span class="font-mono">{voucher.password || '••••••'}</span>
               </td>
-              <td>{voucher.package}</td>
+              <td>{voucher.profile}</td>
               <td>
-                <span class="price">{voucher.priceLE} ج.م</span>
+                <div class="usage-cell">
+                  <div class="usage-bar-container">
+                    <div
+                      class="usage-bar"
+                      style="width: {voucher.bytesLimit > 0 ? Math.min((voucher.bytesTotal / voucher.bytesLimit) * 100, 100) : 0}%"
+                    ></div>
+                  </div>
+                  <span class="usage-text">
+                    {formatBytes(voucher.bytesTotal)} / {voucher.bytesLimit > 0 ? formatBytes(voucher.bytesLimit) : '∞'}
+                  </span>
+                </div>
               </td>
               <td>
                 <span class="badge {config.class}">
-                  <config.icon class="w-3 h-3" />
+                  <svelte:component this={config.icon} class="w-3 h-3" />
                   {config.label}
                 </span>
-              </td>
-              <td>
-                {#if voucher.synced}
-                  <span class="badge badge-success">
-                    <Cloud class="w-3 h-3" />
-                    متزامن
-                  </span>
-                {:else}
-                  <span class="badge badge-warning">
-                    <CloudOff class="w-3 h-3" />
-                    غير متزامن
-                  </span>
-                {/if}
-              </td>
-              <td>
-                <span class="date">{formatDate(voucher.createdAt)}</span>
               </td>
             </tr>
           {/each}
         </tbody>
       </table>
 
-      {#if filteredVouchers.length === 0}
+      {#if data.vouchers.length === 0}
         <div class="empty-state">
           <Package class="empty-state-icon" />
           <p class="empty-state-text">لا توجد كروت</p>
         </div>
       {/if}
     </div>
+
+    <!-- Pagination -->
+    {#if data.pagination.totalPages > 1}
+      <div class="pagination">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!data.pagination.hasPrev}
+          onclick={() => goToPage(data.pagination.currentPage - 1)}
+        >
+          <ChevronRight class="w-4 h-4" />
+          السابق
+        </Button>
+
+        <div class="page-numbers">
+          {#each Array.from({ length: data.pagination.totalPages }, (_, i) => i + 1) as pageNum}
+            <button
+              class="page-number"
+              class:active={pageNum === data.pagination.currentPage}
+              onclick={() => goToPage(pageNum)}
+            >
+              {pageNum}
+            </button>
+          {/each}
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!data.pagination.hasNext}
+          onclick={() => goToPage(data.pagination.currentPage + 1)}
+        >
+          التالي
+          <ChevronLeft class="w-4 h-4" />
+        </Button>
+      </div>
+    {/if}
   </section>
 </div>
 
@@ -455,5 +479,74 @@
 
   .text-primary-light {
     color: var(--color-primary-light);
+  }
+
+  /* Usage Cell */
+  .usage-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 120px;
+  }
+
+  .usage-bar-container {
+    width: 100%;
+    height: 6px;
+    background: var(--color-bg-elevated);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .usage-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+  }
+
+  .usage-text {
+    font-size: 11px;
+    color: var(--color-text-muted);
+    font-family: var(--font-family-mono);
+  }
+
+  /* Pagination */
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 20px 24px;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .page-numbers {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .page-number {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .page-number:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary-light);
+  }
+
+  .page-number.active {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: white;
   }
 </style>

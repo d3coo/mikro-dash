@@ -32,11 +32,15 @@
     }
 
     html, body {
-      height: 100%;
+      min-height: 100%;
       font-family: 'Cairo', sans-serif;
       background: var(--bg-deep);
       color: var(--text-primary);
-      overflow: hidden;
+    }
+
+    html {
+      overflow-x: hidden;
+      overflow-y: auto;
     }
 
     /* Animated Background */
@@ -119,12 +123,12 @@
     .container {
       position: relative;
       z-index: 1;
-      min-height: 100%;
+      min-height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 20px;
+      padding: 40px 20px;
     }
 
     /* Login Card */
@@ -393,6 +397,284 @@
       transform: translateY(-2px);
     }
 
+    /* QR Scanner */
+    .qr-scanner-btn {
+      width: 100%;
+      padding: 14px 20px;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--glass-border);
+      border-radius: 14px;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .qr-scanner-btn:hover {
+      border-color: var(--primary);
+      color: var(--primary-light);
+      background: rgba(8, 145, 178, 0.1);
+    }
+
+    .qr-divider {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      color: var(--text-muted);
+      font-size: 13px;
+      margin: 8px 0;
+    }
+
+    .qr-divider::before,
+    .qr-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--glass-border);
+    }
+
+    /* QR Modal */
+    .qr-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s ease;
+    }
+
+    .qr-modal-overlay.active {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .qr-modal {
+      background: var(--glass);
+      backdrop-filter: blur(24px);
+      border: 1px solid var(--glass-border);
+      border-radius: 24px;
+      width: 100%;
+      max-width: 400px;
+      overflow: hidden;
+      transform: scale(0.9) translateY(20px);
+      transition: all 0.3s ease;
+    }
+
+    .qr-modal-overlay.active .qr-modal {
+      transform: scale(1) translateY(0);
+    }
+
+    .qr-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--glass-border);
+    }
+
+    .qr-modal-header h3 {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .qr-close-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      border: 1px solid var(--glass-border);
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    }
+
+    .qr-close-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text-primary);
+    }
+
+    .qr-modal-body {
+      padding: 24px;
+    }
+
+    #qr-reader {
+      width: 100%;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #000;
+      min-height: 300px;
+    }
+
+    #qr-reader video {
+      border-radius: 16px;
+    }
+
+    .qr-hint {
+      text-align: center;
+      margin-top: 16px;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .qr-loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: 60px 20px;
+      color: var(--text-secondary);
+    }
+
+    .qr-loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid var(--glass-border);
+      border-top-color: var(--primary-light);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .qr-error {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--danger);
+    }
+
+    .qr-error svg {
+      width: 48px;
+      height: 48px;
+      margin-bottom: 16px;
+    }
+
+    .qr-result {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 20px;
+      text-align: center;
+    }
+
+    .qr-result-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--success);
+    }
+
+    .qr-result-text {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .qr-result-code {
+      font-family: monospace;
+      font-size: 20px;
+      color: var(--primary-light);
+      background: rgba(8, 145, 178, 0.15);
+      padding: 12px 24px;
+      border-radius: 10px;
+    }
+
+    /* QR Upload Section */
+    .qr-upload-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+      text-align: center;
+    }
+
+    .qr-upload-icon {
+      width: 80px;
+      height: 80px;
+      border-radius: 20px;
+      background: linear-gradient(135deg, rgba(8, 145, 178, 0.2) 0%, rgba(8, 145, 178, 0.05) 100%);
+      border: 1px solid rgba(8, 145, 178, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      color: var(--primary-light);
+    }
+
+    .qr-action-btn {
+      width: 100%;
+      padding: 14px 20px;
+      border-radius: 12px;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: all 0.2s ease;
+    }
+
+    .qr-action-btn.primary {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+      border: none;
+      color: white;
+    }
+
+    .qr-action-btn.primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 16px var(--primary-glow);
+    }
+
+    .qr-action-btn.secondary {
+      background: rgba(8, 145, 178, 0.15);
+      border: 1px solid rgba(8, 145, 178, 0.3);
+      color: var(--primary-light);
+    }
+
+    .qr-action-btn.secondary:hover {
+      background: rgba(8, 145, 178, 0.25);
+      border-color: var(--primary);
+    }
+
+    .qr-action-btn.tertiary {
+      background: transparent;
+      border: 1px solid var(--glass-border);
+      color: var(--text-secondary);
+    }
+
+    .qr-action-btn.tertiary:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--text-muted);
+    }
+
     /* Responsive */
     @media (max-width: 480px) {
       .login-card {
@@ -507,6 +789,18 @@
             تسجيل الدخول
           </span>
         </button>
+
+        <div class="qr-divider">أو</div>
+
+        <button type="button" class="qr-scanner-btn" onclick="openQrScanner()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7"/>
+            <rect x="14" y="3" width="7" height="7"/>
+            <rect x="3" y="14" width="7" height="7"/>
+            <rect x="14" y="14" width="7" height="7"/>
+          </svg>
+          مسح كود QR
+        </button>
       </form>
 
       <div class="portal-footer">
@@ -515,7 +809,44 @@
     </div>
   </div>
 
+  <!-- QR Scanner Modal -->
+  <div id="qr-modal" class="qr-modal-overlay" onclick="closeQrScanner()">
+    <div class="qr-modal" onclick="event.stopPropagation()">
+      <div class="qr-modal-header">
+        <h3>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7"/>
+            <rect x="14" y="3" width="7" height="7"/>
+            <rect x="3" y="14" width="7" height="7"/>
+            <rect x="14" y="14" width="7" height="7"/>
+          </svg>
+          مسح كود QR
+        </h3>
+        <button class="qr-close-btn" onclick="closeQrScanner()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="qr-modal-body">
+        <div id="qr-scanner-content">
+          <div class="qr-loading">
+            <div class="qr-loading-spinner"></div>
+            <p>جاري تشغيل الكاميرا...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Load html5-qrcode from CDN -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
   <script>
+    let html5QrCode = null;
+    let scannerActive = false;
+
     // Auto-focus on username field
     document.addEventListener('DOMContentLoaded', function() {
       const usernameInput = document.querySelector('input[name="username"]');
@@ -523,6 +854,350 @@
         setTimeout(() => usernameInput.focus(), 500);
       }
     });
+
+    // Check if we're in a secure context (HTTPS or localhost)
+    function isSecureContext() {
+      return window.isSecureContext ||
+             location.protocol === 'https:' ||
+             location.hostname === 'localhost' ||
+             location.hostname === '127.0.0.1';
+    }
+
+    // Detect if mobile device
+    function isMobileDevice() {
+      return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    }
+
+    async function openQrScanner() {
+      const modal = document.getElementById('qr-modal');
+      const content = document.getElementById('qr-scanner-content');
+
+      modal.classList.add('active');
+
+      // Check for secure context first - if HTTP, show file upload option
+      if (!isSecureContext()) {
+        showFileUploadOption(content, false);
+        return;
+      }
+
+      // For mobile in secure context, offer choice between camera and file
+      if (isMobileDevice()) {
+        showScannerOptions(content);
+        return;
+      }
+
+      // Desktop with HTTPS - start camera directly
+      content.innerHTML = `
+        <div class="qr-loading">
+          <div class="qr-loading-spinner"></div>
+          <p>جاري تشغيل الكاميرا...</p>
+        </div>
+      `;
+
+      setTimeout(() => {
+        startScanner();
+      }, 300);
+    }
+
+    function showFileUploadOption(content, showCameraRetry = true) {
+      content.innerHTML = `
+        <div class="qr-upload-section">
+          <div class="qr-upload-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="3" width="7" height="7"/>
+              <rect x="14" y="3" width="7" height="7"/>
+              <rect x="3" y="14" width="7" height="7"/>
+              <rect x="14" y="14" width="7" height="7"/>
+            </svg>
+          </div>
+          <h4 style="color: var(--text-primary); margin-bottom: 8px;">مسح كود QR</h4>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">
+            التقط صورة لكود QR من الكرت أو اختر صورة موجودة
+          </p>
+          <input type="file" id="qr-file-input" accept="image/*" capture="environment" style="display: none;" onchange="handleFileSelect(event)">
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <button onclick="document.getElementById('qr-file-input').click()" class="qr-action-btn primary">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+              التقاط صورة للكود
+            </button>
+            <input type="file" id="qr-file-gallery" accept="image/*" style="display: none;" onchange="handleFileSelect(event)">
+            <button onclick="document.getElementById('qr-file-gallery').click()" class="qr-action-btn secondary">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+              اختيار من المعرض
+            </button>
+            ${showCameraRetry ? `
+            <button onclick="startScanner()" class="qr-action-btn tertiary">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="23 7 16 12 23 17 23 7"/>
+                <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+              </svg>
+              تجربة الكاميرا المباشرة
+            </button>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    function showScannerOptions(content) {
+      content.innerHTML = `
+        <div class="qr-upload-section">
+          <div class="qr-upload-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="3" width="7" height="7"/>
+              <rect x="14" y="3" width="7" height="7"/>
+              <rect x="3" y="14" width="7" height="7"/>
+              <rect x="14" y="14" width="7" height="7"/>
+            </svg>
+          </div>
+          <h4 style="color: var(--text-primary); margin-bottom: 8px;">اختر طريقة المسح</h4>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">
+            استخدم الكاميرا المباشرة أو التقط صورة
+          </p>
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <button onclick="startScanner()" class="qr-action-btn primary">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="23 7 16 12 23 17 23 7"/>
+                <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+              </svg>
+              فتح الكاميرا المباشرة
+            </button>
+            <input type="file" id="qr-file-input" accept="image/*" capture="environment" style="display: none;" onchange="handleFileSelect(event)">
+            <button onclick="document.getElementById('qr-file-input').click()" class="qr-action-btn secondary">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+              التقاط صورة للكود
+            </button>
+            <input type="file" id="qr-file-gallery" accept="image/*" style="display: none;" onchange="handleFileSelect(event)">
+            <button onclick="document.getElementById('qr-file-gallery').click()" class="qr-action-btn tertiary">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+              اختيار من المعرض
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    // Handle file/image selection for QR scanning
+    async function handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const content = document.getElementById('qr-scanner-content');
+      content.innerHTML = `
+        <div class="qr-loading">
+          <div class="qr-loading-spinner"></div>
+          <p>جاري قراءة الكود...</p>
+        </div>
+      `;
+
+      try {
+        const html5QrCodeScanner = new Html5Qrcode("qr-scanner-content");
+        const result = await html5QrCodeScanner.scanFile(file, true);
+        onScanSuccess(result);
+      } catch (err) {
+        console.error('File scan error:', err);
+        content.innerHTML = `
+          <div class="qr-upload-section">
+            <div class="qr-upload-icon" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3);">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="15" y1="9" x2="9" y2="15"/>
+                <line x1="9" y1="9" x2="15" y2="15"/>
+              </svg>
+            </div>
+            <h4 style="color: var(--danger); margin-bottom: 8px;">لم يتم العثور على كود QR</h4>
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">
+              تأكد من وضوح الصورة واحتوائها على كود QR صالح
+            </p>
+            <input type="file" id="qr-file-retry" accept="image/*" capture="environment" style="display: none;" onchange="handleFileSelect(event)">
+            <div style="display: flex; flex-direction: column; gap: 12px; width: 100%;">
+              <button onclick="document.getElementById('qr-file-retry').click()" class="qr-action-btn primary">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"/>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+                إعادة المحاولة
+              </button>
+              <button onclick="closeQrScanner()" class="qr-action-btn tertiary">
+                إلغاء
+              </button>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function showCameraError(err) {
+      const content = document.getElementById('qr-scanner-content');
+      let errorMessage = 'فشل في تشغيل الكاميرا';
+      let errorHint = 'تأكد من إعطاء صلاحية الكاميرا للمتصفح';
+
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        errorMessage = 'تم رفض صلاحية الكاميرا';
+        errorHint = 'يرجى السماح بالوصول للكاميرا من إعدادات المتصفح';
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        errorMessage = 'لا توجد كاميرا';
+        errorHint = 'تأكد من وجود كاميرا متصلة بالجهاز';
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        errorMessage = 'الكاميرا مستخدمة';
+        errorHint = 'أغلق التطبيقات الأخرى التي تستخدم الكاميرا';
+      } else if (err.name === 'OverconstrainedError') {
+        errorMessage = 'الكاميرا غير متوافقة';
+        errorHint = 'جرب استخدام متصفح آخر';
+      } else if (err.message && err.message.includes('secure context')) {
+        errorMessage = 'الكاميرا تتطلب اتصال آمن';
+        errorHint = 'استخدم رفع صورة QR بدلاً من الكاميرا';
+      }
+
+      content.innerHTML = `
+        <div class="qr-upload-section">
+          <div class="qr-upload-icon" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3);">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <line x1="1" y1="1" x2="23" y2="23"/>
+            </svg>
+          </div>
+          <h4 style="color: var(--danger); margin-bottom: 8px;">${errorMessage}</h4>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">
+            ${errorHint}
+          </p>
+          <input type="file" id="qr-file-error" accept="image/*" capture="environment" style="display: none;" onchange="handleFileSelect(event)">
+          <input type="file" id="qr-file-gallery-error" accept="image/*" style="display: none;" onchange="handleFileSelect(event)">
+          <div style="display: flex; flex-direction: column; gap: 12px; width: 100%;">
+            <button onclick="document.getElementById('qr-file-error').click()" class="qr-action-btn primary">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+              التقاط صورة للكود
+            </button>
+            <button onclick="document.getElementById('qr-file-gallery-error').click()" class="qr-action-btn secondary">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+              اختيار من المعرض
+            </button>
+            <button onclick="startScanner()" class="qr-action-btn tertiary">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="23 4 23 10 17 10"/>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+              </svg>
+              إعادة تجربة الكاميرا
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    function closeQrScanner() {
+      const modal = document.getElementById('qr-modal');
+      modal.classList.remove('active');
+
+      if (html5QrCode && scannerActive) {
+        html5QrCode.stop().catch(() => {});
+        scannerActive = false;
+      }
+    }
+
+    async function startScanner() {
+      const content = document.getElementById('qr-scanner-content');
+
+      // Show loading
+      content.innerHTML = `
+        <div class="qr-loading">
+          <div class="qr-loading-spinner"></div>
+          <p>جاري تشغيل الكاميرا...</p>
+        </div>
+      `;
+
+      try {
+        // Small delay for UI
+        await new Promise(r => setTimeout(r, 100));
+
+        // Create scanner container
+        content.innerHTML = `
+          <div id="qr-reader"></div>
+          <p class="qr-hint">وجّه الكاميرا نحو كود QR الموجود على الكرت</p>
+        `;
+
+        html5QrCode = new Html5Qrcode("qr-reader");
+
+        await html5QrCode.start(
+          { facingMode: "environment" },
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 }
+          },
+          onScanSuccess,
+          () => {} // Ignore scan errors
+        );
+
+        scannerActive = true;
+      } catch (err) {
+        console.error('Scanner error:', err);
+        showCameraError(err);
+      }
+    }
+
+    function onScanSuccess(decodedText) {
+      // Stop scanner
+      if (html5QrCode && scannerActive) {
+        html5QrCode.stop().catch(() => {});
+        scannerActive = false;
+      }
+
+      const content = document.getElementById('qr-scanner-content');
+
+      // Show success state
+      content.innerHTML = `
+        <div class="qr-result">
+          <div class="qr-result-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+          <p class="qr-result-text">تم مسح الكود بنجاح!</p>
+          <div class="qr-result-code">${decodedText}</div>
+          <p style="color: var(--text-secondary); font-size: 14px;">جاري تسجيل الدخول...</p>
+        </div>
+      `;
+
+      // Fill in the form and submit
+      setTimeout(() => {
+        const usernameInput = document.querySelector('input[name="username"]');
+        const passwordInput = document.querySelector('input[name="password"]');
+
+        if (usernameInput && passwordInput) {
+          // For vouchers, username and password are typically the same
+          usernameInput.value = decodedText;
+          passwordInput.value = decodedText;
+
+          // Close modal
+          closeQrScanner();
+
+          // Submit the form
+          setTimeout(() => {
+            document.forms['login'].submit();
+          }, 500);
+        }
+      }, 1500);
+    }
   </script>
 </body>
 </html>

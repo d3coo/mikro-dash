@@ -7,7 +7,8 @@
     Radio,
     Wifi,
     Settings,
-    Zap
+    Zap,
+    Globe
   } from 'lucide-svelte';
 
   const navItems = [
@@ -16,6 +17,7 @@
     { href: '/users', label: 'المستخدمين', icon: Users },
     { href: '/sessions', label: 'الجلسات', icon: Radio },
     { href: '/wifi', label: 'الواي فاي', icon: Wifi },
+    { href: '/portal', label: 'البوابة', icon: Globe },
     { href: '/settings', label: 'الإعدادات', icon: Settings }
   ];
 </script>

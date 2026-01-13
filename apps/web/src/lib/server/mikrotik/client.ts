@@ -4,7 +4,10 @@ import type {
   ActiveSession,
   WirelessInterface,
   SecurityProfile,
-  SystemResource
+  SystemResource,
+  MikroTikFile,
+  HotspotServerProfile,
+  Certificate
 } from './types';
 
 export class MikroTikClient {
@@ -85,7 +88,10 @@ export class MikroTikClient {
   }
 
   async deleteHotspotUser(id: string): Promise<void> {
-    await this.request(`/ip/hotspot/user/${id}`, 'DELETE');
+    // MikroTik REST API requires using 'remove' endpoint with the .id
+    await this.request('/ip/hotspot/user/remove', 'POST', {
+      '.id': id
+    });
   }
 
   // Active Sessions
@@ -94,7 +100,11 @@ export class MikroTikClient {
   }
 
   async kickSession(id: string): Promise<void> {
-    await this.request(`/ip/hotspot/active/${id}`, 'DELETE');
+    // MikroTik REST API requires using 'remove' endpoint with the .id
+    // The ID format is like "*1" so we need to encode it properly
+    await this.request('/ip/hotspot/active/remove', 'POST', {
+      '.id': id
+    });
   }
 
   // WiFi
@@ -120,5 +130,139 @@ export class MikroTikClient {
     await this.request(`/interface/wireless/security-profiles/${id}`, 'PATCH', {
       'wpa2-pre-shared-key': password
     });
+  }
+
+  // File Management
+  async getFiles(path?: string): Promise<MikroTikFile[]> {
+    const files = await this.request<MikroTikFile[]>('/file');
+    if (path) {
+      return files.filter(f => f.name.startsWith(path));
+    }
+    return files;
+  }
+
+  async getFileContent(name: string): Promise<string> {
+    // MikroTik REST API returns file contents as base64 or text
+    const response = await fetch(`${this.baseUrl}/file/${encodeURIComponent(name)}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': this.authHeader
+      }
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to get file: ${response.status}`);
+    }
+    const data = await response.json();
+    return data.contents || '';
+  }
+
+  async uploadFile(name: string, contents: string): Promise<void> {
+    // Use the file/set endpoint to write file contents
+    await this.request('/file/set', 'POST', {
+      '.id': name,
+      contents
+    });
+  }
+
+  async createFile(name: string, contents: string): Promise<void> {
+    // For MikroTik, we use the print command to create a file with content
+    // Using /file/add for new files
+    await this.request('/file/add', 'POST', {
+      name,
+      contents
+    });
+  }
+
+  async deleteFile(name: string): Promise<void> {
+    await this.request('/file/remove', 'POST', {
+      '.id': name
+    });
+  }
+
+  // Hotspot Server Profiles
+  async getHotspotServerProfiles(): Promise<HotspotServerProfile[]> {
+    return this.request<HotspotServerProfile[]>('/ip/hotspot/profile');
+  }
+
+  async updateHotspotServerProfile(id: string, htmlDirectory: string): Promise<void> {
+    await this.request(`/ip/hotspot/profile/${id}`, 'PATCH', {
+      'html-directory': htmlDirectory
+    });
+  }
+
+  async updateHotspotProfileSSL(
+    id: string,
+    options: {
+      sslCertificate?: string;
+      loginBy?: string;
+    }
+  ): Promise<void> {
+    const body: Record<string, unknown> = {};
+    if (options.sslCertificate !== undefined) {
+      body['ssl-certificate'] = options.sslCertificate;
+    }
+    if (options.loginBy !== undefined) {
+      body['login-by'] = options.loginBy;
+    }
+    await this.request(`/ip/hotspot/profile/${id}`, 'PATCH', body);
+  }
+
+  // SSL Certificates
+  async getCertificates(): Promise<Certificate[]> {
+    return this.request<Certificate[]>('/certificate');
+  }
+
+  async createCertificate(
+    name: string,
+    commonName: string,
+    daysValid: number = 3650,
+    keySize: number = 2048
+  ): Promise<{ ret: string }> {
+    return this.request<{ ret: string }>('/certificate/add', 'POST', {
+      name,
+      'common-name': commonName,
+      'days-valid': daysValid.toString(),
+      'key-size': keySize.toString()
+    });
+  }
+
+  async signCertificate(certName: string): Promise<void> {
+    await this.request('/certificate/sign', 'POST', {
+      '.id': certName
+    });
+  }
+
+  async deleteCertificate(id: string): Promise<void> {
+    await this.request('/certificate/remove', 'POST', {
+      '.id': id
+    });
+  }
+
+  // Let's Encrypt certificate (requires RouterOS 7+)
+  async enableLetsEncrypt(
+    commonName: string,
+    email?: string
+  ): Promise<void> {
+    // MikroTik RouterOS 7+ supports Let's Encrypt via ACME
+    // First check if ACME package is available
+    const body: Record<string, unknown> = {
+      'common-name': commonName
+    };
+    if (email) {
+      body['email'] = email;
+    }
+    // This creates and signs a Let's Encrypt certificate
+    await this.request('/certificate/enable-ssl-certificate', 'POST', body);
+  }
+
+  // Get host for FTP/file operations
+  getHost(): string {
+    return this.baseUrl.replace('http://', '').replace('/rest', '');
+  }
+
+  getCredentials(): { username: string; password: string } {
+    const decoded = atob(this.authHeader.replace('Basic ', ''));
+    const [username, password] = decoded.split(':');
+    return { username, password };
   }
 }

@@ -27,6 +27,7 @@ export function initializeDb() {
       price_le INTEGER NOT NULL,
       bytes_limit INTEGER NOT NULL,
       status TEXT NOT NULL DEFAULT 'available',
+      synced INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       used_at TEXT
     );
@@ -36,6 +37,13 @@ export function initializeDb() {
       value TEXT NOT NULL
     );
   `);
+
+  // Add synced column if it doesn't exist (migration for existing databases)
+  try {
+    sqlite.exec(`ALTER TABLE vouchers ADD COLUMN synced INTEGER NOT NULL DEFAULT 0`);
+  } catch {
+    // Column already exists, ignore error
+  }
 
   // Insert default settings if not exist
   const insertSetting = sqlite.prepare(
