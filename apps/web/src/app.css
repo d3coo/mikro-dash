@@ -1,0 +1,26 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-family-cairo: 'Cairo', sans-serif;
+
+  --color-primary: #2563eb;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+}
+
+@font-face {
+  font-family: 'Cairo';
+  src: url('https://fonts.gstatic.com/s/cairo/v28/SLXgc1nY6HkvangtZmpcWmhzfH5lWWgcQyyS4J0.woff2') format('woff2');
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+html {
+  font-family: var(--font-family-cairo);
+}
+
+/* RTL utilities */
+[dir="rtl"] .flip-rtl {
+  transform: scaleX(-1);
+}

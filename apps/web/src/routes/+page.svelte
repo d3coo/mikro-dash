@@ -1,2 +1,4 @@
-<h1>Welcome to SvelteKit</h1>
-<p>Visit <a href="https://svelte.dev/docs/kit">svelte.dev/docs/kit</a> to read the documentation</p>
+<div class="p-8">
+	<h1 class="text-3xl font-bold text-primary mb-4">مرحباً بك</h1>
+	<p class="text-gray-600">لوحة تحكم الواي فاي</p>
+</div>
