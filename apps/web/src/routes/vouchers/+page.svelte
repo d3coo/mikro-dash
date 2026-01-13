@@ -4,8 +4,9 @@
   import { page } from '$app/stores';
   import { Button } from '$lib/components/ui/button';
   import ConfirmModal from '$lib/components/confirm-modal.svelte';
-  import { Plus, Trash2, Printer, Package, Filter, CheckCircle, XCircle, Clock, Loader2, CloudOff, RefreshCw, Cloud, ChevronRight, ChevronLeft } from 'lucide-svelte';
+  import { Plus, Trash2, Printer, Package, Filter, CheckCircle, XCircle, Clock, Loader2, CloudOff, RefreshCw, Cloud, ChevronRight, ChevronLeft, QrCode, X, Copy, Check } from 'lucide-svelte';
   import { toast } from 'svelte-sonner';
+  import QRCode from 'qrcode';
 
   let { data, form } = $props();
 
@@ -40,6 +41,65 @@
   let isSyncing = $state(false);
   let showDeleteModal = $state(false);
   let deleteFormEl: HTMLFormElement;
+
+  // QR Code Modal State
+  let showQrModal = $state(false);
+  let selectedVoucher = $state<typeof data.vouchers[0] | null>(null);
+  let qrCodeDataUrl = $state('');
+  let codeCopied = $state(false);
+
+  function generateLoginUrl(username: string, password: string): string {
+    // MikroTik hotspot auto-login URL format
+    const baseUrl = 'http://10.10.10.1/login';
+    const params = new URLSearchParams({
+      dst: 'http://google.com',
+      username: username,
+      password: password
+    });
+    return `${baseUrl}?${params.toString()}`;
+  }
+
+  async function openQrModal(voucher: typeof data.vouchers[0]) {
+    selectedVoucher = voucher;
+    showQrModal = true;
+    codeCopied = false;
+
+    // Generate QR code with login URL
+    try {
+      const loginUrl = generateLoginUrl(voucher.name, voucher.password || voucher.name);
+      qrCodeDataUrl = await QRCode.toDataURL(loginUrl, {
+        width: 280,
+        margin: 2,
+        color: {
+          dark: '#0891b2',
+          light: '#ffffff'
+        },
+        errorCorrectionLevel: 'M'
+      });
+    } catch (err) {
+      console.error('Failed to generate QR code:', err);
+      toast.error('فشل في إنشاء كود QR');
+    }
+  }
+
+  function closeQrModal() {
+    showQrModal = false;
+    selectedVoucher = null;
+    qrCodeDataUrl = '';
+  }
+
+  async function copyCredentials() {
+    if (!selectedVoucher) return;
+    try {
+      const text = `المستخدم: ${selectedVoucher.name}\nكلمة المرور: ${selectedVoucher.password || '----'}`;
+      await navigator.clipboard.writeText(text);
+      codeCopied = true;
+      toast.success('تم نسخ البيانات');
+      setTimeout(() => codeCopied = false, 2000);
+    } catch {
+      toast.error('فشل في النسخ');
+    }
+  }
 
   function goToPage(pageNum: number) {
     const url = new URL($page.url);
@@ -260,8 +320,8 @@
         <tbody>
           {#each data.vouchers as voucher, index}
             {@const config = statusConfig[voucher.status] || statusConfig.available}
-            <tr class="opacity-0 animate-fade-in" style="animation-delay: {250 + index * 30}ms">
-              <td>
+            <tr class="opacity-0 animate-fade-in voucher-row" style="animation-delay: {250 + index * 30}ms">
+              <td onclick={(e) => e.stopPropagation()}>
                 <input
                   type="checkbox"
                   checked={selectedIds.includes(voucher.id)}
@@ -269,8 +329,11 @@
                   class="checkbox-modern"
                 />
               </td>
-              <td>
-                <span class="font-mono text-primary-light">{voucher.name}</span>
+              <td onclick={() => openQrModal(voucher)} class="clickable-cell">
+                <div class="code-cell">
+                  <QrCode class="w-4 h-4 qr-hint-icon" />
+                  <span class="font-mono text-primary-light">{voucher.name}</span>
+                </div>
               </td>
               <td>
                 <span class="font-mono">{voucher.password || '••••••'}</span>
@@ -356,6 +419,70 @@
   variant="destructive"
   onConfirm={() => deleteFormEl.requestSubmit()}
 />
+
+<!-- QR Code Modal -->
+{#if showQrModal && selectedVoucher}
+  <div class="qr-modal-overlay" onclick={closeQrModal}>
+    <div class="qr-modal-content" onclick={(e) => e.stopPropagation()}>
+      <button class="qr-modal-close" onclick={closeQrModal}>
+        <X class="w-5 h-5" />
+      </button>
+
+      <div class="qr-modal-header">
+        <QrCode class="w-6 h-6 text-primary-light" />
+        <h3>كود الكرت</h3>
+      </div>
+
+      <div class="qr-modal-body">
+        {#if qrCodeDataUrl}
+          <div class="qr-code-container">
+            <img src={qrCodeDataUrl} alt="QR Code" class="qr-code-image" />
+          </div>
+        {:else}
+          <div class="qr-loading">
+            <Loader2 class="w-8 h-8 animate-spin text-primary-light" />
+          </div>
+        {/if}
+
+        <div class="voucher-details">
+          <div class="voucher-credentials">
+            <div class="credential-row">
+              <span class="credential-label">المستخدم:</span>
+              <span class="credential-value">{selectedVoucher.name}</span>
+            </div>
+            <div class="credential-row">
+              <span class="credential-label">كلمة المرور:</span>
+              <span class="credential-value">{selectedVoucher.password || '----'}</span>
+            </div>
+            <button class="copy-credentials-btn" onclick={copyCredentials}>
+              {#if codeCopied}
+                <Check class="w-4 h-4" />
+                <span>تم النسخ</span>
+              {:else}
+                <Copy class="w-4 h-4" />
+                <span>نسخ البيانات</span>
+              {/if}
+            </button>
+          </div>
+          <div class="voucher-info">
+            <span class="info-label">الباقة:</span>
+            <span class="info-value">{selectedVoucher.profile}</span>
+          </div>
+          {#if selectedVoucher.bytesLimit > 0}
+            <div class="voucher-info">
+              <span class="info-label">الحد:</span>
+              <span class="info-value">{formatBytes(selectedVoucher.bytesLimit)}</span>
+            </div>
+          {/if}
+        </div>
+
+        <p class="qr-hint">
+          امسح هذا الكود للاتصال بالإنترنت تلقائياً
+        </p>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .vouchers-page {
@@ -548,5 +675,230 @@
     background: var(--color-primary);
     border-color: var(--color-primary);
     color: white;
+  }
+
+  /* Clickable voucher cell */
+  .clickable-cell {
+    cursor: pointer;
+  }
+
+  .code-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .qr-hint-icon {
+    color: var(--color-text-muted);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+
+  .voucher-row:hover .qr-hint-icon {
+    opacity: 1;
+  }
+
+  .clickable-cell:hover .qr-hint-icon {
+    color: var(--color-primary-light);
+  }
+
+  /* QR Modal Styles */
+  .qr-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+    animation: fadeIn 0.2s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .qr-modal-content {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: 20px;
+    width: 100%;
+    max-width: 360px;
+    position: relative;
+    animation: slideUp 0.3s ease;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px) scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .qr-modal-close {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+  }
+
+  .qr-modal-close:hover {
+    background: var(--color-bg-card);
+    color: var(--color-text-primary);
+    border-color: var(--color-text-muted);
+  }
+
+  .qr-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 24px;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .qr-modal-header h3 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+  }
+
+  .qr-modal-body {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .qr-code-container {
+    background: white;
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 4px 20px rgba(8, 145, 178, 0.15);
+  }
+
+  .qr-code-image {
+    display: block;
+    width: 248px;
+    height: 248px;
+  }
+
+  .qr-loading {
+    width: 248px;
+    height: 248px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-bg-elevated);
+    border-radius: 16px;
+  }
+
+  .voucher-details {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .voucher-credentials {
+    background: var(--color-bg-elevated);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .credential-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .credential-label {
+    font-size: 14px;
+    color: var(--color-text-muted);
+  }
+
+  .credential-value {
+    font-family: var(--font-family-mono);
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--color-primary-light);
+    letter-spacing: 1px;
+  }
+
+  .copy-credentials-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 16px;
+    margin-top: 8px;
+    border-radius: 8px;
+    background: rgba(8, 145, 178, 0.15);
+    border: 1px solid rgba(8, 145, 178, 0.3);
+    color: var(--color-primary-light);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .copy-credentials-btn:hover {
+    background: rgba(8, 145, 178, 0.25);
+    border-color: var(--color-primary);
+  }
+
+  .voucher-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 8px;
+  }
+
+  .info-label {
+    font-size: 14px;
+    color: var(--color-text-muted);
+  }
+
+  .info-value {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-text-primary);
+  }
+
+  .qr-hint {
+    font-size: 13px;
+    color: var(--color-text-muted);
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  .text-success {
+    color: var(--color-success);
   }
 </style>

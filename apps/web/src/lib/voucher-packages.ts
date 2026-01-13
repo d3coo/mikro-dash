@@ -5,6 +5,7 @@ export interface VoucherPackage {
   bytes: number;
   priceLE: number;
   profile: string;
+  codePrefix: string; // e.g., 'G1' for 1.5GB, 'G3' for 3GB
 }
 
 export const VOUCHER_PACKAGES: VoucherPackage[] = [
@@ -14,7 +15,8 @@ export const VOUCHER_PACKAGES: VoucherPackage[] = [
     nameAr: '١.٥ جيجا',
     bytes: 1610612736,
     priceLE: 5,
-    profile: 'aboyassen-users'
+    profile: 'aboyassen-users',
+    codePrefix: 'G1'
   },
   {
     id: '3GB',
@@ -22,7 +24,8 @@ export const VOUCHER_PACKAGES: VoucherPackage[] = [
     nameAr: '٣ جيجا',
     bytes: 3221225472,
     priceLE: 10,
-    profile: 'aboyassen-users'
+    profile: 'aboyassen-users',
+    codePrefix: 'G3'
   },
   {
     id: '5GB',
@@ -30,7 +33,8 @@ export const VOUCHER_PACKAGES: VoucherPackage[] = [
     nameAr: '٥ جيجا',
     bytes: 5368709120,
     priceLE: 15,
-    profile: 'aboyassen-users'
+    profile: 'aboyassen-users',
+    codePrefix: 'G5'
   },
   {
     id: '10GB',
@@ -38,7 +42,8 @@ export const VOUCHER_PACKAGES: VoucherPackage[] = [
     nameAr: '١٠ جيجا',
     bytes: 10737418240,
     priceLE: 30,
-    profile: 'aboyassen-users'
+    profile: 'aboyassen-users',
+    codePrefix: 'G10'
   }
 ];
 

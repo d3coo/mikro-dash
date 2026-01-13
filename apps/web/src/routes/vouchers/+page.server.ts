@@ -110,32 +110,48 @@ export const load: PageServerLoad = async ({ url }) => {
   };
 };
 
-// Generate random password excluding confusing characters
-function generatePassword(length = 8): string {
-  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+// Characters for generating codes (excluding confusing ones like 0/O, 1/l/I)
+const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+
+// Generate random alphanumeric string
+function generateRandomCode(length: number): string {
   let result = '';
   for (let i = 0; i < length; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
+    result += CHARS.charAt(Math.floor(Math.random() * CHARS.length));
   }
   return result;
 }
 
-// Generate next voucher ID based on existing vouchers
-async function generateVoucherId(client: any, prefix: string, pkgCode: string): Promise<string> {
-  const users = await client.getHotspotUsers();
-  const pattern = `${prefix}-${pkgCode}-`;
+// Generate 4-character alphanumeric password (letters + numbers, mixed case)
+function generatePassword(): string {
+  return generateRandomCode(4);
+}
 
-  let maxNum = 0;
-  for (const u of users) {
-    if (u.name.startsWith(pattern)) {
-      const parts = u.name.split('-');
-      const num = parseInt(parts[parts.length - 1], 10);
-      if (num > maxNum) maxNum = num;
+// Generate unique voucher username (format: G3XX, G1XX where XX is random alphanumeric)
+async function generateVoucherId(client: any, codePrefix: string): Promise<string> {
+  const users = await client.getHotspotUsers();
+  const existingNames = new Set(users.map((u: any) => u.name));
+
+  // Generate unique code
+  let attempts = 0;
+  while (attempts < 100) {
+    const code = `${codePrefix}${generateRandomCode(2)}`;
+    if (!existingNames.has(code)) {
+      return code;
     }
+    attempts++;
   }
 
-  const nextNum = (maxNum + 1).toString().padStart(3, '0');
-  return `${prefix}-${pkgCode}-${nextNum}`;
+  // Fallback: use 3 characters if 2 chars are exhausted
+  while (attempts < 200) {
+    const code = `${codePrefix}${generateRandomCode(3)}`;
+    if (!existingNames.has(code)) {
+      return code;
+    }
+    attempts++;
+  }
+
+  throw new Error('Could not generate unique voucher ID');
 }
 
 export const actions: Actions = {
@@ -159,16 +175,16 @@ export const actions: Actions = {
 
     try {
       const client = await getMikroTikClient();
-      const prefix = 'ABO'; // Could be fetched from settings
-      const pkgCode = pkg.id.replace('.', '').replace('GB', 'G');
 
       let created = 0;
       for (let i = 0; i < quantity; i++) {
-        const id = await generateVoucherId(client, prefix, pkgCode);
+        // Generate username like G301, G302, G101, G102, etc.
+        const username = await generateVoucherId(client, pkg.codePrefix);
+        // Generate 4-digit password like 1234, 5678, etc.
         const password = generatePassword();
 
-        // Create directly in MikroTik with comment containing price
-        await client.createHotspotUser(id, password, pkg.profile, pkg.bytes);
+        // Create directly in MikroTik
+        await client.createHotspotUser(username, password, pkg.profile, pkg.bytes);
         created++;
       }
 
