@@ -1,141 +1,225 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
-  import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
   import { Button } from '$lib/components/ui/button';
-  import { Save, Wifi } from 'lucide-svelte';
+  import { Save, Wifi, Server, Building, CheckCircle, XCircle, Loader2 } from 'lucide-svelte';
 
   let { data, form } = $props();
 
   let settings = $state({ ...data.settings });
 </script>
 
-<div class="space-y-8">
-  <div>
-    <h1 class="text-3xl font-bold">الإعدادات</h1>
-    <p class="text-gray-500 mt-1">إعدادات الاتصال والتطبيق</p>
-  </div>
+<div class="settings-page">
+  <!-- Page Header -->
+  <header class="page-header opacity-0 animate-fade-in">
+    <h1 class="page-title">الإعدادات</h1>
+    <p class="page-subtitle">إعدادات الاتصال والتطبيق</p>
+  </header>
 
+  <!-- Alerts -->
   {#if form?.error}
-    <div class="bg-red-50 text-red-800 p-4 rounded-lg">{form.error}</div>
-  {/if}
-
-  {#if form?.success}
-    <div class="bg-green-50 text-green-800 p-4 rounded-lg">تم حفظ الإعدادات بنجاح</div>
-  {/if}
-
-  {#if form?.testResult}
-    <div class="p-4 rounded-lg {form.testResult.success ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}">
-      {form.testResult.message}
+    <div class="alert alert-error opacity-0 animate-fade-in" style="animation-delay: 100ms">
+      <XCircle class="w-5 h-5" />
+      <span>{form.error}</span>
     </div>
   {/if}
 
-  <form method="POST" action="?/save" use:enhance class="space-y-6">
+  {#if form?.success}
+    <div class="alert alert-success opacity-0 animate-fade-in" style="animation-delay: 100ms">
+      <CheckCircle class="w-5 h-5" />
+      <span>تم حفظ الإعدادات بنجاح</span>
+    </div>
+  {/if}
+
+  {#if form?.testResult}
+    <div class="alert {form.testResult.success ? 'alert-success' : 'alert-error'} opacity-0 animate-fade-in" style="animation-delay: 100ms">
+      {#if form.testResult.success}
+        <CheckCircle class="w-5 h-5" />
+      {:else}
+        <XCircle class="w-5 h-5" />
+      {/if}
+      <span>{form.testResult.message}</span>
+    </div>
+  {/if}
+
+  <form method="POST" action="?/save" use:enhance class="settings-form">
     <!-- Router Connection -->
-    <Card>
-      <CardHeader>
-        <CardTitle>اتصال الراوتر</CardTitle>
-      </CardHeader>
-      <CardContent class="space-y-4">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label for="mikrotik_host" class="block text-sm font-medium mb-2">عنوان IP</label>
-            <input
-              type="text"
-              id="mikrotik_host"
-              name="mikrotik_host"
-              bind:value={settings.mikrotik_host}
-              class="w-full p-2 border rounded-lg bg-white dark:bg-gray-800"
-              placeholder="192.168.1.109"
-            />
-          </div>
+    <section class="settings-section glass-card opacity-0 animate-fade-in" style="animation-delay: 150ms">
+      <div class="section-header">
+        <Server class="w-5 h-5 text-primary-light" />
+        <h2>اتصال الراوتر</h2>
+      </div>
 
-          <div>
-            <label for="mikrotik_user" class="block text-sm font-medium mb-2">اسم المستخدم</label>
-            <input
-              type="text"
-              id="mikrotik_user"
-              name="mikrotik_user"
-              bind:value={settings.mikrotik_user}
-              class="w-full p-2 border rounded-lg bg-white dark:bg-gray-800"
-              placeholder="admin"
-            />
-          </div>
-
-          <div>
-            <label for="mikrotik_pass" class="block text-sm font-medium mb-2">كلمة المرور</label>
-            <input
-              type="password"
-              id="mikrotik_pass"
-              name="mikrotik_pass"
-              bind:value={settings.mikrotik_pass}
-              class="w-full p-2 border rounded-lg bg-white dark:bg-gray-800"
-            />
-          </div>
-
-          <div>
-            <label for="hotspot_server" class="block text-sm font-medium mb-2">سيرفر Hotspot</label>
-            <input
-              type="text"
-              id="hotspot_server"
-              name="hotspot_server"
-              bind:value={settings.hotspot_server}
-              class="w-full p-2 border rounded-lg bg-white dark:bg-gray-800"
-              placeholder="guest-hotspot"
-            />
-          </div>
+      <div class="settings-grid">
+        <div class="form-group">
+          <label for="mikrotik_host">عنوان IP</label>
+          <input
+            type="text"
+            id="mikrotik_host"
+            name="mikrotik_host"
+            bind:value={settings.mikrotik_host}
+            class="input-modern"
+            placeholder="192.168.1.109"
+          />
         </div>
 
-        <div class="pt-2">
-          <form method="POST" action="?/testConnection" use:enhance class="inline">
-            <Button type="submit" variant="outline">
-              <span>اختبار الاتصال</span>
-              <Wifi class="w-4 h-4" />
-            </Button>
-          </form>
+        <div class="form-group">
+          <label for="mikrotik_user">اسم المستخدم</label>
+          <input
+            type="text"
+            id="mikrotik_user"
+            name="mikrotik_user"
+            bind:value={settings.mikrotik_user}
+            class="input-modern"
+            placeholder="admin"
+          />
         </div>
-      </CardContent>
-    </Card>
+
+        <div class="form-group">
+          <label for="mikrotik_pass">كلمة المرور</label>
+          <input
+            type="password"
+            id="mikrotik_pass"
+            name="mikrotik_pass"
+            bind:value={settings.mikrotik_pass}
+            class="input-modern"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="hotspot_server">سيرفر Hotspot</label>
+          <input
+            type="text"
+            id="hotspot_server"
+            name="hotspot_server"
+            bind:value={settings.hotspot_server}
+            class="input-modern"
+            placeholder="guest-hotspot"
+          />
+        </div>
+      </div>
+
+      <div class="section-footer">
+        <Button type="submit" variant="outline" formaction="?/testConnection">
+          <Wifi class="w-4 h-4" />
+          <span>اختبار الاتصال</span>
+        </Button>
+      </div>
+    </section>
 
     <!-- Business Settings -->
-    <Card>
-      <CardHeader>
-        <CardTitle>إعدادات العمل</CardTitle>
-      </CardHeader>
-      <CardContent class="space-y-4">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label for="business_name" class="block text-sm font-medium mb-2">اسم العمل</label>
-            <input
-              type="text"
-              id="business_name"
-              name="business_name"
-              bind:value={settings.business_name}
-              class="w-full p-2 border rounded-lg bg-white dark:bg-gray-800"
-              placeholder="AboYassen WiFi"
-            />
-          </div>
+    <section class="settings-section glass-card opacity-0 animate-fade-in" style="animation-delay: 200ms">
+      <div class="section-header">
+        <Building class="w-5 h-5 text-primary-light" />
+        <h2>إعدادات العمل</h2>
+      </div>
 
-          <div>
-            <label for="voucher_prefix" class="block text-sm font-medium mb-2">بادئة الكروت</label>
-            <input
-              type="text"
-              id="voucher_prefix"
-              name="voucher_prefix"
-              bind:value={settings.voucher_prefix}
-              class="w-full p-2 border rounded-lg bg-white dark:bg-gray-800"
-              placeholder="ABO"
-              maxlength="5"
-            />
-          </div>
+      <div class="settings-grid">
+        <div class="form-group">
+          <label for="business_name">اسم العمل</label>
+          <input
+            type="text"
+            id="business_name"
+            name="business_name"
+            bind:value={settings.business_name}
+            class="input-modern"
+            placeholder="AboYassen WiFi"
+          />
         </div>
-      </CardContent>
-    </Card>
 
-    <div class="flex justify-end">
+        <div class="form-group">
+          <label for="voucher_prefix">بادئة الكروت</label>
+          <input
+            type="text"
+            id="voucher_prefix"
+            name="voucher_prefix"
+            bind:value={settings.voucher_prefix}
+            class="input-modern"
+            placeholder="ABO"
+            maxlength="5"
+          />
+          <span class="form-hint">الحد الأقصى 5 أحرف</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Save Button -->
+    <div class="form-actions opacity-0 animate-fade-in" style="animation-delay: 250ms">
       <Button type="submit">
-        <span>حفظ الإعدادات</span>
         <Save class="w-4 h-4" />
+        <span>حفظ الإعدادات</span>
       </Button>
     </div>
   </form>
 </div>
+
+<style>
+  .settings-page {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    max-width: 900px;
+  }
+
+  .settings-form {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .settings-section {
+    padding: 24px;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .section-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+  }
+
+  .settings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 20px;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .form-group label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+  }
+
+  .form-hint {
+    font-size: 12px;
+    color: var(--color-text-muted);
+  }
+
+  .section-footer {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .form-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .text-primary-light {
+    color: var(--color-primary-light);
+  }
+</style>

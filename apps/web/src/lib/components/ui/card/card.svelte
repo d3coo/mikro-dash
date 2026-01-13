@@ -4,6 +4,6 @@
   let { class: className, children, ...restProps }: { class?: string; children?: import('svelte').Snippet } & Record<string, unknown> = $props();
 </script>
 
-<div class={cn('rounded-lg border bg-card text-card-foreground shadow-sm', className)} {...restProps}>
+<div class={cn('glass-card p-1', className)} {...restProps}>
   {@render children?.()}
 </div>

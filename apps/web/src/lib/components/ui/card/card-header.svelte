@@ -4,6 +4,6 @@
   let { class: className, children, ...restProps }: { class?: string; children?: import('svelte').Snippet } & Record<string, unknown> = $props();
 </script>
 
-<div class={cn('flex flex-col space-y-1.5 p-6', className)} {...restProps}>
+<div class={cn('flex flex-col space-y-1.5 p-5', className)} {...restProps}>
   {@render children?.()}
 </div>
