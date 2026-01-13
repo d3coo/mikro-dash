@@ -7,6 +7,7 @@ export const vouchers = sqliteTable('vouchers', {
   priceLE: integer('price_le').notNull(),
   bytesLimit: integer('bytes_limit').notNull(),
   status: text('status').notNull().default('available'), // "available", "used", "expired"
+  synced: integer('synced', { mode: 'boolean' }).notNull().default(false), // synced to MikroTik router
   createdAt: text('created_at').notNull(),
   usedAt: text('used_at')
 });

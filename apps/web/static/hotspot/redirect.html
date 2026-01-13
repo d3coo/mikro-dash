@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta http-equiv="refresh" content="2;url=$(link-redirect)">
+  <title>$(hostname) - جاري التحويل...</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --primary: #0891b2;
+      --primary-light: #22d3ee;
+      --primary-glow: rgba(8, 145, 178, 0.4);
+      --bg-deep: #0a0f1a;
+      --glass: rgba(15, 23, 42, 0.85);
+      --glass-border: rgba(148, 163, 184, 0.15);
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --success: #10b981;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'Cairo', sans-serif;
+      background: var(--bg-deep);
+      color: var(--text-primary);
+      overflow: hidden;
+    }
+
+    /* Background */
+    .bg-container {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+    }
+
+    .bg-grid {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(16, 185, 129, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(16, 185, 129, 0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+    }
+
+    .bg-glow {
+      position: absolute;
+      width: 600px;
+      height: 600px;
+      background: var(--success);
+      border-radius: 50%;
+      filter: blur(150px);
+      opacity: 0.25;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      animation: breathe 3s ease-in-out infinite;
+    }
+
+    @keyframes breathe {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.25; }
+      50% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.35; }
+    }
+
+    /* Container */
+    .container {
+      position: relative;
+      z-index: 1;
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    /* Card */
+    .redirect-card {
+      width: 100%;
+      max-width: 400px;
+      background: var(--glass);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid var(--glass-border);
+      border-radius: 24px;
+      padding: 48px 40px;
+      text-align: center;
+      animation: cardReveal 0.5s ease-out forwards;
+      opacity: 0;
+    }
+
+    @keyframes cardReveal {
+      to { opacity: 1; }
+    }
+
+    /* Success Icon */
+    .success-icon {
+      width: 100px;
+      height: 100px;
+      margin: 0 auto 28px;
+      position: relative;
+    }
+
+    .success-circle {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: rgba(16, 185, 129, 0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: scaleIn 0.5s ease-out 0.2s both;
+    }
+
+    @keyframes scaleIn {
+      from { transform: scale(0); }
+      to { transform: scale(1); }
+    }
+
+    .success-circle svg {
+      color: var(--success);
+      animation: checkDraw 0.5s ease-out 0.5s both;
+    }
+
+    @keyframes checkDraw {
+      from {
+        stroke-dasharray: 100;
+        stroke-dashoffset: 100;
+      }
+      to {
+        stroke-dasharray: 100;
+        stroke-dashoffset: 0;
+      }
+    }
+
+    .success-ring {
+      position: absolute;
+      inset: -8px;
+      border: 2px solid var(--success);
+      border-radius: 50%;
+      animation: ringExpand 0.8s ease-out 0.3s both;
+      opacity: 0;
+    }
+
+    @keyframes ringExpand {
+      0% { transform: scale(0.8); opacity: 0.8; }
+      100% { transform: scale(1.2); opacity: 0; }
+    }
+
+    /* Title */
+    .redirect-title {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--success);
+      margin-bottom: 12px;
+      animation: fadeUp 0.5s ease-out 0.4s both;
+    }
+
+    .redirect-message {
+      font-size: 15px;
+      color: var(--text-secondary);
+      margin-bottom: 28px;
+      line-height: 1.6;
+      animation: fadeUp 0.5s ease-out 0.5s both;
+    }
+
+    @keyframes fadeUp {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Loader */
+    .loader {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      animation: fadeUp 0.5s ease-out 0.6s both;
+    }
+
+    .loader-dot {
+      width: 10px;
+      height: 10px;
+      background: var(--primary-light);
+      border-radius: 50%;
+      animation: bounce 1.4s ease-in-out infinite;
+    }
+
+    .loader-dot:nth-child(2) { animation-delay: 0.2s; }
+    .loader-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes bounce {
+      0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+      40% { transform: scale(1); opacity: 1; }
+    }
+
+    .loader-text {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-top: 16px;
+      animation: fadeUp 0.5s ease-out 0.7s both;
+    }
+
+    /* Link */
+    .manual-link {
+      margin-top: 24px;
+      animation: fadeUp 0.5s ease-out 0.8s both;
+    }
+
+    .manual-link a {
+      color: var(--primary-light);
+      text-decoration: none;
+      font-size: 13px;
+      transition: color 0.2s ease;
+    }
+
+    .manual-link a:hover {
+      color: var(--text-primary);
+    }
+
+    /* Responsive */
+    @media (max-width: 480px) {
+      .redirect-card {
+        padding: 36px 24px;
+      }
+
+      .success-icon {
+        width: 80px;
+        height: 80px;
+      }
+
+      .redirect-title {
+        font-size: 22px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Background -->
+  <div class="bg-container">
+    <div class="bg-grid"></div>
+    <div class="bg-glow"></div>
+  </div>
+
+  <div class="container">
+    <div class="redirect-card">
+      <div class="success-icon">
+        <div class="success-ring"></div>
+        <div class="success-circle">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+      </div>
+
+      <h1 class="redirect-title">تم تسجيل الدخول!</h1>
+      <p class="redirect-message">
+        مرحباً $(username)، تم تفعيل اتصالك بالإنترنت بنجاح.
+      </p>
+
+      <div class="loader">
+        <div class="loader-dot"></div>
+        <div class="loader-dot"></div>
+        <div class="loader-dot"></div>
+      </div>
+      <p class="loader-text">جاري تحويلك...</p>
+
+      <div class="manual-link">
+        <a href="$(link-redirect)">اضغط هنا إذا لم يتم التحويل تلقائياً</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,14 +1,44 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import { Button } from '$lib/components/ui/button';
-  import { Plus, Trash2, Printer, Package, Filter, CheckCircle, XCircle, Clock } from 'lucide-svelte';
+  import ConfirmModal from '$lib/components/confirm-modal.svelte';
+  import { Plus, Trash2, Printer, Package, Filter, CheckCircle, XCircle, Clock, Loader2, CloudOff, RefreshCw, Cloud } from 'lucide-svelte';
+  import { toast } from 'svelte-sonner';
 
   let { data, form } = $props();
+
+  // Show toast notifications for form results
+  $effect(() => {
+    if (form?.success) {
+      if (form.created) {
+        toast.success(`تم إنشاء ${form.created} كرت بنجاح`);
+      }
+      if (form.deleted) {
+        toast.success(`تم حذف ${form.deleted} كرت بنجاح`);
+      }
+      if (form.syncResult) {
+        if (form.syncResult.synced > 0) {
+          toast.success(`تم مزامنة ${form.syncResult.synced} كرت`);
+        }
+        if (form.syncResult.failed > 0) {
+          toast.warning(`فشل في مزامنة ${form.syncResult.failed} كرت`);
+        }
+      }
+    }
+    if (form?.error) {
+      toast.error(form.error);
+    }
+  });
 
   let selectedPackage = $state('');
   let quantity = $state(10);
   let selectedIds = $state<string[]>([]);
   let statusFilter = $state('all');
+  let isGenerating = $state(false);
+  let isDeleting = $state(false);
+  let isSyncing = $state(false);
+  let showDeleteModal = $state(false);
+  let deleteFormEl: HTMLFormElement;
 
   let filteredVouchers = $derived(
     statusFilter === 'all'
@@ -66,21 +96,33 @@
     </div>
   </header>
 
-  <!-- Alerts -->
-  {#if form?.error}
-    <div class="alert alert-error opacity-0 animate-fade-in" style="animation-delay: 100ms">
-      <XCircle class="w-5 h-5" />
-      <span>{form.error}</span>
-    </div>
-  {/if}
-
-  {#if form?.success}
-    <div class="alert alert-success opacity-0 animate-fade-in" style="animation-delay: 100ms">
-      <CheckCircle class="w-5 h-5" />
-      <span>
-        تم بنجاح! {form.created ? `تم إنشاء ${form.created} كرت` : ''}
-        {form.deleted ? `تم حذف ${form.deleted} كرت` : ''}
-      </span>
+  <!-- Unsynced Warning -->
+  {#if data.unsyncedCount > 0}
+    <div class="alert alert-warning opacity-0 animate-fade-in" style="animation-delay: 100ms">
+      <CloudOff class="w-5 h-5" />
+      <span>يوجد {data.unsyncedCount} كرت غير متزامن مع الراوتر</span>
+      <form
+        method="POST"
+        action="?/sync"
+        use:enhance={() => {
+          isSyncing = true;
+          return async ({ update }) => {
+            await update();
+            isSyncing = false;
+          };
+        }}
+        class="inline-block me-auto"
+      >
+        <Button type="submit" size="sm" disabled={isSyncing}>
+          {#if isSyncing}
+            <Loader2 class="w-4 h-4 animate-spin" />
+            <span>جاري المزامنة...</span>
+          {:else}
+            <RefreshCw class="w-4 h-4" />
+            <span>مزامنة الكل</span>
+          {/if}
+        </Button>
+      </form>
     </div>
   {/if}
 
@@ -90,7 +132,18 @@
       <Package class="w-5 h-5 text-primary-light" />
       <h2>إنشاء كروت جديدة</h2>
     </div>
-    <form method="POST" action="?/generate" use:enhance class="generate-form">
+    <form
+      method="POST"
+      action="?/generate"
+      use:enhance={() => {
+        isGenerating = true;
+        return async ({ update }) => {
+          await update();
+          isGenerating = false;
+        };
+      }}
+      class="generate-form"
+    >
       <div class="form-group flex-1">
         <label for="packageId">الباقة</label>
         <select
@@ -99,6 +152,7 @@
           bind:value={selectedPackage}
           class="select-modern w-full"
           required
+          disabled={isGenerating}
         >
           <option value="">اختر الباقة...</option>
           {#each data.packages as pkg}
@@ -118,12 +172,18 @@
           max="100"
           class="input-modern w-full"
           required
+          disabled={isGenerating}
         />
       </div>
 
-      <Button type="submit" class="self-end">
-        <Plus class="w-4 h-4" />
-        <span>إنشاء</span>
+      <Button type="submit" class="self-end" disabled={isGenerating}>
+        {#if isGenerating}
+          <Loader2 class="w-4 h-4 animate-spin" />
+          <span>جاري الإنشاء...</span>
+        {:else}
+          <Plus class="w-4 h-4" />
+          <span>إنشاء</span>
+        {/if}
       </Button>
     </form>
   </section>
@@ -147,13 +207,36 @@
         </div>
 
         {#if selectedIds.length > 0}
-          <form method="POST" action="?/delete" use:enhance>
+          <form
+            bind:this={deleteFormEl}
+            method="POST"
+            action="?/delete"
+            use:enhance={() => {
+              isDeleting = true;
+              return async ({ update }) => {
+                await update();
+                isDeleting = false;
+                selectedIds = [];
+              };
+            }}
+          >
             {#each selectedIds as id}
               <input type="hidden" name="ids" value={id} />
             {/each}
-            <Button type="submit" variant="destructive" size="sm">
-              <Trash2 class="w-4 h-4" />
-              <span>حذف ({selectedIds.length})</span>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={isDeleting}
+              onclick={() => showDeleteModal = true}
+            >
+              {#if isDeleting}
+                <Loader2 class="w-4 h-4 animate-spin" />
+                <span>جاري الحذف...</span>
+              {:else}
+                <Trash2 class="w-4 h-4" />
+                <span>حذف ({selectedIds.length})</span>
+              {/if}
             </Button>
           </form>
         {/if}
@@ -177,6 +260,7 @@
             <th>الباقة</th>
             <th>السعر</th>
             <th>الحالة</th>
+            <th>المزامنة</th>
             <th>تاريخ الإنشاء</th>
           </tr>
         </thead>
@@ -209,6 +293,19 @@
                 </span>
               </td>
               <td>
+                {#if voucher.synced}
+                  <span class="badge badge-success">
+                    <Cloud class="w-3 h-3" />
+                    متزامن
+                  </span>
+                {:else}
+                  <span class="badge badge-warning">
+                    <CloudOff class="w-3 h-3" />
+                    غير متزامن
+                  </span>
+                {/if}
+              </td>
+              <td>
                 <span class="date">{formatDate(voucher.createdAt)}</span>
               </td>
             </tr>
@@ -225,6 +322,16 @@
     </div>
   </section>
 </div>
+
+<ConfirmModal
+  bind:open={showDeleteModal}
+  title="تأكيد الحذف"
+  message="هل أنت متأكد من حذف {selectedIds.length} كرت؟ لا يمكن التراجع عن هذا الإجراء."
+  confirmText="حذف"
+  cancelText="إلغاء"
+  variant="destructive"
+  onConfirm={() => deleteFormEl.requestSubmit()}
+/>
 
 <style>
   .vouchers-page {

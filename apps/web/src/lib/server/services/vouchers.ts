@@ -47,13 +47,30 @@ export async function createVouchers(
   const pkg = getPackageById(packageId);
   if (!pkg) throw new Error(`Invalid package: ${packageId}`);
 
-  const client = await getMikroTikClient();
+  let client;
+  try {
+    client = await getMikroTikClient();
+  } catch {
+    client = null;
+  }
+
   const created: Voucher[] = [];
   const now = new Date().toISOString();
 
   for (let i = 0; i < quantity; i++) {
     const id = await generateVoucherId(pkg);
     const password = generatePassword();
+    let synced = false;
+
+    // Try to sync to MikroTik first
+    if (client) {
+      try {
+        await client.createHotspotUser(id, password, pkg.profile, pkg.bytes);
+        synced = true;
+      } catch (error) {
+        console.error(`Failed to sync voucher ${id} to MikroTik:`, error);
+      }
+    }
 
     const newVoucher: NewVoucher = {
       id,
@@ -62,20 +79,12 @@ export async function createVouchers(
       priceLE: pkg.priceLE,
       bytesLimit: pkg.bytes,
       status: 'available',
+      synced,
       createdAt: now
     };
 
     // Insert into local DB
     db.insert(vouchers).values(newVoucher).run();
-
-    // Sync to MikroTik
-    try {
-      await client.createHotspotUser(id, password, pkg.profile, pkg.bytes);
-    } catch (error) {
-      console.error(`Failed to sync voucher ${id} to MikroTik:`, error);
-      // Continue anyway - voucher exists locally
-    }
-
     created.push(newVoucher as Voucher);
   }
 
@@ -117,4 +126,42 @@ export async function deleteVouchers(ids: string[]): Promise<void> {
   for (const id of ids) {
     await deleteVoucher(id);
   }
+}
+
+export function getUnsyncedVouchers(): Voucher[] {
+  return db.select().from(vouchers).where(eq(vouchers.synced, false)).all();
+}
+
+export async function syncVoucher(id: string): Promise<boolean> {
+  const voucher = getVoucherById(id);
+  if (!voucher || voucher.synced) return false;
+
+  const pkg = getPackageById(voucher.package);
+  if (!pkg) return false;
+
+  try {
+    const client = await getMikroTikClient();
+    await client.createHotspotUser(voucher.id, voucher.password, pkg.profile, pkg.bytes);
+
+    // Update sync status in DB
+    db.update(vouchers).set({ synced: true }).where(eq(vouchers.id, id)).run();
+    return true;
+  } catch (error) {
+    console.error(`Failed to sync voucher ${id}:`, error);
+    return false;
+  }
+}
+
+export async function syncAllVouchers(): Promise<{ synced: number; failed: number }> {
+  const unsynced = getUnsyncedVouchers();
+  let synced = 0;
+  let failed = 0;
+
+  for (const voucher of unsynced) {
+    const success = await syncVoucher(voucher.id);
+    if (success) synced++;
+    else failed++;
+  }
+
+  return { synced, failed };
 }

@@ -10,10 +10,12 @@ import type {
 export class MikroTikClient {
   private baseUrl: string;
   private authHeader: string;
+  private timeout: number;
 
   constructor(config: MikroTikConfig) {
     this.baseUrl = `http://${config.host}/rest`;
     this.authHeader = 'Basic ' + btoa(`${config.username}:${config.password}`);
+    this.timeout = 5000; // 5 second timeout
   }
 
   private async request<T>(
@@ -21,21 +23,29 @@ export class MikroTikClient {
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'GET',
     body?: Record<string, unknown>
   ): Promise<T> {
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
-      method,
-      headers: {
-        'Authorization': this.authHeader,
-        'Content-Type': 'application/json'
-      },
-      body: body ? JSON.stringify(body) : undefined
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`MikroTik API error: ${response.status} - ${error}`);
+    try {
+      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+        method,
+        headers: {
+          'Authorization': this.authHeader,
+          'Content-Type': 'application/json'
+        },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`MikroTik API error: ${response.status} - ${error}`);
+      }
+
+      return response.json();
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    return response.json();
   }
 
   // System

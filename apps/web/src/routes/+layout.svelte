@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import Sidebar from '$lib/components/sidebar.svelte';
+	import { Toaster } from 'svelte-sonner';
 
 	let { children } = $props();
 </script>
@@ -25,6 +26,16 @@
 		</main>
 	</div>
 </div>
+
+<Toaster
+	position="top-center"
+	dir="rtl"
+	richColors
+	theme="dark"
+	toastOptions={{
+		style: 'font-family: Cairo, sans-serif;'
+	}}
+/>
 
 <style>
 	.app-wrapper {
