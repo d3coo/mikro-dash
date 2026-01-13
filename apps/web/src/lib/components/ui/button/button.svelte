@@ -1,5 +1,6 @@
 <script lang="ts" module>
   import { tv, type VariantProps } from 'tailwind-variants';
+  import type { HTMLButtonAttributes } from 'svelte/elements';
 
   export const buttonVariants = tv({
     base: 'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 gap-2',
@@ -27,11 +28,10 @@
 
   export type ButtonVariant = VariantProps<typeof buttonVariants>['variant'];
   export type ButtonSize = VariantProps<typeof buttonVariants>['size'];
-  export type ButtonProps = {
+  export type ButtonProps = HTMLButtonAttributes & {
     variant?: ButtonVariant;
     size?: ButtonSize;
-    class?: string;
-  } & Partial<HTMLButtonElement>;
+  };
 </script>
 
 <script lang="ts">
