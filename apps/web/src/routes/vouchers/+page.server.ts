@@ -1,6 +1,6 @@
 import type { PageServerLoad, Actions } from './$types';
 import { getMikroTikClient } from '$lib/server/services/settings';
-import { VOUCHER_PACKAGES, getPackageById } from '$lib/voucher-packages';
+import { getAllPackages, getPackageById } from '$lib/server/services/packages';
 import { fail } from '@sveltejs/kit';
 
 const PAGE_SIZE = 10;
@@ -17,14 +17,20 @@ interface MikroTikVoucher {
   uptime: string;
   status: 'available' | 'used' | 'exhausted';
   comment: string;
+  packageId: string;
+  packageName: string;
 }
 
 export const load: PageServerLoad = async ({ url }) => {
   const page = parseInt(url.searchParams.get('page') || '1', 10);
   const statusFilter = url.searchParams.get('status') || 'all';
+  const packageFilter = url.searchParams.get('package') || '';
+  const profileFilter = url.searchParams.get('profile') || '';
 
   let allVouchers: MikroTikVoucher[] = [];
   let routerConnected = false;
+  let profiles: string[] = [];
+  const packages = await getAllPackages();
 
   try {
     const client = await getMikroTikClient();
@@ -52,6 +58,9 @@ export const load: PageServerLoad = async ({ url }) => {
           status = 'used';
         }
 
+        // Find matching package by code prefix
+        const matchingPkg = packages.find(p => u.name.startsWith(p.codePrefix));
+
         return {
           id: u['.id'],
           name: u.name,
@@ -63,18 +72,33 @@ export const load: PageServerLoad = async ({ url }) => {
           bytesLimit,
           uptime,
           status,
-          comment: u.comment || ''
+          comment: u.comment || '',
+          packageId: matchingPkg?.id || '',
+          packageName: matchingPkg?.nameAr || ''
         };
       });
+
+    // Get unique profiles from vouchers
+    profiles = [...new Set(allVouchers.map(v => v.profile).filter(Boolean))];
   } catch (error) {
     console.error('Failed to connect to router:', error);
     routerConnected = false;
   }
 
-  // Apply status filter
-  const filteredVouchers = statusFilter === 'all'
+  // Apply filters
+  let filteredVouchers = statusFilter === 'all'
     ? allVouchers
     : allVouchers.filter(v => v.status === statusFilter);
+
+  // Apply package filter
+  if (packageFilter) {
+    filteredVouchers = filteredVouchers.filter(v => v.packageId === packageFilter);
+  }
+
+  // Apply profile filter
+  if (profileFilter) {
+    filteredVouchers = filteredVouchers.filter(v => v.profile === profileFilter);
+  }
 
   // Calculate pagination
   const totalItems = filteredVouchers.length;
@@ -97,9 +121,12 @@ export const load: PageServerLoad = async ({ url }) => {
     vouchers: paginatedVouchers,
     totalVouchers: totalItems,
     statusCounts,
-    packages: VOUCHER_PACKAGES,
+    packages,
+    profiles,
     routerConnected,
     currentFilter: statusFilter,
+    packageFilter,
+    profileFilter,
     pagination: {
       currentPage,
       totalPages,

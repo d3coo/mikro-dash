@@ -8,6 +8,13 @@
       "when": 1768302639091,
       "tag": "0000_fantastic_franklin_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1768424534498,
+      "tag": "0001_dusty_thaddeus_ross",
+      "breakpoints": true
     }
   ]
 }

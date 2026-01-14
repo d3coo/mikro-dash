@@ -17,6 +17,20 @@ export const settings = sqliteTable('settings', {
   value: text('value').notNull()
 });
 
+export const voucherPackages = sqliteTable('voucher_packages', {
+  id: text('id').primaryKey(), // e.g., "1.5GB", "3GB"
+  name: text('name').notNull(), // "1.5 GB"
+  nameAr: text('name_ar').notNull(), // Arabic name
+  bytes: integer('bytes').notNull(), // Data limit in bytes
+  priceLE: integer('price_le').notNull(), // Price in LE
+  profile: text('profile').notNull(), // MikroTik hotspot user profile name
+  server: text('server'), // MikroTik hotspot server name (restricts login to specific WiFi)
+  codePrefix: text('code_prefix').notNull(), // e.g., "G1", "G3" for voucher naming
+  sortOrder: integer('sort_order').notNull().default(0) // For ordering in UI
+});
+
 export type Voucher = typeof vouchers.$inferSelect;
 export type NewVoucher = typeof vouchers.$inferInsert;
 export type Setting = typeof settings.$inferSelect;
+export type VoucherPackage = typeof voucherPackages.$inferSelect;
+export type NewVoucherPackage = typeof voucherPackages.$inferInsert;

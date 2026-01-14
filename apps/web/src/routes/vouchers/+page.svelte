@@ -114,6 +114,42 @@
     goto(url.toString());
   }
 
+  function setPackageFilter(packageId: string) {
+    const url = new URL($page.url);
+    if (packageId) {
+      url.searchParams.set('package', packageId);
+    } else {
+      url.searchParams.delete('package');
+    }
+    url.searchParams.set('page', '1');
+    goto(url.toString());
+  }
+
+  function setProfileFilter(profile: string) {
+    const url = new URL($page.url);
+    if (profile) {
+      url.searchParams.set('profile', profile);
+    } else {
+      url.searchParams.delete('profile');
+    }
+    url.searchParams.set('page', '1');
+    goto(url.toString());
+  }
+
+  function clearFilters() {
+    const url = new URL($page.url);
+    url.searchParams.delete('package');
+    url.searchParams.delete('profile');
+    url.searchParams.set('status', 'all');
+    url.searchParams.set('page', '1');
+    goto(url.toString());
+  }
+
+  // Check if any filters are active
+  let hasActiveFilters = $derived(
+    data.packageFilter !== '' || data.profileFilter !== '' || data.currentFilter !== 'all'
+  );
+
   function toggleSelect(id: string) {
     if (selectedIds.includes(id)) {
       selectedIds = selectedIds.filter(i => i !== id);
@@ -260,6 +296,31 @@
             <option value="exhausted">منتهي ({data.statusCounts.exhausted})</option>
           </select>
         </div>
+
+        <div class="filter-group">
+          <select value={data.packageFilter} onchange={(e) => setPackageFilter(e.currentTarget.value)} class="select-modern text-sm">
+            <option value="">كل الباقات</option>
+            {#each data.packages as pkg}
+              <option value={pkg.id}>{pkg.nameAr}</option>
+            {/each}
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <select value={data.profileFilter} onchange={(e) => setProfileFilter(e.currentTarget.value)} class="select-modern text-sm">
+            <option value="">كل البروفايلات</option>
+            {#each data.profiles as profile}
+              <option value={profile}>{profile}</option>
+            {/each}
+          </select>
+        </div>
+
+        {#if hasActiveFilters}
+          <Button variant="ghost" size="sm" onclick={clearFilters} class="clear-filters-btn">
+            <X class="w-4 h-4" />
+            <span>مسح الفلاتر</span>
+          </Button>
+        {/if}
 
         {#if selectedIds.length > 0}
           <form
@@ -579,6 +640,14 @@
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+
+  .clear-filters-btn {
+    color: var(--color-danger) !important;
+  }
+
+  .clear-filters-btn:hover {
+    background: rgba(239, 68, 68, 0.1) !important;
   }
 
   .table-container {

@@ -1,8 +1,8 @@
 import { db } from '$lib/server/db';
-import { vouchers, type Voucher, type NewVoucher } from '$lib/server/db/schema';
+import { vouchers, type Voucher, type NewVoucher, type VoucherPackage } from '$lib/server/db/schema';
 import { eq, like } from 'drizzle-orm';
 import { getMikroTikClient, getSetting } from './settings';
-import { getPackageById, type VoucherPackage } from '$lib/voucher-packages';
+import { getPackageById } from './packages';
 
 /**
  * Generates a random password excluding confusing characters.
@@ -65,7 +65,11 @@ export async function createVouchers(
     // Try to sync to MikroTik first
     if (client) {
       try {
-        await client.createHotspotUser(id, password, pkg.profile, pkg.bytes);
+        await client.createHotspotUser(id, password, pkg.profile, {
+          limitBytes: pkg.bytes,
+          server: pkg.server || undefined,
+          comment: `${pkg.nameAr} - ${pkg.priceLE} LE`
+        });
         synced = true;
       } catch (error) {
         console.error(`Failed to sync voucher ${id} to MikroTik:`, error);
@@ -141,7 +145,11 @@ export async function syncVoucher(id: string): Promise<boolean> {
 
   try {
     const client = await getMikroTikClient();
-    await client.createHotspotUser(voucher.id, voucher.password, pkg.profile, pkg.bytes);
+    await client.createHotspotUser(voucher.id, voucher.password, pkg.profile, {
+      limitBytes: pkg.bytes,
+      server: pkg.server || undefined,
+      comment: `${pkg.nameAr} - ${pkg.priceLE} LE`
+    });
 
     // Update sync status in DB
     db.update(vouchers).set({ synced: true }).where(eq(vouchers.id, id)).run();

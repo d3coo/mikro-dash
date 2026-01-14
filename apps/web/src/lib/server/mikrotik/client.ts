@@ -7,7 +7,10 @@ import type {
   SystemResource,
   MikroTikFile,
   HotspotServerProfile,
-  Certificate
+  Certificate,
+  HotspotUserProfile,
+  HotspotCookie,
+  DhcpLease
 } from './types';
 
 export class MikroTikClient {
@@ -21,7 +24,7 @@ export class MikroTikClient {
     this.timeout = 5000; // 5 second timeout
   }
 
-  private async request<T>(
+  async request<T>(
     endpoint: string,
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'GET',
     body?: Record<string, unknown>
@@ -74,15 +77,25 @@ export class MikroTikClient {
     name: string,
     password: string,
     profile: string,
-    limitBytes?: number
+    options?: {
+      limitBytes?: number;
+      server?: string;
+      comment?: string;
+    }
   ): Promise<void> {
     const body: Record<string, unknown> = {
       name,
       password,
       profile
     };
-    if (limitBytes) {
-      body['limit-bytes-total'] = limitBytes.toString();
+    if (options?.limitBytes) {
+      body['limit-bytes-total'] = options.limitBytes.toString();
+    }
+    if (options?.server) {
+      body.server = options.server;
+    }
+    if (options?.comment) {
+      body.comment = options.comment;
     }
     await this.request('/ip/hotspot/user/add', 'POST', body);
   }
@@ -264,5 +277,72 @@ export class MikroTikClient {
     const decoded = atob(this.authHeader.replace('Basic ', ''));
     const [username, password] = decoded.split(':');
     return { username, password };
+  }
+
+  // Hotspot User Profiles (used for voucher packages)
+  async getHotspotUserProfiles(): Promise<HotspotUserProfile[]> {
+    return this.request<HotspotUserProfile[]>('/ip/hotspot/user/profile');
+  }
+
+  async createHotspotUserProfile(
+    name: string,
+    options?: {
+      rateLimit?: string;
+      sessionTimeout?: string;
+      sharedUsers?: string;
+    }
+  ): Promise<void> {
+    const body: Record<string, unknown> = { name };
+    if (options?.rateLimit) body['rate-limit'] = options.rateLimit;
+    if (options?.sessionTimeout) body['session-timeout'] = options.sessionTimeout;
+    if (options?.sharedUsers) body['shared-users'] = options.sharedUsers;
+    await this.request('/ip/hotspot/user/profile/add', 'POST', body);
+  }
+
+  async updateHotspotUserProfile(
+    id: string,
+    updates: {
+      name?: string;
+      rateLimit?: string;
+      sessionTimeout?: string;
+      sharedUsers?: string;
+      macCookieTimeout?: string;
+    }
+  ): Promise<void> {
+    const body: Record<string, unknown> = {};
+    // Only send non-empty values to MikroTik
+    if (updates.name && updates.name.trim()) body.name = updates.name.trim();
+    if (updates.rateLimit && updates.rateLimit.trim()) body['rate-limit'] = updates.rateLimit.trim();
+    if (updates.sessionTimeout && updates.sessionTimeout.trim()) body['session-timeout'] = updates.sessionTimeout.trim();
+    if (updates.sharedUsers && updates.sharedUsers.trim()) body['shared-users'] = updates.sharedUsers.trim();
+    if (updates.macCookieTimeout && updates.macCookieTimeout.trim()) body['mac-cookie-timeout'] = updates.macCookieTimeout.trim();
+    await this.request(`/ip/hotspot/user/profile/${id}`, 'PATCH', body);
+  }
+
+  async deleteHotspotUserProfile(id: string): Promise<void> {
+    await this.request('/ip/hotspot/user/profile/remove', 'POST', {
+      '.id': id
+    });
+  }
+
+  // Hotspot Cookies (MAC bindings for session persistence)
+  async getHotspotCookies(): Promise<HotspotCookie[]> {
+    return this.request<HotspotCookie[]>('/ip/hotspot/cookie');
+  }
+
+  // DHCP Leases (for device names)
+  async getDhcpLeases(): Promise<DhcpLease[]> {
+    return this.request<DhcpLease[]>('/ip/dhcp-server/lease');
+  }
+
+  // Get hotspot user by name (for password recovery)
+  async getHotspotUserByName(name: string): Promise<HotspotUser | undefined> {
+    const users = await this.request<HotspotUser[]>(`/ip/hotspot/user?name=${encodeURIComponent(name)}`);
+    return users[0];
+  }
+
+  // Hotspot Servers (for restricting user access to specific WiFi networks)
+  async getHotspotServers(): Promise<Array<{ '.id': string; name: string; interface: string; profile: string; disabled: string }>> {
+    return this.request('/ip/hotspot');
   }
 }

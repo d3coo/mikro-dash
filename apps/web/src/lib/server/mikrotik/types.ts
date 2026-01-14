@@ -86,3 +86,35 @@ export interface Certificate {
   issued?: string;
   status?: string;
 }
+
+export interface HotspotUserProfile {
+  '.id': string;
+  name: string;
+  'session-timeout'?: string;
+  'idle-timeout'?: string;
+  'keepalive-timeout'?: string;
+  'status-autorefresh'?: string;
+  'shared-users'?: string;
+  'rate-limit'?: string;
+  'mac-cookie-timeout'?: string;
+  'address-pool'?: string;
+  'transparent-proxy'?: string;
+  'open-status-page'?: string;
+  'advertise'?: string;
+}
+
+export interface HotspotCookie {
+  '.id': string;
+  user: string;
+  'mac-address': string;
+  'expires-in'?: string;
+}
+
+export interface DhcpLease {
+  '.id': string;
+  address: string;
+  'mac-address': string;
+  'host-name'?: string;
+  status?: string;
+  'last-seen'?: string;
+}
