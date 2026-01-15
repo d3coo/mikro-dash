@@ -160,9 +160,9 @@ export async function createVouchers(packageId: string, quantity: number): Promi
     // Generate a fully random 6-character code used as BOTH username AND password
     const code = await generateVoucherCode(client);
 
-    // Note: bytes limit comes from the MikroTik profile, not stored locally
     // Comment format: pkg:ID|Display text (for package matching)
     await client.createHotspotUser(code, code, pkg.profile, {
+      limitBytes: pkg.bytesLimit || undefined,
       server: pkg.server || undefined,
       comment: `pkg:${pkg.id}|${pkg.nameAr} - ${pkg.priceLE} LE`
     });

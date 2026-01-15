@@ -6,6 +6,8 @@ export interface VoucherUser {
   macAddress: string;
   ipAddress: string;
   uptime: string;
+  sessionTimeout: string;  // e.g., "12h" from profile
+  timeRemaining: string;   // Calculated: sessionTimeout - uptime
   bytesIn: number;
   bytesOut: number;
   voucherId: string;
@@ -42,6 +44,46 @@ export interface UsersPageData {
 }
 
 /**
+ * Parse MikroTik time format (e.g., "1d2h3m4s") to seconds
+ */
+function parseTimeToSeconds(time: string): number {
+  if (!time || time === 'none') return 0;
+
+  let seconds = 0;
+  const weeks = time.match(/(\d+)w/);
+  const days = time.match(/(\d+)d/);
+  const hours = time.match(/(\d+)h/);
+  const minutes = time.match(/(\d+)m/);
+  const secs = time.match(/(\d+)s/);
+
+  if (weeks) seconds += parseInt(weeks[1], 10) * 7 * 24 * 3600;
+  if (days) seconds += parseInt(days[1], 10) * 24 * 3600;
+  if (hours) seconds += parseInt(hours[1], 10) * 3600;
+  if (minutes) seconds += parseInt(minutes[1], 10) * 60;
+  if (secs) seconds += parseInt(secs[1], 10);
+
+  return seconds;
+}
+
+/**
+ * Format seconds to Arabic time string
+ */
+function formatSecondsToArabic(totalSeconds: number): string {
+  if (totalSeconds <= 0) return 'انتهى';
+
+  const days = Math.floor(totalSeconds / (24 * 3600));
+  const hours = Math.floor((totalSeconds % (24 * 3600)) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+  const parts = [];
+  if (days > 0) parts.push(`${days}ي`);
+  if (hours > 0) parts.push(`${hours}س`);
+  if (minutes > 0 || parts.length === 0) parts.push(`${minutes}د`);
+
+  return parts.join(' ');
+}
+
+/**
  * Get comprehensive users data for the Users page
  * Combines wireless registrations with active hotspot sessions to partition:
  * - Voucher users: devices connected AND authenticated with a voucher
@@ -51,16 +93,22 @@ export async function getUsersPageData(): Promise<UsersPageData> {
   const client = getMikroTikClient();
 
   // Fetch all data in parallel from MikroTik
-  const [registrations, activeSessions, hotspotUsers, dhcpLeases, wirelessInterfaces] = await Promise.all([
+  const [registrations, activeSessions, hotspotUsers, dhcpLeases, wirelessInterfaces, hotspotProfiles] = await Promise.all([
     client.getWirelessRegistrations(),
     client.getActiveSessions(),
     client.getHotspotUsers(),
     client.getDhcpLeases(),
-    client.getWirelessInterfaces()
+    client.getWirelessInterfaces(),
+    client.getHotspotUserProfiles()
   ]);
 
   // Get local package metadata
   const packages = getPackages();
+
+  // Build profile lookup map for session timeout
+  const profileByName = new Map(
+    hotspotProfiles.map(p => [p.name, p])
+  );
 
   // Build lookup maps for efficient joining
   const sessionsByMac = new Map(
@@ -104,11 +152,21 @@ export async function getUsersPageData(): Promise<UsersPageData> {
       const sessionBytesOut = parseInt(session['bytes-out'] || '0', 10);
       const bytesUsed = sessionBytesIn + sessionBytesOut;
 
+      // Get session timeout from profile
+      const profile = profileByName.get(user?.profile || 'default');
+      const sessionTimeout = profile?.['session-timeout'] || 'none';
+      const uptimeSeconds = parseTimeToSeconds(session.uptime);
+      const timeoutSeconds = parseTimeToSeconds(sessionTimeout);
+      const remainingSeconds = timeoutSeconds > 0 ? timeoutSeconds - uptimeSeconds : 0;
+      const timeRemaining = timeoutSeconds > 0 ? formatSecondsToArabic(remainingSeconds) : 'غير محدد';
+
       voucherUsers.push({
         sessionId: session['.id'],
         macAddress: reg['mac-address'],
         ipAddress: session.address,
         uptime: session.uptime,
+        sessionTimeout,
+        timeRemaining,
         bytesIn: sessionBytesIn,
         bytesOut: sessionBytesOut,
         voucherId: user?.['.id'] || '',

@@ -13,7 +13,8 @@ export const packages = sqliteTable('packages', {
   name: text('name').notNull(),           // English name: "3 GB"
   nameAr: text('name_ar').notNull(),      // Arabic name: "٣ جيجا"
   priceLE: integer('price_le').notNull(), // Price in Egyptian Pounds
-  codePrefix: text('code_prefix').notNull(), // Voucher code prefix: "G3"
+  bytesLimit: integer('bytes_limit').notNull().default(0), // Data limit in bytes (0 = unlimited)
+  codePrefix: text('code_prefix').notNull(), // Voucher code prefix: "G3" (deprecated)
   profile: text('profile').notNull(),     // MikroTik profile name (links to router)
   server: text('server'),                 // Optional: restrict to specific hotspot server
   sortOrder: integer('sort_order').notNull().default(0)

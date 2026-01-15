@@ -947,6 +947,17 @@ body {
   gap: 6px;
 }
 
+.cell-time-remaining {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-success);
+}
+
+.cell-time-remaining.warning {
+  color: var(--color-danger);
+}
+
 .cell-usage {
   display: flex;
   flex-direction: column;

@@ -264,6 +264,7 @@
               <th>IP</th>
               <th>الاستهلاك</th>
               <th>وقت الاتصال</th>
+              <th>الوقت المتبقي</th>
               <th>الإجراءات</th>
             </tr>
           </thead>
@@ -320,6 +321,12 @@
                   <div class="cell-uptime">
                     <Clock class="w-4 h-4 text-primary-light" />
                     <span>{formatUptime(user.uptime)}</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="cell-time-remaining" class:warning={user.timeRemaining === 'انتهى'}>
+                    <Clock class="w-4 h-4" />
+                    <span>{user.timeRemaining}</span>
                   </div>
                 </td>
                 <td>

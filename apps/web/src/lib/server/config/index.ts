@@ -116,6 +116,7 @@ export function updatePackage(id: string, updates: Partial<Omit<Package, 'id'>>)
   if (updates.name !== undefined) setData.name = updates.name;
   if (updates.nameAr !== undefined) setData.nameAr = updates.nameAr;
   if (updates.priceLE !== undefined) setData.priceLE = updates.priceLE;
+  if (updates.bytesLimit !== undefined) setData.bytesLimit = updates.bytesLimit;
   if (updates.profile !== undefined) setData.profile = updates.profile;
   if (updates.server !== undefined) setData.server = updates.server;
   if (updates.sortOrder !== undefined) setData.sortOrder = updates.sortOrder;

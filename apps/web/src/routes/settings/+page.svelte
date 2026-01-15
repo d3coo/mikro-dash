@@ -8,7 +8,7 @@
   let settings = $state({ ...data.settings });
   let activeTab = $state<'general' | 'packages' | 'profiles'>('general');
 
-  // Package form state (metadata only - bytes come from MikroTik profile)
+  // Package form state
   let showPackageForm = $state(false);
   let editingPackage = $state<typeof data.packages[0] | null>(null);
   let packageForm = $state({
@@ -16,6 +16,7 @@
     name: '',
     nameAr: '',
     priceLE: 0,
+    bytesLimitGB: 0, // Data limit in GB
     profile: 'default',
     server: '', // Hotspot server to restrict access to specific WiFi
     sortOrder: 0
@@ -34,14 +35,16 @@
   });
 
   function resetPackageForm() {
-    packageForm = { id: '', name: '', nameAr: '', priceLE: 0, profile: 'default', server: '', sortOrder: 0 };
+    packageForm = { id: '', name: '', nameAr: '', priceLE: 0, bytesLimitGB: 0, profile: 'default', server: '', sortOrder: 0 };
     editingPackage = null;
     showPackageForm = false;
   }
 
   function editPackage(pkg: typeof data.packages[0]) {
     editingPackage = pkg;
-    packageForm = { ...pkg, server: pkg.server || '' };
+    // Convert bytes to GB for the form
+    const bytesLimitGB = pkg.bytesLimit ? pkg.bytesLimit / (1024 * 1024 * 1024) : 0;
+    packageForm = { ...pkg, bytesLimitGB, server: pkg.server || '' };
     showPackageForm = true;
   }
 
@@ -306,6 +309,20 @@
               />
             </div>
             <div class="form-group">
+              <label for="pkg-bytes">حد البيانات (جيجا)</label>
+              <input
+                type="number"
+                id="pkg-bytes"
+                name="bytesLimitGB"
+                bind:value={packageForm.bytesLimitGB}
+                class="input-modern"
+                placeholder="3"
+                step="0.5"
+                min="0"
+              />
+              <span class="form-hint">0 = غير محدود</span>
+            </div>
+            <div class="form-group">
               <label for="pkg-profile">البروفايل</label>
               <select id="pkg-profile" name="profile" bind:value={packageForm.profile} class="input-modern">
                 {#each data.profiles as profile}
@@ -355,7 +372,7 @@
             <div class="item-info">
               <span class="item-name">{pkg.nameAr}</span>
               <span class="item-details">
-                {pkg.priceLE} ج.م | {pkg.profile}
+                {pkg.priceLE} ج.م | {pkg.bytesLimit ? (pkg.bytesLimit / (1024 * 1024 * 1024)).toFixed(1) + ' جيجا' : 'غير محدود'} | {pkg.profile}
                 {#if pkg.server}
                   | <span class="tag tag-primary">{pkg.server}</span>
                 {/if}

@@ -69,13 +69,15 @@ export const actions: Actions = {
     return { testResult: result };
   },
 
-  // Package actions (metadata only - bytes come from MikroTik profile)
+  // Package actions
   createPackage: async ({ request }) => {
     const formData = await request.formData();
     const id = formData.get('id') as string;
     const name = formData.get('name') as string;
     const nameAr = formData.get('nameAr') as string;
     const priceLE = parseInt(formData.get('priceLE') as string, 10);
+    const bytesLimitGB = parseFloat(formData.get('bytesLimitGB') as string) || 0;
+    const bytesLimit = Math.round(bytesLimitGB * 1024 * 1024 * 1024); // Convert GB to bytes
     const profile = formData.get('profile') as string;
     const server = formData.get('server') as string || null;
     const sortOrder = parseInt(formData.get('sortOrder') as string, 10) || 0;
@@ -85,7 +87,7 @@ export const actions: Actions = {
     }
 
     try {
-      createPackage({ id, name, nameAr, priceLE, profile, server, codePrefix: '', sortOrder });
+      createPackage({ id, name, nameAr, priceLE, bytesLimit, profile, server, codePrefix: '', sortOrder });
       return { packageSuccess: true };
     } catch (error) {
       console.error('Create package error:', error);
@@ -99,6 +101,8 @@ export const actions: Actions = {
     const name = formData.get('name') as string;
     const nameAr = formData.get('nameAr') as string;
     const priceLE = parseInt(formData.get('priceLE') as string, 10);
+    const bytesLimitGB = parseFloat(formData.get('bytesLimitGB') as string) || 0;
+    const bytesLimit = Math.round(bytesLimitGB * 1024 * 1024 * 1024); // Convert GB to bytes
     const profile = formData.get('profile') as string;
     const server = formData.get('server') as string || null;
     const sortOrder = parseInt(formData.get('sortOrder') as string, 10) || 0;
@@ -108,7 +112,7 @@ export const actions: Actions = {
     }
 
     try {
-      updatePackage(id, { name, nameAr, priceLE, profile, server, sortOrder });
+      updatePackage(id, { name, nameAr, priceLE, bytesLimit, profile, server, sortOrder });
       return { packageSuccess: true };
     } catch (error) {
       console.error('Update package error:', error);
