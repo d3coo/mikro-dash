@@ -5,45 +5,41 @@ import * as schema from './schema';
 const sqlite = new Database('data.db');
 export const db = drizzle(sqlite, { schema });
 
-// Initialize default settings
+// Default settings
 const defaultSettings = [
   { key: 'mikrotik_host', value: '192.168.1.109' },
   { key: 'mikrotik_user', value: 'admin' },
   { key: 'mikrotik_pass', value: '' },
-  { key: 'hotspot_server', value: 'guest-hotspot' },
-  { key: 'voucher_prefix', value: 'ABO' },
-  { key: 'business_name', value: 'AboYassen WiFi' },
-  { key: 'language', value: 'ar' },
-  { key: 'theme', value: 'light' }
+  { key: 'business_name', value: 'AboYassen WiFi' }
+];
+
+// Default packages (metadata only - bytes come from MikroTik profiles)
+const defaultPackages = [
+  { id: '1.5GB', name: '1.5 GB', nameAr: '١.٥ جيجا', priceLE: 5, codePrefix: 'G1', profile: 'aboyassen-users', sortOrder: 1 },
+  { id: '3GB', name: '3 GB', nameAr: '٣ جيجا', priceLE: 10, codePrefix: 'G3', profile: 'aboyassen-users', sortOrder: 2 },
+  { id: '5GB', name: '5 GB', nameAr: '٥ جيجا', priceLE: 15, codePrefix: 'G5', profile: 'aboyassen-users', sortOrder: 3 },
+  { id: '10GB', name: '10 GB', nameAr: '١٠ جيجا', priceLE: 30, codePrefix: 'G10', profile: 'aboyassen-users', sortOrder: 4 }
 ];
 
 export function initializeDb() {
-  // Create tables if not exist
+  // Create tables
   sqlite.exec(`
-    CREATE TABLE IF NOT EXISTS vouchers (
-      id TEXT PRIMARY KEY,
-      password TEXT NOT NULL,
-      package TEXT NOT NULL,
-      price_le INTEGER NOT NULL,
-      bytes_limit INTEGER NOT NULL,
-      status TEXT NOT NULL DEFAULT 'available',
-      synced INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      used_at TEXT
-    );
-
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
-  `);
 
-  // Add synced column if it doesn't exist (migration for existing databases)
-  try {
-    sqlite.exec(`ALTER TABLE vouchers ADD COLUMN synced INTEGER NOT NULL DEFAULT 0`);
-  } catch {
-    // Column already exists, ignore error
-  }
+    CREATE TABLE IF NOT EXISTS packages (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      name_ar TEXT NOT NULL,
+      price_le INTEGER NOT NULL,
+      code_prefix TEXT NOT NULL,
+      profile TEXT NOT NULL,
+      server TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+  `);
 
   // Insert default settings if not exist
   const insertSetting = sqlite.prepare(
@@ -51,6 +47,14 @@ export function initializeDb() {
   );
   for (const setting of defaultSettings) {
     insertSetting.run(setting.key, setting.value);
+  }
+
+  // Insert default packages if not exist
+  const insertPackage = sqlite.prepare(
+    'INSERT OR IGNORE INTO packages (id, name, name_ar, price_le, code_prefix, profile, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  );
+  for (const pkg of defaultPackages) {
+    insertPackage.run(pkg.id, pkg.name, pkg.nameAr, pkg.priceLE, pkg.codePrefix, pkg.profile, pkg.sortOrder);
   }
 }
 

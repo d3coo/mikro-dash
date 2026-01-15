@@ -8,14 +8,13 @@
   let settings = $state({ ...data.settings });
   let activeTab = $state<'general' | 'packages' | 'profiles'>('general');
 
-  // Package form state
+  // Package form state (metadata only - bytes come from MikroTik profile)
   let showPackageForm = $state(false);
   let editingPackage = $state<typeof data.packages[0] | null>(null);
   let packageForm = $state({
     id: '',
     name: '',
     nameAr: '',
-    bytes: 0,
     priceLE: 0,
     profile: 'default',
     server: '', // Hotspot server to restrict access to specific WiFi
@@ -36,7 +35,7 @@
   });
 
   function resetPackageForm() {
-    packageForm = { id: '', name: '', nameAr: '', bytes: 0, priceLE: 0, profile: 'default', server: '', codePrefix: '', sortOrder: 0 };
+    packageForm = { id: '', name: '', nameAr: '', priceLE: 0, profile: 'default', server: '', codePrefix: '', sortOrder: 0 };
     editingPackage = null;
     showPackageForm = false;
   }
@@ -66,13 +65,6 @@
     showProfileForm = true;
   }
 
-  // Helper to format bytes
-  function formatBytes(bytes: number): string {
-    if (bytes >= 1073741824) return `${(bytes / 1073741824).toFixed(1)} GB`;
-    if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(0)} MB`;
-    return `${bytes} B`;
-  }
-
   // Helper to format time duration (MikroTik format to Arabic)
   function formatDuration(duration: string | undefined): string {
     if (!duration) return 'غير محدد';
@@ -91,28 +83,6 @@
     };
     return map[duration] || duration;
   }
-
-  // Helper to convert GB to bytes
-  function gbToBytes(gb: number): number {
-    return Math.round(gb * 1073741824);
-  }
-
-  // Helper to convert bytes to GB
-  function bytesToGb(bytes: number): number {
-    return bytes / 1073741824;
-  }
-
-  // Track the displayed GB value separately
-  let packageGb = $state(0);
-
-  // Update GB when editing a package
-  $effect(() => {
-    if (editingPackage) {
-      packageGb = bytesToGb(editingPackage.bytes);
-    } else {
-      packageGb = 0;
-    }
-  });
 </script>
 
 <div class="settings-page">
@@ -190,7 +160,7 @@
               type="text"
               id="mikrotik_host"
               name="mikrotik_host"
-              bind:value={settings.mikrotik_host}
+              bind:value={settings.mikrotik.host}
               class="input-modern"
               placeholder="192.168.1.109"
             />
@@ -202,7 +172,7 @@
               type="text"
               id="mikrotik_user"
               name="mikrotik_user"
-              bind:value={settings.mikrotik_user}
+              bind:value={settings.mikrotik.user}
               class="input-modern"
               placeholder="admin"
             />
@@ -214,23 +184,12 @@
               type="password"
               id="mikrotik_pass"
               name="mikrotik_pass"
-              bind:value={settings.mikrotik_pass}
+              bind:value={settings.mikrotik.pass}
               class="input-modern"
               autocomplete="off"
             />
           </div>
 
-          <div class="form-group">
-            <label for="hotspot_server">سيرفر Hotspot</label>
-            <input
-              type="text"
-              id="hotspot_server"
-              name="hotspot_server"
-              bind:value={settings.hotspot_server}
-              class="input-modern"
-              placeholder="guest-hotspot"
-            />
-          </div>
         </div>
 
         <div class="section-footer">
@@ -255,25 +214,12 @@
               type="text"
               id="business_name"
               name="business_name"
-              bind:value={settings.business_name}
+              bind:value={settings.business.name}
               class="input-modern"
               placeholder="AboYassen WiFi"
             />
           </div>
 
-          <div class="form-group">
-            <label for="voucher_prefix">بادئة الكروت</label>
-            <input
-              type="text"
-              id="voucher_prefix"
-              name="voucher_prefix"
-              bind:value={settings.voucher_prefix}
-              class="input-modern"
-              placeholder="ABO"
-              maxlength="5"
-            />
-            <span class="form-hint">الحد الأقصى 5 أحرف</span>
-          </div>
         </div>
       </section>
 
@@ -350,24 +296,6 @@
               />
             </div>
             <div class="form-group">
-              <label for="pkg-gb">الحجم (جيجا)</label>
-              <input
-                type="number"
-                id="pkg-gb"
-                step="0.5"
-                min="0"
-                bind:value={packageGb}
-                oninput={(e) => {
-                  const gb = parseFloat(e.currentTarget.value) || 0;
-                  packageGb = gb;
-                  packageForm.bytes = gbToBytes(gb);
-                }}
-                class="input-modern"
-                placeholder="3"
-              />
-              <input type="hidden" name="bytes" value={packageForm.bytes} />
-            </div>
-            <div class="form-group">
               <label for="pkg-price">السعر (جنيه)</label>
               <input
                 type="number"
@@ -440,19 +368,19 @@
             <div class="item-info">
               <span class="item-name">{pkg.nameAr}</span>
               <span class="item-details">
-                {formatBytes(pkg.bytes)} | {pkg.priceLE} ج.م | {pkg.codePrefix}
+                {pkg.priceLE} ج.م | {pkg.profile} | {pkg.codePrefix}
                 {#if pkg.server}
-                  | <span class="server-badge">{pkg.server}</span>
+                  | <span class="tag tag-primary">{pkg.server}</span>
                 {/if}
               </span>
             </div>
             <div class="item-actions">
-              <button class="icon-btn" onclick={() => editPackage(pkg)} title="تعديل">
+              <button class="icon-btn icon-btn-md icon-btn-ghost" onclick={() => editPackage(pkg)} title="تعديل">
                 <Edit class="w-4 h-4" />
               </button>
               <form method="POST" action="?/deletePackage" use:enhance class="inline-form">
                 <input type="hidden" name="id" value={pkg.id} />
-                <button type="submit" class="icon-btn danger" title="حذف">
+                <button type="submit" class="icon-btn icon-btn-md icon-btn-danger" title="حذف">
                   <Trash2 class="w-4 h-4" />
                 </button>
               </form>
@@ -608,12 +536,12 @@
               </span>
             </div>
             <div class="item-actions">
-              <button class="icon-btn" onclick={() => editProfile(profile)} title="تعديل">
+              <button class="icon-btn icon-btn-md icon-btn-ghost" onclick={() => editProfile(profile)} title="تعديل">
                 <Edit class="w-4 h-4" />
               </button>
               <form method="POST" action="?/deleteProfile" use:enhance class="inline-form">
                 <input type="hidden" name="id" value={profile.id} />
-                <button type="submit" class="icon-btn danger" title="حذف">
+                <button type="submit" class="icon-btn icon-btn-md icon-btn-danger" title="حذف">
                   <Trash2 class="w-4 h-4" />
                 </button>
               </form>
@@ -684,16 +612,6 @@
     color: var(--color-text-muted);
   }
 
-  .server-badge {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 4px;
-    background: rgba(8, 145, 178, 0.15);
-    color: var(--color-primary-light);
-    font-size: 11px;
-    font-weight: 500;
-  }
-
   .section-footer {
     margin-top: 20px;
     padding-top: 16px;
@@ -728,7 +646,7 @@
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--animation-duration-normal);
   }
 
   .tab-btn:hover {
@@ -800,32 +718,6 @@
   .item-actions {
     display: flex;
     gap: 8px;
-  }
-
-  .icon-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
-    border: 1px solid var(--color-border);
-    background: transparent;
-    color: var(--color-text-secondary);
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-
-  .icon-btn:hover {
-    background: rgba(8, 145, 178, 0.1);
-    border-color: rgba(8, 145, 178, 0.3);
-    color: var(--color-primary-light);
-  }
-
-  .icon-btn.danger:hover {
-    background: rgba(239, 68, 68, 0.1);
-    border-color: rgba(239, 68, 68, 0.3);
-    color: #ef4444;
   }
 
   .inline-form {

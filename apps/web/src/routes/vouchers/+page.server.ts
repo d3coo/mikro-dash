@@ -1,25 +1,10 @@
 import type { PageServerLoad, Actions } from './$types';
-import { getMikroTikClient } from '$lib/server/services/settings';
-import { getAllPackages, getPackageById } from '$lib/server/services/packages';
 import { fail } from '@sveltejs/kit';
+import { getVouchers, createVouchers, deleteVouchers, type Voucher } from '$lib/server/services/vouchers';
+import { getMikroTikClient } from '$lib/server/services/mikrotik';
+import { getPackages } from '$lib/server/config';
 
 const PAGE_SIZE = 10;
-
-interface MikroTikVoucher {
-  id: string;           // MikroTik internal ID (.id)
-  name: string;         // Voucher code/username
-  password: string;
-  profile: string;
-  bytesIn: number;
-  bytesOut: number;
-  bytesTotal: number;
-  bytesLimit: number;
-  uptime: string;
-  status: 'available' | 'used' | 'exhausted';
-  comment: string;
-  packageId: string;
-  packageName: string;
-}
 
 export const load: PageServerLoad = async ({ url }) => {
   const page = parseInt(url.searchParams.get('page') || '1', 10);
@@ -27,56 +12,17 @@ export const load: PageServerLoad = async ({ url }) => {
   const packageFilter = url.searchParams.get('package') || '';
   const profileFilter = url.searchParams.get('profile') || '';
 
-  let allVouchers: MikroTikVoucher[] = [];
+  let allVouchers: Voucher[] = [];
   let routerConnected = false;
   let profiles: string[] = [];
-  const packages = await getAllPackages();
+  const packages = getPackages();
 
   try {
-    const client = await getMikroTikClient();
+    const client = getMikroTikClient();
     await client.getSystemResources(); // Test connection
     routerConnected = true;
 
-    // Get all hotspot users from MikroTik
-    const hotspotUsers = await client.getHotspotUsers();
-
-    // Transform to voucher format, filter out system users
-    allVouchers = hotspotUsers
-      .filter(u => !u.name.includes('default') && u.name !== 'admin')
-      .map(u => {
-        const bytesIn = parseInt(u['bytes-in'] || '0', 10);
-        const bytesOut = parseInt(u['bytes-out'] || '0', 10);
-        const bytesTotal = bytesIn + bytesOut;
-        const bytesLimit = parseInt(u['limit-bytes-total'] || '0', 10);
-        const uptime = u.uptime || '0s';
-
-        // Determine status
-        let status: 'available' | 'used' | 'exhausted' = 'available';
-        if (bytesLimit > 0 && bytesTotal >= bytesLimit) {
-          status = 'exhausted';
-        } else if (uptime !== '0s' || bytesTotal > 0) {
-          status = 'used';
-        }
-
-        // Find matching package by code prefix
-        const matchingPkg = packages.find(p => u.name.startsWith(p.codePrefix));
-
-        return {
-          id: u['.id'],
-          name: u.name,
-          password: u.password || '',
-          profile: u.profile,
-          bytesIn,
-          bytesOut,
-          bytesTotal,
-          bytesLimit,
-          uptime,
-          status,
-          comment: u.comment || '',
-          packageId: matchingPkg?.id || '',
-          packageName: matchingPkg?.nameAr || ''
-        };
-      });
+    allVouchers = await getVouchers();
 
     // Get unique profiles from vouchers
     profiles = [...new Set(allVouchers.map(v => v.profile).filter(Boolean))];
@@ -90,12 +36,10 @@ export const load: PageServerLoad = async ({ url }) => {
     ? allVouchers
     : allVouchers.filter(v => v.status === statusFilter);
 
-  // Apply package filter
   if (packageFilter) {
     filteredVouchers = filteredVouchers.filter(v => v.packageId === packageFilter);
   }
 
-  // Apply profile filter
   if (profileFilter) {
     filteredVouchers = filteredVouchers.filter(v => v.profile === profileFilter);
   }
@@ -137,50 +81,6 @@ export const load: PageServerLoad = async ({ url }) => {
   };
 };
 
-// Characters for generating codes (excluding confusing ones like 0/O, 1/l/I)
-const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-
-// Generate random alphanumeric string
-function generateRandomCode(length: number): string {
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += CHARS.charAt(Math.floor(Math.random() * CHARS.length));
-  }
-  return result;
-}
-
-// Generate 4-character alphanumeric password (letters + numbers, mixed case)
-function generatePassword(): string {
-  return generateRandomCode(4);
-}
-
-// Generate unique voucher username (format: G3XX, G1XX where XX is random alphanumeric)
-async function generateVoucherId(client: any, codePrefix: string): Promise<string> {
-  const users = await client.getHotspotUsers();
-  const existingNames = new Set(users.map((u: any) => u.name));
-
-  // Generate unique code
-  let attempts = 0;
-  while (attempts < 100) {
-    const code = `${codePrefix}${generateRandomCode(2)}`;
-    if (!existingNames.has(code)) {
-      return code;
-    }
-    attempts++;
-  }
-
-  // Fallback: use 3 characters if 2 chars are exhausted
-  while (attempts < 200) {
-    const code = `${codePrefix}${generateRandomCode(3)}`;
-    if (!existingNames.has(code)) {
-      return code;
-    }
-    attempts++;
-  }
-
-  throw new Error('Could not generate unique voucher ID');
-}
-
 export const actions: Actions = {
   generate: async ({ request }) => {
     const formData = await request.formData();
@@ -195,27 +95,9 @@ export const actions: Actions = {
       return fail(400, { error: 'الكمية يجب أن تكون بين 1 و 100' });
     }
 
-    const pkg = getPackageById(packageId);
-    if (!pkg) {
-      return fail(400, { error: 'الباقة غير صالحة' });
-    }
-
     try {
-      const client = await getMikroTikClient();
-
-      let created = 0;
-      for (let i = 0; i < quantity; i++) {
-        // Generate username like G301, G302, G101, G102, etc.
-        const username = await generateVoucherId(client, pkg.codePrefix);
-        // Generate 4-digit password like 1234, 5678, etc.
-        const password = generatePassword();
-
-        // Create directly in MikroTik
-        await client.createHotspotUser(username, password, pkg.profile, pkg.bytes);
-        created++;
-      }
-
-      return { success: true, created };
+      const result = await createVouchers(packageId, quantity);
+      return { success: true, created: result.created };
     } catch (error) {
       console.error('Generate vouchers error:', error);
       return fail(500, { error: 'فشل في إنشاء الكروت - تأكد من اتصال الراوتر' });
@@ -231,14 +113,8 @@ export const actions: Actions = {
     }
 
     try {
-      const client = await getMikroTikClient();
-
-      // Delete each voucher from MikroTik using their .id
-      for (const id of ids) {
-        await client.deleteHotspotUser(id);
-      }
-
-      return { success: true, deleted: ids.length };
+      const result = await deleteVouchers(ids);
+      return { success: true, deleted: result.deleted };
     } catch (error) {
       console.error('Delete vouchers error:', error);
       return fail(500, { error: 'فشل في حذف الكروت' });

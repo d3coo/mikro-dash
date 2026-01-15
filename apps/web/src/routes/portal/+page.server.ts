@@ -1,7 +1,7 @@
 import type { PageServerLoad, Actions } from './$types';
-import { getMikroTikClient } from '$lib/server/services/settings';
 import { fail } from '@sveltejs/kit';
 import { readdir } from 'fs/promises';
+import { getMikroTikClient } from '$lib/server/services/mikrotik';
 
 const HOTSPOT_FILES = ['login.html', 'logout.html', 'status.html', 'redirect.html', 'error.html'];
 const LOCAL_HOTSPOT_DIR = 'static/hotspot';
@@ -39,7 +39,7 @@ export const load: PageServerLoad = async () => {
   let routerVersion = '';
 
   try {
-    const client = await getMikroTikClient();
+    const client = getMikroTikClient();
     const resources = await client.getSystemResources();
     routerConnected = true;
     routerVersion = resources.version;
@@ -81,14 +81,11 @@ export const load: PageServerLoad = async () => {
         status: c.status
       }));
     } catch {
-      // Certificates endpoint might not be available
       certificates = [];
     }
 
     // Check each required hotspot file
-    // MikroTik stores files with "flash/" prefix, e.g., "flash/hotspot/login.html"
     routerFiles = HOTSPOT_FILES.map(fileName => {
-      // Try multiple path formats
       const paths = [
         `flash/${currentDirectory}/${fileName}`,
         `${currentDirectory}/${fileName}`,
@@ -135,17 +132,15 @@ export const load: PageServerLoad = async () => {
 };
 
 export const actions: Actions = {
-  // Switch to backup directory (use existing static/hotspot as backup)
   backup: async () => {
     try {
-      const client = await getMikroTikClient();
+      const client = getMikroTikClient();
       const profiles = await client.getHotspotServerProfiles();
 
       if (profiles.length === 0) {
         return fail(400, { error: 'لا يوجد بروفايل هوتسبوت' });
       }
 
-      // Check if static/hotspot exists (original backup)
       const allFiles = await client.getFiles();
       const backupExists = allFiles.some(f => f.name === 'flash/static/hotspot/login.html');
 
@@ -153,7 +148,6 @@ export const actions: Actions = {
         return fail(400, { error: 'النسخة الاحتياطية غير موجودة في flash/static/hotspot' });
       }
 
-      // Switch profile to use static/hotspot
       await client.updateHotspotServerProfile(profiles[0]['.id'], 'static/hotspot');
 
       return { success: true, message: 'تم التبديل إلى النسخة الاحتياطية (static/hotspot)' };
@@ -163,17 +157,15 @@ export const actions: Actions = {
     }
   },
 
-  // Restore means switch back to original hotspot directory
   restore: async () => {
     try {
-      const client = await getMikroTikClient();
+      const client = getMikroTikClient();
       const profiles = await client.getHotspotServerProfiles();
 
       if (profiles.length === 0) {
         return fail(400, { error: 'لا يوجد بروفايل هوتسبوت' });
       }
 
-      // Switch profile back to hotspot
       await client.updateHotspotServerProfile(profiles[0]['.id'], 'hotspot');
 
       return { success: true, message: 'تم الاستعادة إلى المجلد الأصلي (hotspot)' };
@@ -183,15 +175,12 @@ export const actions: Actions = {
     }
   },
 
-  // Upload custom hotspot files - generate FTP commands
   upload: async () => {
     try {
-      const client = await getMikroTikClient();
+      const client = getMikroTikClient();
       const host = client.getHost();
       const creds = client.getCredentials();
 
-      // Since MikroTik REST API doesn't support file upload well,
-      // we'll provide FTP instructions
       const ftpCommands = `
 # Upload via FTP (run in terminal):
 cd ${LOCAL_HOTSPOT_DIR}
@@ -225,7 +214,6 @@ ${HOTSPOT_FILES.map(f => `$ftp.UploadFile("ftp://${host}/hotspot/${f}", "${f}")`
     }
   },
 
-  // Switch hotspot directory
   switchDirectory: async ({ request }) => {
     const formData = await request.formData();
     const directory = formData.get('directory') as string;
@@ -236,7 +224,7 @@ ${HOTSPOT_FILES.map(f => `$ftp.UploadFile("ftp://${host}/hotspot/${f}", "${f}")`
     }
 
     try {
-      const client = await getMikroTikClient();
+      const client = getMikroTikClient();
       await client.updateHotspotServerProfile(profileId, directory);
 
       return { success: true, message: `تم تغيير المجلد إلى ${directory}` };
@@ -246,19 +234,14 @@ ${HOTSPOT_FILES.map(f => `$ftp.UploadFile("ftp://${host}/hotspot/${f}", "${f}")`
     }
   },
 
-  // Create self-signed SSL certificate
   createCertificate: async ({ request }) => {
     const formData = await request.formData();
     const name = formData.get('name') as string || 'hotspot-cert';
     const commonName = formData.get('commonName') as string || 'hotspot';
 
     try {
-      const client = await getMikroTikClient();
-
-      // Create the certificate
+      const client = getMikroTikClient();
       await client.createCertificate(name, commonName, 3650, 2048);
-
-      // Sign it (self-signed)
       await client.signCertificate(name);
 
       return { success: true, message: `تم إنشاء شهادة SSL: ${name}` };
@@ -269,7 +252,6 @@ ${HOTSPOT_FILES.map(f => `$ftp.UploadFile("ftp://${host}/hotspot/${f}", "${f}")`
     }
   },
 
-  // Enable HTTPS on hotspot profile
   enableHttps: async ({ request }) => {
     const formData = await request.formData();
     const profileId = formData.get('profileId') as string;
@@ -280,9 +262,7 @@ ${HOTSPOT_FILES.map(f => `$ftp.UploadFile("ftp://${host}/hotspot/${f}", "${f}")`
     }
 
     try {
-      const client = await getMikroTikClient();
-
-      // Update hotspot profile with SSL certificate
+      const client = getMikroTikClient();
       await client.updateHotspotProfileSSL(profileId, {
         sslCertificate: certificateName,
         loginBy: 'http-chap,https'
@@ -296,7 +276,6 @@ ${HOTSPOT_FILES.map(f => `$ftp.UploadFile("ftp://${host}/hotspot/${f}", "${f}")`
     }
   },
 
-  // Disable HTTPS on hotspot profile
   disableHttps: async ({ request }) => {
     const formData = await request.formData();
     const profileId = formData.get('profileId') as string;
@@ -306,9 +285,7 @@ ${HOTSPOT_FILES.map(f => `$ftp.UploadFile("ftp://${host}/hotspot/${f}", "${f}")`
     }
 
     try {
-      const client = await getMikroTikClient();
-
-      // Remove SSL certificate from profile
+      const client = getMikroTikClient();
       await client.updateHotspotProfileSSL(profileId, {
         sslCertificate: '',
         loginBy: 'http-chap'
@@ -321,7 +298,6 @@ ${HOTSPOT_FILES.map(f => `$ftp.UploadFile("ftp://${host}/hotspot/${f}", "${f}")`
     }
   },
 
-  // Delete certificate
   deleteCertificate: async ({ request }) => {
     const formData = await request.formData();
     const certId = formData.get('certId') as string;
@@ -331,7 +307,7 @@ ${HOTSPOT_FILES.map(f => `$ftp.UploadFile("ftp://${host}/hotspot/${f}", "${f}")`
     }
 
     try {
-      const client = await getMikroTikClient();
+      const client = getMikroTikClient();
       await client.deleteCertificate(certId);
 
       return { success: true, message: 'تم حذف الشهادة' };

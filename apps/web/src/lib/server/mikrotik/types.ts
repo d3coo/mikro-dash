@@ -3,6 +3,7 @@ export interface HotspotUser {
   name: string;
   password?: string;
   profile: string;
+  server?: string;
   'limit-bytes-total'?: string;
   'bytes-in'?: string;
   'bytes-out'?: string;
@@ -25,10 +26,30 @@ export interface ActiveSession {
 export interface WirelessInterface {
   '.id': string;
   name: string;
+  'default-name'?: string;
   ssid: string;
-  band: string;
+  band?: string;
   disabled: string;
+  running: string;
   'security-profile': string;
+  'master-interface'?: string;
+  'interface-type': string;
+  'mac-address': string;
+  mode: string;
+  frequency?: string;
+}
+
+export interface WirelessRegistration {
+  '.id': string;
+  interface: string;
+  'mac-address': string;
+  'last-ip'?: string;
+  uptime: string;
+  'signal-strength': string;
+  'tx-rate': string;
+  'rx-rate': string;
+  bytes: string; // "in,out" format
+  packets: string;
 }
 
 export interface SecurityProfile {
@@ -117,4 +138,14 @@ export interface DhcpLease {
   'host-name'?: string;
   status?: string;
   'last-seen'?: string;
+}
+
+export interface WirelessAccessEntry {
+  '.id': string;
+  'mac-address': string;
+  interface?: string;
+  authentication: string;
+  forwarding: string;
+  comment?: string;
+  disabled: string;
 }

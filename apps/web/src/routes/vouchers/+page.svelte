@@ -4,6 +4,7 @@
   import { page } from '$app/stores';
   import { Button } from '$lib/components/ui/button';
   import ConfirmModal from '$lib/components/confirm-modal.svelte';
+  import Modal from '$lib/components/modal.svelte';
   import { Plus, Trash2, Printer, Package, Filter, CheckCircle, XCircle, Clock, Loader2, CloudOff, RefreshCw, Cloud, ChevronRight, ChevronLeft, QrCode, X, Copy, Check } from 'lucide-svelte';
   import { toast } from 'svelte-sonner';
   import QRCode from 'qrcode';
@@ -19,14 +20,6 @@
       if (form.deleted) {
         toast.success(`تم حذف ${form.deleted} كرت بنجاح`);
       }
-      if (form.syncResult) {
-        if (form.syncResult.synced > 0) {
-          toast.success(`تم مزامنة ${form.syncResult.synced} كرت`);
-        }
-        if (form.syncResult.failed > 0) {
-          toast.warning(`فشل في مزامنة ${form.syncResult.failed} كرت`);
-        }
-      }
     }
     if (form?.error) {
       toast.error(form.error);
@@ -38,7 +31,6 @@
   let selectedIds = $state<string[]>([]);
   let isGenerating = $state(false);
   let isDeleting = $state(false);
-  let isSyncing = $state(false);
   let showDeleteModal = $state(false);
   let deleteFormEl: HTMLFormElement;
 
@@ -284,7 +276,7 @@
     <div class="list-header">
       <div class="list-title">
         <h2>قائمة الكروت</h2>
-        <span class="count-badge">{data.totalVouchers}</span>
+        <span class="badge-count">{data.totalVouchers}</span>
       </div>
       <div class="list-actions">
         <div class="filter-group">
@@ -316,7 +308,7 @@
         </div>
 
         {#if hasActiveFilters}
-          <Button variant="ghost" size="sm" onclick={clearFilters} class="clear-filters-btn">
+          <Button variant="ghost" size="sm" onclick={clearFilters} class="btn-danger-ghost">
             <X class="w-4 h-4" />
             <span>مسح الفلاتر</span>
           </Button>
@@ -401,14 +393,14 @@
               </td>
               <td>{voucher.profile}</td>
               <td>
-                <div class="usage-cell">
-                  <div class="usage-bar-container">
+                <div class="cell-usage">
+                  <div class="cell-usage-bar">
                     <div
-                      class="usage-bar"
+                      class="cell-usage-fill"
                       style="width: {voucher.bytesLimit > 0 ? Math.min((voucher.bytesTotal / voucher.bytesLimit) * 100, 100) : 0}%"
                     ></div>
                   </div>
-                  <span class="usage-text">
+                  <span class="cell-usage-text">
                     {formatBytes(voucher.bytesTotal)} / {voucher.bytesLimit > 0 ? formatBytes(voucher.bytesLimit) : '∞'}
                   </span>
                 </div>
@@ -445,10 +437,10 @@
           السابق
         </Button>
 
-        <div class="page-numbers">
+        <div class="pagination-pages">
           {#each Array.from({ length: data.pagination.totalPages }, (_, i) => i + 1) as pageNum}
             <button
-              class="page-number"
+              class="pagination-page"
               class:active={pageNum === data.pagination.currentPage}
               onclick={() => goToPage(pageNum)}
             >
@@ -482,68 +474,69 @@
 />
 
 <!-- QR Code Modal -->
-{#if showQrModal && selectedVoucher}
-  <div class="qr-modal-overlay" onclick={closeQrModal}>
-    <div class="qr-modal-content" onclick={(e) => e.stopPropagation()}>
-      <button class="qr-modal-close" onclick={closeQrModal}>
+<Modal bind:open={showQrModal} onClose={closeQrModal}>
+  {#snippet header()}
+    <div class="modal-header">
+      <h3>
+        <QrCode class="w-5 h-5 text-primary-light" />
+        كود الكرت
+      </h3>
+      <button class="modal-close-btn" onclick={closeQrModal}>
         <X class="w-5 h-5" />
       </button>
+    </div>
+  {/snippet}
 
-      <div class="qr-modal-header">
-        <QrCode class="w-6 h-6 text-primary-light" />
-        <h3>كود الكرت</h3>
-      </div>
+  {#if selectedVoucher}
+    <div class="qr-modal-body">
+      {#if qrCodeDataUrl}
+        <div class="qr-code-container">
+          <img src={qrCodeDataUrl} alt="QR Code" class="qr-code-image" />
+        </div>
+      {:else}
+        <div class="qr-loading">
+          <Loader2 class="w-8 h-8 animate-spin text-primary-light" />
+        </div>
+      {/if}
 
-      <div class="qr-modal-body">
-        {#if qrCodeDataUrl}
-          <div class="qr-code-container">
-            <img src={qrCodeDataUrl} alt="QR Code" class="qr-code-image" />
+      <div class="voucher-details">
+        <div class="voucher-credentials">
+          <div class="credential-row">
+            <span class="credential-label">المستخدم:</span>
+            <span class="credential-value">{selectedVoucher.name}</span>
           </div>
-        {:else}
-          <div class="qr-loading">
-            <Loader2 class="w-8 h-8 animate-spin text-primary-light" />
+          <div class="credential-row">
+            <span class="credential-label">كلمة المرور:</span>
+            <span class="credential-value">{selectedVoucher.password || '----'}</span>
+          </div>
+          <button class="copy-credentials-btn" onclick={copyCredentials}>
+            {#if codeCopied}
+              <Check class="w-4 h-4" />
+              <span>تم النسخ</span>
+            {:else}
+              <Copy class="w-4 h-4" />
+              <span>نسخ البيانات</span>
+            {/if}
+          </button>
+        </div>
+        <div class="voucher-info-row">
+          <span class="info-label">الباقة:</span>
+          <span class="info-value">{selectedVoucher.profile}</span>
+        </div>
+        {#if selectedVoucher.bytesLimit > 0}
+          <div class="voucher-info-row">
+            <span class="info-label">الحد:</span>
+            <span class="info-value">{formatBytes(selectedVoucher.bytesLimit)}</span>
           </div>
         {/if}
-
-        <div class="voucher-details">
-          <div class="voucher-credentials">
-            <div class="credential-row">
-              <span class="credential-label">المستخدم:</span>
-              <span class="credential-value">{selectedVoucher.name}</span>
-            </div>
-            <div class="credential-row">
-              <span class="credential-label">كلمة المرور:</span>
-              <span class="credential-value">{selectedVoucher.password || '----'}</span>
-            </div>
-            <button class="copy-credentials-btn" onclick={copyCredentials}>
-              {#if codeCopied}
-                <Check class="w-4 h-4" />
-                <span>تم النسخ</span>
-              {:else}
-                <Copy class="w-4 h-4" />
-                <span>نسخ البيانات</span>
-              {/if}
-            </button>
-          </div>
-          <div class="voucher-info">
-            <span class="info-label">الباقة:</span>
-            <span class="info-value">{selectedVoucher.profile}</span>
-          </div>
-          {#if selectedVoucher.bytesLimit > 0}
-            <div class="voucher-info">
-              <span class="info-label">الحد:</span>
-              <span class="info-value">{formatBytes(selectedVoucher.bytesLimit)}</span>
-            </div>
-          {/if}
-        </div>
-
-        <p class="qr-hint">
-          امسح هذا الكود للاتصال بالإنترنت تلقائياً
-        </p>
       </div>
+
+      <p class="qr-hint">
+        امسح هذا الكود للاتصال بالإنترنت تلقائياً
+      </p>
     </div>
-  </div>
-{/if}
+  {/if}
+</Modal>
 
 <style>
   .vouchers-page {
@@ -561,36 +554,11 @@
     padding: 24px;
   }
 
-  .section-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 20px;
-  }
-
-  .section-header h2 {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--color-text-primary);
-  }
-
   .generate-form {
     display: flex;
     flex-wrap: wrap;
     gap: 16px;
     align-items: flex-end;
-  }
-
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .form-group label {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--color-text-secondary);
   }
 
   /* Vouchers List */
@@ -599,151 +567,12 @@
     overflow: hidden;
   }
 
-  .list-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 16px;
-    padding: 20px 24px;
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .list-title {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .list-title h2 {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--color-text-primary);
-  }
-
-  .count-badge {
-    background: rgba(8, 145, 178, 0.15);
-    color: var(--color-primary-light);
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-size: 13px;
-    font-weight: 600;
-  }
-
-  .list-actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .filter-group {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .clear-filters-btn {
-    color: var(--color-danger) !important;
-  }
-
-  .clear-filters-btn:hover {
-    background: rgba(239, 68, 68, 0.1) !important;
-  }
-
   .table-container {
     overflow-x: auto;
   }
 
   .table-modern {
     min-width: 800px;
-  }
-
-  .font-mono {
-    font-family: var(--font-family-mono);
-    font-size: 13px;
-  }
-
-  .price {
-    font-weight: 600;
-    color: var(--color-warning);
-  }
-
-  .date {
-    font-size: 13px;
-    color: var(--color-text-muted);
-  }
-
-  .text-primary-light {
-    color: var(--color-primary-light);
-  }
-
-  /* Usage Cell */
-  .usage-cell {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 120px;
-  }
-
-  .usage-bar-container {
-    width: 100%;
-    height: 6px;
-    background: var(--color-bg-elevated);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-
-  .usage-bar {
-    height: 100%;
-    background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
-    border-radius: 3px;
-    transition: width 0.3s ease;
-  }
-
-  .usage-text {
-    font-size: 11px;
-    color: var(--color-text-muted);
-    font-family: var(--font-family-mono);
-  }
-
-  /* Pagination */
-  .pagination {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    padding: 20px 24px;
-    border-top: 1px solid var(--color-border);
-  }
-
-  .page-numbers {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .page-number {
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
-    border: 1px solid var(--color-border);
-    background: transparent;
-    color: var(--color-text-secondary);
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-
-  .page-number:hover {
-    border-color: var(--color-primary);
-    color: var(--color-primary-light);
-  }
-
-  .page-number.active {
-    background: var(--color-primary);
-    border-color: var(--color-primary);
-    color: white;
   }
 
   /* Clickable voucher cell */
@@ -760,7 +589,7 @@
   .qr-hint-icon {
     color: var(--color-text-muted);
     opacity: 0;
-    transition: opacity 0.2s ease;
+    transition: opacity var(--animation-duration-normal) ease;
   }
 
   .voucher-row:hover .qr-hint-icon {
@@ -771,90 +600,8 @@
     color: var(--color-primary-light);
   }
 
-  /* QR Modal Styles */
-  .qr-modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    padding: 20px;
-    animation: fadeIn 0.2s ease;
-  }
-
-  @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  .qr-modal-content {
-    background: var(--color-bg-card);
-    border: 1px solid var(--color-border);
-    border-radius: 20px;
-    width: 100%;
-    max-width: 360px;
-    position: relative;
-    animation: slideUp 0.3s ease;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
-  }
-
-  @keyframes slideUp {
-    from {
-      opacity: 0;
-      transform: translateY(20px) scale(0.95);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-  }
-
-  .qr-modal-close {
-    position: absolute;
-    top: 16px;
-    left: 16px;
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    background: var(--color-bg-elevated);
-    border: 1px solid var(--color-border);
-    color: var(--color-text-secondary);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-  }
-
-  .qr-modal-close:hover {
-    background: var(--color-bg-card);
-    color: var(--color-text-primary);
-    border-color: var(--color-text-muted);
-  }
-
-  .qr-modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 24px;
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .qr-modal-header h3 {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--color-text-primary);
-  }
-
+  /* QR Modal Body */
   .qr-modal-body {
-    padding: 24px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -934,7 +681,7 @@
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--animation-duration-normal) ease;
   }
 
   .copy-credentials-btn:hover {
@@ -942,7 +689,7 @@
     border-color: var(--color-primary);
   }
 
-  .voucher-info {
+  .voucher-info-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -967,7 +714,9 @@
     line-height: 1.5;
   }
 
-  .text-success {
-    color: var(--color-success);
+  .filter-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 </style>

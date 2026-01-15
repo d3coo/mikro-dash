@@ -3,6 +3,7 @@ import type {
   HotspotUser,
   ActiveSession,
   WirelessInterface,
+  WirelessRegistration,
   SecurityProfile,
   SystemResource,
   MikroTikFile,
@@ -10,7 +11,8 @@ import type {
   Certificate,
   HotspotUserProfile,
   HotspotCookie,
-  DhcpLease
+  DhcpLease,
+  WirelessAccessEntry
 } from './types';
 
 export class MikroTikClient {
@@ -143,6 +145,33 @@ export class MikroTikClient {
     await this.request(`/interface/wireless/security-profiles/${id}`, 'PATCH', {
       'wpa2-pre-shared-key': password
     });
+  }
+
+  // Wireless Registration Table (connected clients)
+  async getWirelessRegistrations(): Promise<WirelessRegistration[]> {
+    return this.request<WirelessRegistration[]>('/interface/wireless/registration-table');
+  }
+
+  // Create Virtual AP
+  async createVirtualAP(
+    masterInterface: string,
+    ssid: string,
+    securityProfile: string,
+    name?: string
+  ): Promise<void> {
+    const body: Record<string, unknown> = {
+      'master-interface': masterInterface,
+      ssid,
+      'security-profile': securityProfile,
+      disabled: 'false'
+    };
+    if (name) body.name = name;
+    await this.request('/interface/wireless/add', 'POST', body);
+  }
+
+  // Delete Wireless Interface
+  async deleteWirelessInterface(id: string): Promise<void> {
+    await this.request('/interface/wireless/remove', 'POST', { '.id': id });
   }
 
   // File Management
@@ -344,5 +373,35 @@ export class MikroTikClient {
   // Hotspot Servers (for restricting user access to specific WiFi networks)
   async getHotspotServers(): Promise<Array<{ '.id': string; name: string; interface: string; profile: string; disabled: string }>> {
     return this.request('/ip/hotspot');
+  }
+
+  // Disconnect wireless client from registration table
+  async disconnectWirelessClient(id: string): Promise<void> {
+    await this.request('/interface/wireless/registration-table/remove', 'POST', {
+      '.id': id
+    });
+  }
+
+  // Wireless Access List (for MAC blocking)
+  async getWirelessAccessList(): Promise<WirelessAccessEntry[]> {
+    return this.request<WirelessAccessEntry[]>('/interface/wireless/access-list');
+  }
+
+  async addToWirelessAccessList(
+    macAddress: string,
+    comment?: string
+  ): Promise<void> {
+    await this.request('/interface/wireless/access-list/add', 'POST', {
+      'mac-address': macAddress,
+      authentication: 'no',
+      forwarding: 'no',
+      comment: comment || 'Blocked from dashboard'
+    });
+  }
+
+  async removeFromWirelessAccessList(id: string): Promise<void> {
+    await this.request('/interface/wireless/access-list/remove', 'POST', {
+      '.id': id
+    });
   }
 }

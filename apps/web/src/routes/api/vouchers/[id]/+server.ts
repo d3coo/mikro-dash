@@ -3,11 +3,16 @@ import type { RequestHandler } from './$types';
 import { getVoucherById, deleteVoucher } from '$lib/server/services/vouchers';
 
 export const GET: RequestHandler = async ({ params }) => {
-  const voucher = getVoucherById(params.id);
-  if (!voucher) {
-    return json({ error: 'Voucher not found' }, { status: 404 });
+  try {
+    const voucher = await getVoucherById(params.id);
+    if (!voucher) {
+      return json({ error: 'Voucher not found' }, { status: 404 });
+    }
+    return json(voucher);
+  } catch (error) {
+    console.error('Get voucher error:', error);
+    return json({ error: 'Failed to fetch voucher' }, { status: 500 });
   }
-  return json(voucher);
 };
 
 export const DELETE: RequestHandler = async ({ params }) => {

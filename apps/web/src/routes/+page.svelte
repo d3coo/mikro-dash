@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { Users, Ticket, Banknote, Wifi, WifiOff, TrendingUp, Activity, Clock, Monitor, Signal, XCircle, QrCode, X, CheckCircle, Loader2 } from 'lucide-svelte';
+  import { Users, Ticket, Banknote, Wifi, WifiOff, TrendingUp, Activity, Clock, Monitor, Signal, XCircle, QrCode, CheckCircle, Loader2 } from 'lucide-svelte';
   import { onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
+  import Modal from '$lib/components/modal.svelte';
 
   let { data } = $props();
 
@@ -250,9 +251,9 @@
       <div class="stat-footer">
         <span class="stat-subtitle">MikroTik Router</span>
         {#if data.stats.routerConnected}
-          <span class="connection-dot connected"></span>
+          <span class="status-dot status-dot-success"></span>
         {:else}
-          <span class="connection-dot disconnected"></span>
+          <span class="status-dot status-dot-danger"></span>
         {/if}
       </div>
     </div>
@@ -294,7 +295,7 @@
 
   <!-- Active Sessions (Current Users) -->
   <section class="sessions-section opacity-0 animate-fade-in" style="animation-delay: 600ms">
-    <div class="section-header">
+    <div class="dashboard-section-header">
       <h2 class="section-title">
         <Signal class="w-5 h-5 inline-block ml-2" />
         المستخدمين المتصلين الآن
@@ -329,23 +330,23 @@
             {#each limitedSessions as session}
               <tr>
                 <td>
-                  <div class="user-cell">
-                    <div class="user-avatar">
+                  <div class="cell-user">
+                    <div class="cell-user-avatar">
                       <Users class="w-4 h-4" />
                     </div>
                     <span class="font-mono">{session.user}</span>
                   </div>
                 </td>
-                <td class="font-mono text-text-secondary">{session.address}</td>
-                <td class="font-mono text-text-secondary text-sm">{session['mac-address']}</td>
+                <td class="font-mono text-secondary">{session.address}</td>
+                <td class="font-mono text-secondary text-sm">{session.macAddress}</td>
                 <td>
-                  <div class="uptime-cell">
+                  <div class="cell-uptime">
                     <Clock class="w-4 h-4 text-primary-light" />
                     <span>{formatUptime(session.uptime)}</span>
                   </div>
                 </td>
-                <td class="text-warning">{formatBytes(parseInt(session['bytes-in'] || '0'))}</td>
-                <td class="text-success">{formatBytes(parseInt(session['bytes-out'] || '0'))}</td>
+                <td class="text-warning">{formatBytes(session.bytesIn)}</td>
+                <td class="text-success">{formatBytes(session.bytesOut)}</td>
               </tr>
             {/each}
           </tbody>
@@ -368,7 +369,7 @@
 
   <!-- Vouchers List -->
   <section class="vouchers-section opacity-0 animate-fade-in" style="animation-delay: 700ms">
-    <div class="section-header">
+    <div class="dashboard-section-header">
       <h2 class="section-title">
         <Ticket class="w-5 h-5 inline-block ml-2" />
         الكروت
@@ -409,14 +410,14 @@
                 <td class="font-mono text-text-secondary">{voucher.password || '••••••'}</td>
                 <td class="text-text-secondary">{voucher.profile}</td>
                 <td>
-                  <div class="usage-cell">
-                    <div class="usage-bar-container">
+                  <div class="cell-usage">
+                    <div class="cell-usage-bar">
                       <div
-                        class="usage-bar"
+                        class="cell-usage-fill"
                         style="width: {voucher.bytesLimit > 0 ? Math.min((voucher.bytesTotal / voucher.bytesLimit) * 100, 100) : 0}%"
                       ></div>
                     </div>
-                    <span class="usage-text">
+                    <span class="cell-usage-text">
                       {formatBytes(voucher.bytesTotal)} / {voucher.bytesLimit > 0 ? formatBytes(voucher.bytesLimit) : '∞'}
                     </span>
                   </div>
@@ -458,58 +459,54 @@
 </div>
 
 <!-- QR Scanner Modal -->
-{#if showQrScanner}
-  <div class="qr-modal-overlay" onclick={stopScanner}>
-    <div class="qr-modal" onclick={(e) => e.stopPropagation()}>
-      <div class="qr-modal-header">
-        <h3>
-          <QrCode class="w-5 h-5" />
-          مسح كرت QR
-        </h3>
-        <button class="qr-close-btn" onclick={stopScanner}>
-          <X class="w-5 h-5" />
-        </button>
-      </div>
+<Modal bind:open={showQrScanner} onClose={stopScanner}>
+  {#snippet header()}
+    <div class="modal-header">
+      <h3>
+        <QrCode class="w-5 h-5 text-primary-light" />
+        مسح كرت QR
+      </h3>
+      <button class="modal-close-btn" onclick={stopScanner}>
+        <XCircle class="w-5 h-5" />
+      </button>
+    </div>
+  {/snippet}
 
-      <div class="qr-modal-body">
-        {#if !scanResult}
-          <div id="qr-reader" class="qr-reader"></div>
-          {#if !scannerReady}
-            <div class="qr-loading">
-              <Loader2 class="w-8 h-8 animate-spin" />
-              <p>جاري تشغيل الكاميرا...</p>
-            </div>
-          {/if}
-          <p class="qr-hint">وجّه الكاميرا نحو كود QR الموجود على الكرت</p>
+  {#if !scanResult}
+    <div id="qr-reader" class="qr-reader"></div>
+    {#if !scannerReady}
+      <div class="qr-loading">
+        <Loader2 class="w-8 h-8 animate-spin" />
+        <p>جاري تشغيل الكاميرا...</p>
+      </div>
+    {/if}
+    <p class="qr-hint">وجّه الكاميرا نحو كود QR الموجود على الكرت</p>
+  {:else}
+    <div class="scan-result {scanResult.success ? 'success' : 'error'}">
+      <div class="result-icon">
+        {#if scanResult.success}
+          <CheckCircle class="w-12 h-12" />
         {:else}
-          <div class="scan-result {scanResult.success ? 'success' : 'error'}">
-            <div class="result-icon">
-              {#if scanResult.success}
-                <CheckCircle class="w-12 h-12" />
-              {:else}
-                <XCircle class="w-12 h-12" />
-              {/if}
-            </div>
-            <div class="result-message">
-              {#each scanResult.message.split('\n') as line}
-                <p>{line}</p>
-              {/each}
-            </div>
-            <div class="result-actions">
-              <button class="btn btn-primary" onclick={resetScanner}>
-                <QrCode class="w-4 h-4" />
-                مسح كرت آخر
-              </button>
-              <button class="btn btn-secondary" onclick={stopScanner}>
-                إغلاق
-              </button>
-            </div>
-          </div>
+          <XCircle class="w-12 h-12" />
         {/if}
       </div>
+      <div class="result-message">
+        {#each scanResult.message.split('\n') as line}
+          <p>{line}</p>
+        {/each}
+      </div>
+      <div class="result-actions">
+        <button class="btn btn-primary" onclick={resetScanner}>
+          <QrCode class="w-4 h-4" />
+          مسح كرت آخر
+        </button>
+        <button class="btn btn-secondary" onclick={stopScanner}>
+          إغلاق
+        </button>
+      </div>
     </div>
-  </div>
-{/if}
+  {/if}
+</Modal>
 
 <style>
   .dashboard {
@@ -550,7 +547,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.3s ease;
+    transition: all var(--animation-duration-slow) ease;
   }
 
   .stat-icon-primary {
@@ -595,40 +592,9 @@
     color: var(--color-text-muted);
   }
 
-  .connection-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-  }
-
-  .connection-dot.connected {
-    background: var(--color-success);
-    box-shadow: 0 0 12px var(--color-success-glow);
-    animation: pulse-dot 2s ease-in-out infinite;
-  }
-
-  .connection-dot.disconnected {
-    background: var(--color-danger);
-  }
-
-  @keyframes pulse-dot {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.7; transform: scale(1.1); }
-  }
-
-  .text-success { color: #34d399; }
-  .text-danger { color: #f87171; }
-
   /* Quick Actions */
   .quick-actions {
     margin-top: 16px;
-  }
-
-  .section-title {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--color-text-primary);
-    margin-bottom: 16px;
   }
 
   .actions-grid {
@@ -643,7 +609,10 @@
     gap: 16px;
     padding: 20px;
     text-decoration: none;
-    transition: all 0.2s ease;
+    border: none;
+    cursor: pointer;
+    text-align: right;
+    transition: all var(--animation-duration-normal) ease;
   }
 
   .action-card:hover {
@@ -663,6 +632,12 @@
     flex-shrink: 0;
   }
 
+  .action-icon-primary {
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%) !important;
+    color: white !important;
+    border: none !important;
+  }
+
   .action-content h3 {
     font-size: 15px;
     font-weight: 600;
@@ -675,20 +650,14 @@
     color: var(--color-text-muted);
   }
 
-  /* Section Header */
-  .section-header {
+  /* Section styles */
+  .dashboard-section-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 16px;
     flex-wrap: wrap;
     gap: 12px;
-  }
-
-  .section-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
   }
 
   .header-actions {
@@ -698,22 +667,6 @@
     flex-wrap: wrap;
   }
 
-  .view-all-link {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--color-primary-light);
-    font-size: 14px;
-    font-weight: 500;
-    text-decoration: none;
-    transition: all 0.2s ease;
-  }
-
-  .view-all-link:hover {
-    color: var(--color-primary);
-    gap: 10px;
-  }
-
   .table-footer {
     padding: 16px 24px;
     border-top: 1px solid var(--color-border);
@@ -721,12 +674,6 @@
     justify-content: center;
   }
 
-  .btn-sm {
-    padding: 8px 16px;
-    font-size: 13px;
-  }
-
-  /* Sessions & Vouchers Sections */
   .sessions-section,
   .vouchers-section {
     margin-top: 8px;
@@ -741,65 +688,10 @@
     min-width: 600px;
   }
 
-  /* User Cell */
-  .user-cell {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .user-avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    background: rgba(8, 145, 178, 0.15);
-    border: 1px solid rgba(8, 145, 178, 0.3);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--color-primary-light);
-  }
-
-  /* Uptime Cell */
-  .uptime-cell {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
   /* Voucher Code */
   .voucher-code {
     color: var(--color-primary-light);
     font-weight: 600;
-  }
-
-  /* Usage Cell */
-  .usage-cell {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 120px;
-  }
-
-  .usage-bar-container {
-    width: 100%;
-    height: 6px;
-    background: var(--color-bg-elevated);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-
-  .usage-bar {
-    height: 100%;
-    background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
-    border-radius: 3px;
-    transition: width 0.3s ease;
-  }
-
-  .usage-text {
-    font-size: 11px;
-    color: var(--color-text-muted);
-    font-family: var(--font-family-mono);
   }
 
   /* Voucher Stats */
@@ -809,91 +701,7 @@
     flex-wrap: wrap;
   }
 
-  /* Text Colors */
-  .text-success { color: #34d399; }
-  .text-warning { color: #fbbf24; }
-  .text-danger { color: #f87171; }
-  .text-primary-light { color: var(--color-primary-light); }
-  .text-text-secondary { color: var(--color-text-secondary); }
-  .text-sm { font-size: 12px; }
-
-  .mt-4 { margin-top: 16px; }
-
-  /* Action Card Button */
-  .action-card {
-    border: none;
-    cursor: pointer;
-    text-align: right;
-  }
-
-  .action-icon-primary {
-    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%) !important;
-    color: white !important;
-    border: none !important;
-  }
-
-  /* QR Scanner Modal */
-  .qr-modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.8);
-    backdrop-filter: blur(8px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    padding: 20px;
-  }
-
-  .qr-modal {
-    background: var(--color-bg-base);
-    border: 1px solid var(--color-border);
-    border-radius: 20px;
-    width: 100%;
-    max-width: 400px;
-    overflow: hidden;
-  }
-
-  .qr-modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 20px 24px;
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .qr-modal-header h3 {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--color-text-primary);
-  }
-
-  .qr-close-btn {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    border: 1px solid var(--color-border);
-    background: transparent;
-    color: var(--color-text-muted);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-  }
-
-  .qr-close-btn:hover {
-    background: var(--color-bg-elevated);
-    color: var(--color-text-primary);
-  }
-
-  .qr-modal-body {
-    padding: 24px;
-  }
-
+  /* QR Scanner specific styles */
   .qr-reader {
     width: 100%;
     border-radius: 12px;
@@ -983,18 +791,13 @@
 
   /* Responsive */
   @media (max-width: 768px) {
-    .section-header {
+    .dashboard-section-header {
       flex-direction: column;
       align-items: flex-start;
     }
 
     .voucher-stats {
       width: 100%;
-    }
-
-    .qr-modal {
-      max-width: 100%;
-      margin: 10px;
     }
   }
 </style>

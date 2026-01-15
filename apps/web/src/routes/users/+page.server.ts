@@ -1,51 +1,76 @@
 import type { PageServerLoad, Actions } from './$types';
-import { getMikroTikClient } from '$lib/server/services/settings';
 import { fail } from '@sveltejs/kit';
+import { getUsersPageData, disconnectWirelessClient, blockMacAddress } from '$lib/server/services/users';
+import { kickSession } from '$lib/server/services/sessions';
+import { getMikroTikClient } from '$lib/server/services/mikrotik';
 
 const PAGE_SIZE = 10;
 
 export const load: PageServerLoad = async ({ url }) => {
-  const page = parseInt(url.searchParams.get('page') || '1', 10);
+  // Separate page params for each section
+  const voucherPage = parseInt(url.searchParams.get('vp') || '1', 10);
+  const wifiPage = parseInt(url.searchParams.get('wp') || '1', 10);
 
-  let activeSessions: any[] = [];
+  let data: Awaited<ReturnType<typeof getUsersPageData>> | null = null;
   let routerConnected = false;
 
   try {
-    const client = await getMikroTikClient();
+    const client = getMikroTikClient();
     await client.getSystemResources(); // Test connection
     routerConnected = true;
 
-    activeSessions = await client.getActiveSessions();
+    data = await getUsersPageData();
   } catch (error) {
     console.error('Failed to connect to router:', error);
     routerConnected = false;
   }
 
-  // Calculate pagination
-  const totalItems = activeSessions.length;
-  const totalPages = Math.ceil(totalItems / PAGE_SIZE);
-  const currentPage = Math.min(Math.max(1, page), totalPages || 1);
-  const startIndex = (currentPage - 1) * PAGE_SIZE;
-  const endIndex = startIndex + PAGE_SIZE;
+  // Paginate voucher users
+  const voucherUsers = data?.voucherUsers || [];
+  const voucherTotal = voucherUsers.length;
+  const voucherTotalPages = Math.ceil(voucherTotal / PAGE_SIZE) || 1;
+  const voucherCurrentPage = Math.min(Math.max(1, voucherPage), voucherTotalPages);
+  const paginatedVoucherUsers = voucherUsers.slice(
+    (voucherCurrentPage - 1) * PAGE_SIZE,
+    voucherCurrentPage * PAGE_SIZE
+  );
 
-  const paginatedSessions = activeSessions.slice(startIndex, endIndex);
+  // Paginate WiFi-only clients
+  const wifiClients = data?.wifiOnlyClients || [];
+  const wifiTotal = wifiClients.length;
+  const wifiTotalPages = Math.ceil(wifiTotal / PAGE_SIZE) || 1;
+  const wifiCurrentPage = Math.min(Math.max(1, wifiPage), wifiTotalPages);
+  const paginatedWiFiClients = wifiClients.slice(
+    (wifiCurrentPage - 1) * PAGE_SIZE,
+    wifiCurrentPage * PAGE_SIZE
+  );
 
   return {
-    sessions: paginatedSessions,
-    totalSessions: totalItems,
+    voucherUsers: paginatedVoucherUsers,
+    wifiOnlyClients: paginatedWiFiClients,
+    totalVoucherUsers: voucherTotal,
+    totalWiFiOnlyClients: wifiTotal,
     routerConnected,
-    pagination: {
-      currentPage,
-      totalPages,
+    voucherPagination: {
+      currentPage: voucherCurrentPage,
+      totalPages: voucherTotalPages,
       pageSize: PAGE_SIZE,
-      hasNext: currentPage < totalPages,
-      hasPrev: currentPage > 1
+      hasNext: voucherCurrentPage < voucherTotalPages,
+      hasPrev: voucherCurrentPage > 1
+    },
+    wifiPagination: {
+      currentPage: wifiCurrentPage,
+      totalPages: wifiTotalPages,
+      pageSize: PAGE_SIZE,
+      hasNext: wifiCurrentPage < wifiTotalPages,
+      hasPrev: wifiCurrentPage > 1
     }
   };
 };
 
 export const actions: Actions = {
-  kick: async ({ request }) => {
+  // Kick a voucher user (from hotspot active sessions)
+  kickVoucher: async ({ request }) => {
     const formData = await request.formData();
     const sessionId = formData.get('sessionId') as string;
 
@@ -54,12 +79,60 @@ export const actions: Actions = {
     }
 
     try {
-      const client = await getMikroTikClient();
-      await client.kickSession(sessionId);
+      await kickSession(sessionId);
       return { success: true, kicked: true };
     } catch (error) {
-      console.error('Kick session error:', error);
+      console.error('Kick voucher user error:', error);
       return fail(500, { error: 'فشل في قطع الاتصال' });
+    }
+  },
+
+  // Kick a WiFi-only client (disconnect from wireless)
+  kickWifi: async ({ request }) => {
+    const formData = await request.formData();
+    const registrationId = formData.get('registrationId') as string;
+
+    if (!registrationId) {
+      return fail(400, { error: 'معرف الاتصال مطلوب' });
+    }
+
+    try {
+      await disconnectWirelessClient(registrationId);
+      return { success: true, kicked: true };
+    } catch (error) {
+      console.error('Kick WiFi client error:', error);
+      return fail(500, { error: 'فشل في قطع الاتصال' });
+    }
+  },
+
+  // Block a MAC address (for WiFi-only clients)
+  blockMac: async ({ request }) => {
+    const formData = await request.formData();
+    const macAddress = formData.get('macAddress') as string;
+    const deviceName = formData.get('deviceName') as string;
+    const registrationId = formData.get('registrationId') as string;
+
+    if (!macAddress) {
+      return fail(400, { error: 'عنوان MAC مطلوب' });
+    }
+
+    try {
+      // Block the MAC address
+      await blockMacAddress(macAddress, deviceName || undefined);
+
+      // Also disconnect the client immediately if we have the registration ID
+      if (registrationId) {
+        try {
+          await disconnectWirelessClient(registrationId);
+        } catch {
+          // Ignore disconnect errors - device may have already disconnected
+        }
+      }
+
+      return { success: true, blocked: true };
+    } catch (error) {
+      console.error('Block MAC error:', error);
+      return fail(500, { error: 'فشل في حظر الجهاز' });
     }
   }
 };

@@ -253,19 +253,13 @@
     {#if data.search || data.filterProfile || data.filterServer}
       <div class="active-filters">
         {#if data.search}
-          <span class="filter-tag">
-            بحث: {data.search}
-          </span>
+          <span class="filter-tag">بحث: {data.search}</span>
         {/if}
         {#if data.filterProfile}
-          <span class="filter-tag">
-            البروفايل: {data.filterProfile}
-          </span>
+          <span class="filter-tag">البروفايل: {data.filterProfile}</span>
         {/if}
         {#if data.filterServer}
-          <span class="filter-tag">
-            الشبكة: {data.filterServer}
-          </span>
+          <span class="filter-tag">الشبكة: {data.filterServer}</span>
         {/if}
       </div>
     {/if}
@@ -298,10 +292,10 @@
               <div class="voucher-code">{session.username}</div>
               <div class="card-tags">
                 {#if session.profile}
-                  <span class="card-tag profile-tag">{session.profile}</span>
+                  <span class="tag tag-purple">{session.profile}</span>
                 {/if}
                 {#if session.server}
-                  <span class="card-tag server-tag">{session.server}</span>
+                  <span class="tag tag-primary">{session.server}</span>
                 {/if}
               </div>
               {#if session.password}
@@ -311,7 +305,7 @@
                     {visiblePasswords.has(session.username) ? session.password : '••••••'}
                   </span>
                   <button
-                    class="icon-btn-sm"
+                    class="icon-btn icon-btn-sm icon-btn-ghost"
                     onclick={() => togglePassword(session.username)}
                     title={visiblePasswords.has(session.username) ? 'إخفاء' : 'إظهار'}
                   >
@@ -322,7 +316,7 @@
                     {/if}
                   </button>
                   <button
-                    class="icon-btn-sm"
+                    class="icon-btn icon-btn-sm icon-btn-ghost"
                     onclick={() => copyCode(session.username, session.password)}
                     title="نسخ"
                   >
@@ -410,7 +404,7 @@
               <Button
                 variant="ghost"
                 size="sm"
-                class="delete-btn"
+                class="btn-danger-ghost"
                 disabled={isDeleting === session.id}
                 onclick={() => confirmDelete({ id: session.id, username: session.username })}
               >
@@ -491,82 +485,6 @@
     gap: 16px;
   }
 
-  .mini-stat {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 16px 20px;
-  }
-
-  .mini-stat-content {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .mini-stat-value {
-    font-size: 24px;
-    font-weight: 700;
-    color: var(--color-text-primary);
-  }
-
-  .mini-stat-label {
-    font-size: 13px;
-    color: var(--color-text-muted);
-  }
-
-  /* Search */
-  .search-section {
-    padding: 16px 20px;
-  }
-
-  .search-box {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .search-icon {
-    width: 20px;
-    height: 20px;
-    color: var(--color-text-muted);
-  }
-
-  .search-input {
-    flex: 1;
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid var(--color-border);
-    border-radius: 8px;
-    padding: 10px 14px;
-    color: var(--color-text-primary);
-    font-size: 14px;
-  }
-
-  .search-input::placeholder {
-    color: var(--color-text-muted);
-  }
-
-  .search-input:focus {
-    outline: none;
-    border-color: var(--color-primary);
-  }
-
-  .search-results-info {
-    margin-top: 12px;
-    font-size: 13px;
-    color: var(--color-text-muted);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .clear-search {
-    color: var(--color-primary-light);
-    background: none;
-    border: none;
-    cursor: pointer;
-    text-decoration: underline;
-  }
-
   /* Filters */
   .filters-row {
     display: flex;
@@ -613,7 +531,7 @@
     color: #ef4444;
     font-size: 13px;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all var(--animation-duration-normal);
   }
 
   .clear-filters-btn:hover {
@@ -627,32 +545,10 @@
     flex-wrap: wrap;
   }
 
-  .filter-tag {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 10px;
-    border-radius: 20px;
-    background: rgba(8, 145, 178, 0.15);
-    color: var(--color-primary-light);
-    font-size: 12px;
-  }
-
   /* Sessions List */
   .sessions-list {
     padding: 0;
     overflow: hidden;
-  }
-
-  .list-header {
-    padding: 20px 24px;
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .list-header h2 {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--color-text-primary);
   }
 
   .sessions-grid {
@@ -673,7 +569,7 @@
     flex-direction: column;
     gap: 12px;
     opacity: 0;
-    animation: fadeIn 0.3s ease forwards;
+    animation: fadeInCard var(--animation-duration-slow) ease forwards;
   }
 
   .session-card.online {
@@ -724,24 +620,6 @@
     flex-wrap: wrap;
   }
 
-  .card-tag {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 10px;
-    font-weight: 500;
-  }
-
-  .profile-tag {
-    background: rgba(139, 92, 246, 0.15);
-    color: #a78bfa;
-  }
-
-  .server-tag {
-    background: rgba(8, 145, 178, 0.15);
-    color: var(--color-primary-light);
-  }
-
   .password-row {
     display: flex;
     align-items: center;
@@ -756,25 +634,6 @@
   .password-value {
     font-family: var(--font-family-mono);
     color: var(--color-text-secondary);
-  }
-
-  .icon-btn-sm {
-    width: 24px;
-    height: 24px;
-    border-radius: 6px;
-    border: none;
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--color-text-muted);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-  }
-
-  .icon-btn-sm:hover {
-    background: rgba(8, 145, 178, 0.2);
-    color: var(--color-primary-light);
   }
 
   /* Device Info */
@@ -839,15 +698,15 @@
     height: 100%;
     background: var(--color-primary);
     border-radius: 3px;
-    transition: width 0.3s ease;
+    transition: width var(--animation-duration-slow) ease;
   }
 
   .usage-fill.warning {
-    background: #fbbf24;
+    background: var(--color-warning);
   }
 
   .usage-fill.danger {
-    background: #ef4444;
+    background: var(--color-danger);
   }
 
   .usage-remaining {
@@ -883,41 +742,7 @@
     border-top: 1px solid var(--color-border);
   }
 
-  .delete-btn {
-    color: var(--color-danger) !important;
-  }
-
-  .delete-btn:hover {
-    background: rgba(239, 68, 68, 0.1) !important;
-  }
-
-  /* Empty State */
-  .empty-state {
-    padding: 64px 24px;
-    text-align: center;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 16px;
-  }
-
-  .empty-state-icon {
-    width: 48px;
-    height: 48px;
-    color: var(--color-text-muted);
-  }
-
-  .empty-state-text {
-    color: var(--color-text-muted);
-    font-size: 14px;
-  }
-
-  /* Utils */
-  .text-success { color: #34d399; }
-  .text-primary-light { color: var(--color-primary-light); }
-  .hidden { display: none; }
-
-  @keyframes fadeIn {
+  @keyframes fadeInCard {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
   }

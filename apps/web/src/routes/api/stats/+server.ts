@@ -1,34 +1,27 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { db } from '$lib/server/db';
-import { vouchers } from '$lib/server/db/schema';
-import { getMikroTikClient } from '$lib/server/services/settings';
+import { getVoucherStats } from '$lib/server/services/vouchers';
+import { getActiveSessions } from '$lib/server/services/sessions';
+import { getMikroTikClient } from '$lib/server/services/mikrotik';
 
 export const GET: RequestHandler = async () => {
   try {
-    // Get voucher stats from local DB
-    const allVouchers = db.select().from(vouchers).all();
-    const availableVouchers = allVouchers.filter(v => v.status === 'available').length;
-
-    // Get today's used vouchers for revenue
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayISO = today.toISOString();
-
-    const usedToday = allVouchers.filter(
-      v => v.status === 'used' && v.usedAt && v.usedAt >= todayISO
-    );
-    const todayRevenue = usedToday.reduce((sum, v) => sum + v.priceLE, 0);
-
-    // Get active sessions from MikroTik
     let activeUsers = 0;
     let routerConnected = false;
+    let stats = { total: 0, available: 0, used: 0, exhausted: 0, revenue: 0 };
 
     try {
-      const client = await getMikroTikClient();
-      const sessions = await client.getActiveSessions();
-      activeUsers = sessions.length;
+      const client = getMikroTikClient();
+      await client.getSystemResources();
       routerConnected = true;
+
+      const [sessions, voucherStats] = await Promise.all([
+        getActiveSessions(),
+        getVoucherStats()
+      ]);
+
+      activeUsers = sessions.length;
+      stats = voucherStats;
     } catch {
       routerConnected = false;
     }
@@ -38,8 +31,8 @@ export const GET: RequestHandler = async () => {
 
     return json({
       activeUsers,
-      availableVouchers,
-      todayRevenue,
+      availableVouchers: stats.available,
+      todayRevenue: stats.revenue,
       routerConnected,
       updatedAt: updatedAtFormatted,
       updatedAtISO: now.toISOString()

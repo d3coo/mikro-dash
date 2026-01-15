@@ -1,7 +1,23 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dir \"C:\\\\Users\\\\shark\\\\Documents\\\\GitHub\\\\mikro-dash\\\\apps\\\\web\\\\static\")"
+      "Bash(dir \"C:\\\\Users\\\\shark\\\\Documents\\\\GitHub\\\\mikro-dash\\\\apps\\\\web\\\\static\")",
+      "Bash(del \"C:\\\\Users\\\\shark\\\\Documents\\\\GitHub\\\\mikro-dash\\\\apps\\\\web\\\\src\\\\routes\\\\vouchers\\\\print\\\\+layout.ts\")",
+      "Bash(bun run check:*)",
+      "Bash(bun run dev:*)",
+      "Bash(bun run:*)",
+      "Bash(ping:*)",
+      "Bash(curl:*)",
+      "Bash(bun -e:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "Bash(pm2 start:*)",
+      "Bash(pm2 logs:*)",
+      "Bash(pm2 save:*)",
+      "Bash(pm2 startup:*)",
+      "Bash(pm2-startup:*)",
+      "Bash(pm2 list:*)"
     ]
   }
 }
