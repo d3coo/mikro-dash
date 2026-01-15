@@ -1,5 +1,5 @@
 import { getMikroTikClient } from './mikrotik';
-import { getPackages, getPackageByCodePrefix } from '$lib/server/config';
+import { getPackages, getPackageFromComment, getPackageByCodePrefix } from '$lib/server/config';
 
 export interface VoucherUser {
   sessionId: string;
@@ -92,7 +92,9 @@ export async function getUsersPageData(): Promise<UsersPageData> {
     if (session) {
       // This device has an active hotspot session - it's a voucher user
       const user = usersByName.get(session.user);
-      const pkg = getPackageByCodePrefix(session.user);
+      // Match package: first try comment (new format), then prefix (legacy)
+      const pkg = getPackageFromComment(user?.comment || '', user?.profile)
+        || getPackageByCodePrefix(session.user);
 
       // Get byte limit from hotspot user record
       const bytesLimit = Number(user?.['limit-bytes-total']) || 0;

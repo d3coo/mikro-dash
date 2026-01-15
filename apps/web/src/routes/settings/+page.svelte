@@ -18,7 +18,6 @@
     priceLE: 0,
     profile: 'default',
     server: '', // Hotspot server to restrict access to specific WiFi
-    codePrefix: '',
     sortOrder: 0
   });
 
@@ -35,7 +34,7 @@
   });
 
   function resetPackageForm() {
-    packageForm = { id: '', name: '', nameAr: '', priceLE: 0, profile: 'default', server: '', codePrefix: '', sortOrder: 0 };
+    packageForm = { id: '', name: '', nameAr: '', priceLE: 0, profile: 'default', server: '', sortOrder: 0 };
     editingPackage = null;
     showPackageForm = false;
   }
@@ -326,18 +325,6 @@
               <span class="form-hint">اختر شبكة معينة لتقييد الوصول (مثل Guest-WiFi فقط)</span>
             </div>
             <div class="form-group">
-              <label for="pkg-prefix">بادئة الكود</label>
-              <input
-                type="text"
-                id="pkg-prefix"
-                name="codePrefix"
-                bind:value={packageForm.codePrefix}
-                class="input-modern"
-                placeholder="G3"
-                maxlength="5"
-              />
-            </div>
-            <div class="form-group">
               <label for="pkg-order">الترتيب</label>
               <input
                 type="number"
@@ -368,7 +355,7 @@
             <div class="item-info">
               <span class="item-name">{pkg.nameAr}</span>
               <span class="item-details">
-                {pkg.priceLE} ج.م | {pkg.profile} | {pkg.codePrefix}
+                {pkg.priceLE} ج.م | {pkg.profile}
                 {#if pkg.server}
                   | <span class="tag tag-primary">{pkg.server}</span>
                 {/if}

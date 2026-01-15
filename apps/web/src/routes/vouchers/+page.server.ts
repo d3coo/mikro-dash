@@ -2,7 +2,7 @@ import type { PageServerLoad, Actions } from './$types';
 import { fail } from '@sveltejs/kit';
 import { getVouchers, createVouchers, deleteVouchers, type Voucher } from '$lib/server/services/vouchers';
 import { getMikroTikClient } from '$lib/server/services/mikrotik';
-import { getPackages } from '$lib/server/config';
+import { getPackages, getSettings } from '$lib/server/config';
 
 const PAGE_SIZE = 10;
 
@@ -61,6 +61,8 @@ export const load: PageServerLoad = async ({ url }) => {
     exhausted: allVouchers.filter(v => v.status === 'exhausted').length
   };
 
+  const settings = getSettings();
+
   return {
     vouchers: paginatedVouchers,
     totalVouchers: totalItems,
@@ -71,6 +73,7 @@ export const load: PageServerLoad = async ({ url }) => {
     currentFilter: statusFilter,
     packageFilter,
     profileFilter,
+    wifiSSID: settings.wifi.ssid,
     pagination: {
       currentPage,
       totalPages,

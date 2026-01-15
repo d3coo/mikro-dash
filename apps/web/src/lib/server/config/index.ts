@@ -16,6 +16,9 @@ export interface Settings {
   business: {
     name: string;
   };
+  wifi: {
+    ssid: string;
+  };
 }
 
 // Get a single setting
@@ -42,6 +45,9 @@ export function getSettings(): Settings {
     },
     business: {
       name: getSetting('business_name') || 'AboYassen WiFi'
+    },
+    wifi: {
+      ssid: getSetting('wifi_ssid') || 'AboYassen'
     }
   };
 }
@@ -56,6 +62,9 @@ export function updateSettings(updates: Partial<Settings>): void {
   if (updates.business) {
     if (updates.business.name !== undefined) setSetting('business_name', updates.business.name);
   }
+  if (updates.wifi) {
+    if (updates.wifi.ssid !== undefined) setSetting('wifi_ssid', updates.wifi.ssid);
+  }
 }
 
 // Package functions
@@ -67,6 +76,30 @@ export function getPackageById(id: string): Package | undefined {
   return db.select().from(packages).where(eq(packages.id, id)).get();
 }
 
+/**
+ * Get package from voucher comment field
+ * Comment format: "pkg:PACKAGE_ID|Name - Price LE"
+ * Falls back to profile matching if no package ID found
+ */
+export function getPackageFromComment(comment: string, profile?: string): Package | undefined {
+  const allPackages = getPackages();
+
+  // Try to extract package ID from comment (format: pkg:ID|...)
+  const match = comment.match(/^pkg:([^|]+)\|/);
+  if (match) {
+    const pkg = allPackages.find(p => p.id === match[1]);
+    if (pkg) return pkg;
+  }
+
+  // Fallback: match by profile name
+  if (profile) {
+    return allPackages.find(p => p.profile === profile);
+  }
+
+  return undefined;
+}
+
+// Legacy: Get package by code prefix (for backward compatibility with old vouchers)
 export function getPackageByCodePrefix(voucherName: string): Package | undefined {
   const allPackages = getPackages();
   // Sort by prefix length descending to match longer prefixes first (G10 before G1)
@@ -79,16 +112,18 @@ export function createPackage(pkg: NewPackage): void {
 }
 
 export function updatePackage(id: string, updates: Partial<Omit<Package, 'id'>>): void {
+  const setData: Record<string, unknown> = {};
+  if (updates.name !== undefined) setData.name = updates.name;
+  if (updates.nameAr !== undefined) setData.nameAr = updates.nameAr;
+  if (updates.priceLE !== undefined) setData.priceLE = updates.priceLE;
+  if (updates.profile !== undefined) setData.profile = updates.profile;
+  if (updates.server !== undefined) setData.server = updates.server;
+  if (updates.sortOrder !== undefined) setData.sortOrder = updates.sortOrder;
+  // codePrefix is deprecated but keep for backward compatibility
+  if (updates.codePrefix !== undefined) setData.codePrefix = updates.codePrefix;
+
   db.update(packages)
-    .set({
-      name: updates.name,
-      nameAr: updates.nameAr,
-      priceLE: updates.priceLE,
-      codePrefix: updates.codePrefix,
-      profile: updates.profile,
-      server: updates.server,
-      sortOrder: updates.sortOrder
-    })
+    .set(setData)
     .where(eq(packages.id, id))
     .run();
 }

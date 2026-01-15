@@ -67,15 +67,9 @@
   let qrCodeDataUrl = $state('');
   let codeCopied = $state(false);
 
-  function generateLoginUrl(username: string, password: string): string {
-    // MikroTik hotspot auto-login URL format
-    const baseUrl = 'http://10.10.10.1/login';
-    const params = new URLSearchParams({
-      dst: 'http://google.com',
-      username: username,
-      password: password
-    });
-    return `${baseUrl}?${params.toString()}`;
+  function generateWifiQRString(ssid: string): string {
+    // WiFi QR code format for open networks
+    return `WIFI:T:nopass;S:${ssid};H:false;;`;
   }
 
   async function openQrModal(user: typeof data.voucherUsers[0]) {
@@ -83,11 +77,10 @@
     showQrModal = true;
     codeCopied = false;
 
-    // Generate QR code with login URL
+    // Generate WiFi connection QR code
     try {
-      const password = user.voucherPassword || user.voucherCode;
-      const loginUrl = generateLoginUrl(user.voucherCode, password);
-      qrCodeDataUrl = await QRCode.toDataURL(loginUrl, {
+      const wifiString = generateWifiQRString(data.wifiSSID || 'AboYassen');
+      qrCodeDataUrl = await QRCode.toDataURL(wifiString, {
         width: 280,
         margin: 2,
         color: {
@@ -108,14 +101,12 @@
     qrCodeDataUrl = '';
   }
 
-  async function copyCredentials() {
+  async function copyCode() {
     if (!qrVoucher) return;
     try {
-      const password = qrVoucher.voucherPassword || qrVoucher.voucherCode;
-      const text = `المستخدم: ${qrVoucher.voucherCode}\nكلمة المرور: ${password}`;
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(qrVoucher.voucherCode);
       codeCopied = true;
-      toast.success('تم نسخ البيانات');
+      toast.success('تم نسخ الكود');
       setTimeout(() => codeCopied = false, 2000);
     } catch {
       toast.error('فشل في النسخ');
@@ -651,9 +642,10 @@
 
   {#if qrVoucher}
     <div class="qr-modal-body">
+      <!-- WiFi QR Code -->
       {#if qrCodeDataUrl}
         <div class="qr-code-container">
-          <img src={qrCodeDataUrl} alt="QR Code" class="qr-code-image" />
+          <img src={qrCodeDataUrl} alt="WiFi QR Code" class="qr-code-image" />
         </div>
       {:else}
         <div class="qr-loading">
@@ -661,32 +653,39 @@
         </div>
       {/if}
 
-      <div class="voucher-details">
-        <div class="voucher-credentials">
-          <div class="credential-row">
-            <span class="credential-label">المستخدم:</span>
-            <span class="credential-value">{qrVoucher.voucherCode}</span>
-          </div>
-          <div class="credential-row">
-            <span class="credential-label">كلمة المرور:</span>
-            <span class="credential-value">{qrVoucher.voucherPassword || qrVoucher.voucherCode}</span>
-          </div>
-          <div class="credential-row">
-            <span class="credential-label">الباقة:</span>
-            <span class="credential-value">{qrVoucher.packageName}</span>
-          </div>
-        </div>
+      <p class="qr-hint-wifi">
+        امسح للاتصال بشبكة <strong>{data.wifiSSID || 'AboYassen'}</strong>
+      </p>
 
-        <Button onclick={copyCredentials} variant="outline" class="copy-btn">
+      <!-- Single Code Display -->
+      <div class="code-display-section">
+        <span class="code-label">كود الدخول</span>
+        <div class="code-box">
+          <span class="code-value">{qrVoucher.voucherCode}</span>
+        </div>
+        <button class="copy-code-btn" onclick={copyCode}>
           {#if codeCopied}
             <Check class="w-4 h-4" />
-            تم النسخ
+            <span>تم النسخ</span>
           {:else}
             <Copy class="w-4 h-4" />
-            نسخ البيانات
+            <span>نسخ الكود</span>
           {/if}
-        </Button>
+        </button>
       </div>
+
+      <!-- Package Info -->
+      <div class="voucher-info-section">
+        <div class="voucher-info-row">
+          <span class="info-label">الباقة:</span>
+          <span class="info-value">{qrVoucher.packageName}</span>
+        </div>
+      </div>
+
+      <p class="qr-hint-footer">
+        ١. امسح الكود للاتصال بالواي فاي<br>
+        ٢. أدخل كود الدخول في صفحة تسجيل الدخول
+      </p>
     </div>
   {/if}
 </Modal>
@@ -813,26 +812,25 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 24px;
-    padding: 8px;
+    gap: 16px;
   }
 
   .qr-code-container {
-    padding: 16px;
-    background: #ffffff;
+    background: white;
     border-radius: 16px;
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+    padding: 16px;
+    box-shadow: 0 4px 20px rgba(8, 145, 178, 0.15);
   }
 
   .qr-code-image {
     display: block;
-    width: 280px;
-    height: 280px;
+    width: 200px;
+    height: 200px;
   }
 
   .qr-loading {
-    width: 280px;
-    height: 280px;
+    width: 200px;
+    height: 200px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -840,44 +838,105 @@
     border-radius: 16px;
   }
 
-  .voucher-details {
+  .qr-hint-wifi {
+    font-size: 14px;
+    color: var(--color-text-secondary);
+    text-align: center;
+  }
+
+  .qr-hint-wifi strong {
+    color: var(--color-primary-light);
+  }
+
+  /* Code Display Section */
+  .code-display-section {
+    width: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 16px;
-    width: 100%;
+    gap: 12px;
+    padding: 20px;
+    background: var(--color-bg-elevated);
+    border-radius: 16px;
   }
 
-  .voucher-credentials {
+  .code-display-section .code-label {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .code-box {
+    background: rgba(8, 145, 178, 0.1);
+    border: 2px solid var(--color-primary);
+    border-radius: 12px;
+    padding: 12px 24px;
+  }
+
+  .code-box .code-value {
+    font-family: var(--font-family-mono);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--color-primary-light);
+    letter-spacing: 4px;
+  }
+
+  .copy-code-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    background: rgba(8, 145, 178, 0.15);
+    border: 1px solid rgba(8, 145, 178, 0.3);
+    color: var(--color-primary-light);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .copy-code-btn:hover {
+    background: rgba(8, 145, 178, 0.25);
+    border-color: var(--color-primary);
+  }
+
+  /* Voucher Info Section */
+  .voucher-info-section {
+    width: 100%;
     display: flex;
     flex-direction: column;
     gap: 8px;
-    width: 100%;
-    max-width: 280px;
   }
 
-  .credential-row {
+  .voucher-info-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 12px;
-    background: var(--color-bg-elevated);
-    border-radius: 8px;
+    padding: 0 8px;
   }
 
-  .credential-label {
-    font-size: 13px;
+  .info-label {
+    font-size: 14px;
     color: var(--color-text-muted);
   }
 
-  .credential-value {
-    font-weight: 600;
-    font-family: var(--font-mono);
+  .info-value {
+    font-size: 14px;
+    font-weight: 500;
     color: var(--color-text-primary);
   }
 
-  .copy-btn {
+  .qr-hint-footer {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    text-align: center;
+    line-height: 1.8;
+    padding: 12px;
+    background: rgba(8, 145, 178, 0.05);
+    border-radius: 8px;
     width: 100%;
-    max-width: 280px;
   }
 </style>

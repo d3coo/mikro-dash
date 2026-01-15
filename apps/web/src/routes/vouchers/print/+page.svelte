@@ -4,19 +4,18 @@
 
   let { data } = $props();
 
-  let qrCodes = $state<Record<string, string>>({});
+  let wifiQrCode = $state<string>('');
 
   onMount(async () => {
-    for (const voucher of data.vouchers) {
-      // Use voucher.name as the username (the actual voucher code like G3AB)
-      const loginUrl = `http://10.10.10.1/login?dst=http://google.com&username=${voucher.name}&password=${voucher.password}`;
-      // Higher resolution QR for better scanning (28mm ~ 106px at 96dpi, use 300 for print quality)
-      qrCodes[voucher.id] = await QRCode.toDataURL(loginUrl, {
-        width: 300,
-        margin: 1,
-        errorCorrectionLevel: 'M'
-      });
-    }
+    // Generate WiFi connection QR code (same for all cards)
+    // Format: WIFI:T:nopass;S:SSID;H:false;;
+    const ssid = data.wifiSSID || 'AboYassen';
+    const wifiString = `WIFI:T:nopass;S:${ssid};H:false;;`;
+    wifiQrCode = await QRCode.toDataURL(wifiString, {
+      width: 300,
+      margin: 1,
+      errorCorrectionLevel: 'M'
+    });
   });
 
   function print() {
@@ -121,30 +120,24 @@
                 </div>
               </div>
 
-              <!-- QR Code - Bigger -->
+              <!-- WiFi QR Code -->
               <div class="qr-section">
-                {#if qrCodes[voucher.id]}
-                  <img src={qrCodes[voucher.id]} alt="QR" class="qr-image" />
+                {#if wifiQrCode}
+                  <img src={wifiQrCode} alt="WiFi QR" class="qr-image" />
                 {:else}
                   <div class="qr-placeholder"></div>
                 {/if}
               </div>
 
-              <!-- Credentials -->
-              <div class="credentials">
-                <div class="credential-row">
-                  <span class="label">المستخدم:</span>
-                  <span class="value">{voucher.name}</span>
-                </div>
-                <div class="credential-row">
-                  <span class="label">كلمة المرور:</span>
-                  <span class="value">{voucher.password}</span>
-                </div>
+              <!-- Single Code - Large and Prominent -->
+              <div class="code-section">
+                <span class="code-label">كود الدخول</span>
+                <span class="code-value">{voucher.name}</span>
               </div>
 
               <!-- Footer -->
               <div class="card-footer">
-                اتصل بالشبكة ← امسح الكود
+                امسح للاتصال بالواي فاي ← أدخل الكود
               </div>
             </div>
           {/each}
@@ -312,33 +305,36 @@
     border-radius: 4px;
   }
 
-  /* Credentials */
-  .credentials {
-    padding: 3px 6px;
-    background: white;
-    border-top: 1px solid #e5e5e5;
+  /* Code Section - Large and Prominent */
+  .code-section {
+    padding: 6px 8px;
+    background: #f8f8f8;
+    border-top: 1px solid #e0e0e0;
     flex-shrink: 0;
-  }
-
-  .credential-row {
+    text-align: center;
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1px 0;
+    flex-direction: column;
+    gap: 2px;
   }
 
-  .label {
-    font-size: 8px;
-    color: #555;
+  .code-label {
+    font-size: 7px;
+    color: #666;
     font-family: 'Cairo', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 1px;
   }
 
-  .value {
-    font-size: 11px;
-    font-weight: 700;
-    color: #111;
+  .code-value {
+    font-size: 16px;
+    font-weight: 800;
+    color: #000;
     font-family: 'IBM Plex Mono', 'Courier New', monospace;
-    letter-spacing: 0.5px;
+    letter-spacing: 3px;
+    background: #fff;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 2px solid #0891b2;
   }
 
   /* Card Footer */
@@ -412,6 +408,19 @@
       visibility: visible !important;
       width: 32mm !important;
       height: 32mm !important;
+    }
+
+    .code-section {
+      background: #f8f8f8 !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    .code-value {
+      border: 2pt solid #0891b2 !important;
+      background: white !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
     }
   }
 </style>

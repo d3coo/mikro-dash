@@ -78,15 +78,14 @@ export const actions: Actions = {
     const priceLE = parseInt(formData.get('priceLE') as string, 10);
     const profile = formData.get('profile') as string;
     const server = formData.get('server') as string || null;
-    const codePrefix = formData.get('codePrefix') as string;
     const sortOrder = parseInt(formData.get('sortOrder') as string, 10) || 0;
 
-    if (!id || !name || !nameAr || priceLE < 0 || isNaN(priceLE) || !profile || !codePrefix) {
+    if (!id || !name || !nameAr || priceLE < 0 || isNaN(priceLE) || !profile) {
       return fail(400, { error: 'جميع الحقول مطلوبة' });
     }
 
     try {
-      createPackage({ id, name, nameAr, priceLE, profile, server, codePrefix, sortOrder });
+      createPackage({ id, name, nameAr, priceLE, profile, server, codePrefix: '', sortOrder });
       return { packageSuccess: true };
     } catch (error) {
       console.error('Create package error:', error);
@@ -102,7 +101,6 @@ export const actions: Actions = {
     const priceLE = parseInt(formData.get('priceLE') as string, 10);
     const profile = formData.get('profile') as string;
     const server = formData.get('server') as string || null;
-    const codePrefix = formData.get('codePrefix') as string;
     const sortOrder = parseInt(formData.get('sortOrder') as string, 10) || 0;
 
     if (!id) {
@@ -110,7 +108,7 @@ export const actions: Actions = {
     }
 
     try {
-      updatePackage(id, { name, nameAr, priceLE, profile, server, codePrefix, sortOrder });
+      updatePackage(id, { name, nameAr, priceLE, profile, server, sortOrder });
       return { packageSuccess: true };
     } catch (error) {
       console.error('Update package error:', error);

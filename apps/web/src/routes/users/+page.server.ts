@@ -3,6 +3,7 @@ import { fail } from '@sveltejs/kit';
 import { getUsersPageData, disconnectWirelessClient, blockMacAddress } from '$lib/server/services/users';
 import { kickSession } from '$lib/server/services/sessions';
 import { getMikroTikClient } from '$lib/server/services/mikrotik';
+import { getSettings } from '$lib/server/config';
 
 const PAGE_SIZE = 10;
 
@@ -45,12 +46,15 @@ export const load: PageServerLoad = async ({ url }) => {
     wifiCurrentPage * PAGE_SIZE
   );
 
+  const settings = getSettings();
+
   return {
     voucherUsers: paginatedVoucherUsers,
     wifiOnlyClients: paginatedWiFiClients,
     totalVoucherUsers: voucherTotal,
     totalWiFiOnlyClients: wifiTotal,
     routerConnected,
+    wifiSSID: settings.wifi.ssid,
     voucherPagination: {
       currentPage: voucherCurrentPage,
       totalPages: voucherTotalPages,

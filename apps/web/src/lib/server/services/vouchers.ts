@@ -2,8 +2,8 @@ import { getMikroTikClient } from './mikrotik';
 import { getPackages, getPackageById, type PackageConfig } from '$lib/server/config';
 import type { HotspotUser } from '$lib/server/mikrotik/types';
 
-// Characters for generating codes (excluding confusing ones like 0/O, 1/l/I)
-const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+// Characters for generating codes (uppercase + numbers, excluding confusing ones like 0/O, 1/I)
+const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 export interface Voucher {
   id: string;           // MikroTik internal ID (.id)
@@ -36,39 +36,33 @@ function generateRandomCode(length: number): string {
 }
 
 /**
- * Generate 4-character alphanumeric password
+ * Generate unique 6-character voucher code (uppercase letters + numbers)
+ * Fully random - no prefix
+ * The code is used as both username AND password for easy single-field login
  */
-function generatePassword(): string {
-  return generateRandomCode(4);
+async function generateVoucherCode(client: ReturnType<typeof getMikroTikClient>): Promise<string> {
+  const users = await client.getHotspotUsers();
+  const existingNames = new Set(users.map(u => u.name.toUpperCase())); // Case-insensitive check
+
+  let attempts = 0;
+  while (attempts < 500) {
+    const code = generateRandomCode(6);
+    if (!existingNames.has(code.toUpperCase())) {
+      return code;
+    }
+    attempts++;
+  }
+
+  throw new Error('Could not generate unique voucher code');
 }
 
 /**
- * Generate unique voucher username (format: G3XX, G1XX where XX is random alphanumeric)
+ * Parse package ID from comment field
+ * Comment format: "pkg:PACKAGE_ID|Name - Price LE" or legacy "Name - Price LE"
  */
-async function generateVoucherId(client: ReturnType<typeof getMikroTikClient>, codePrefix: string): Promise<string> {
-  const users = await client.getHotspotUsers();
-  const existingNames = new Set(users.map(u => u.name));
-
-  // Try 2-character suffix first
-  let attempts = 0;
-  while (attempts < 100) {
-    const code = `${codePrefix}${generateRandomCode(2)}`;
-    if (!existingNames.has(code)) {
-      return code;
-    }
-    attempts++;
-  }
-
-  // Fallback: use 3 characters if 2 chars are exhausted
-  while (attempts < 200) {
-    const code = `${codePrefix}${generateRandomCode(3)}`;
-    if (!existingNames.has(code)) {
-      return code;
-    }
-    attempts++;
-  }
-
-  throw new Error('Could not generate unique voucher ID');
+function parsePackageIdFromComment(comment: string): string | null {
+  const match = comment.match(/^pkg:([^|]+)\|/);
+  return match ? match[1] : null;
 }
 
 /**
@@ -89,8 +83,17 @@ function transformToVoucher(user: HotspotUser, packages: PackageConfig[]): Vouch
     status = 'used';
   }
 
-  // Find matching package by code prefix
-  const matchingPkg = packages.find(p => user.name.startsWith(p.codePrefix));
+  // Find matching package - first try by ID in comment, then by profile
+  const comment = user.comment || '';
+  const packageIdFromComment = parsePackageIdFromComment(comment);
+  let matchingPkg = packageIdFromComment
+    ? packages.find(p => p.id === packageIdFromComment)
+    : null;
+
+  // Fallback: match by profile name
+  if (!matchingPkg) {
+    matchingPkg = packages.find(p => p.profile === user.profile);
+  }
 
   return {
     id: user['.id'],
@@ -104,7 +107,7 @@ function transformToVoucher(user: HotspotUser, packages: PackageConfig[]): Vouch
     bytesLimit,
     uptime,
     status,
-    comment: user.comment || '',
+    comment,
     packageId: matchingPkg?.id || '',
     packageName: matchingPkg?.nameAr || '',
     priceLE: matchingPkg?.priceLE || 0
@@ -142,6 +145,7 @@ export async function getVoucherByName(name: string): Promise<Voucher | undefine
 
 /**
  * Create new vouchers in MikroTik
+ * Username and password are the SAME code for easy single-field login
  */
 export async function createVouchers(packageId: string, quantity: number): Promise<{ created: number }> {
   const pkg = getPackageById(packageId);
@@ -153,13 +157,14 @@ export async function createVouchers(packageId: string, quantity: number): Promi
   let created = 0;
 
   for (let i = 0; i < quantity; i++) {
-    const username = await generateVoucherId(client, pkg.codePrefix);
-    const password = generatePassword();
+    // Generate a fully random 6-character code used as BOTH username AND password
+    const code = await generateVoucherCode(client);
 
     // Note: bytes limit comes from the MikroTik profile, not stored locally
-    await client.createHotspotUser(username, password, pkg.profile, {
+    // Comment format: pkg:ID|Display text (for package matching)
+    await client.createHotspotUser(code, code, pkg.profile, {
       server: pkg.server || undefined,
-      comment: `${pkg.nameAr} - ${pkg.priceLE} LE`
+      comment: `pkg:${pkg.id}|${pkg.nameAr} - ${pkg.priceLE} LE`
     });
     created++;
   }

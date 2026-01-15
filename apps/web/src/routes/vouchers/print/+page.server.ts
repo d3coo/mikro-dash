@@ -1,6 +1,6 @@
 import type { PageServerLoad } from './$types';
 import { getMikroTikClient } from '$lib/server/services/mikrotik';
-import { getPackageByCodePrefix, getSettings, type PackageConfig } from '$lib/server/config';
+import { getPackageFromComment, getPackageByCodePrefix, getSettings, type PackageConfig } from '$lib/server/config';
 
 interface PrintVoucher {
   id: string;
@@ -28,8 +28,10 @@ export const load: PageServerLoad = async ({ url }) => {
           const user = allUsers.find((u: any) => u['.id'] === id);
           if (!user) return null;
 
-          // Match package by voucher name prefix (e.g., G3AB -> G3 -> 3GB package)
-          const pkg = getPackageByCodePrefix(user.name);
+          // Match package: first try comment (new format), then prefix (legacy)
+          const pkg = getPackageFromComment(user.comment || '', user.profile)
+            || getPackageByCodePrefix(user.name);
+
           return {
             id: user['.id'],
             name: user.name,
@@ -49,6 +51,7 @@ export const load: PageServerLoad = async ({ url }) => {
 
   return {
     vouchers,
-    businessName: settings.business.name
+    businessName: settings.business.name,
+    wifiSSID: settings.wifi.ssid
   };
 };

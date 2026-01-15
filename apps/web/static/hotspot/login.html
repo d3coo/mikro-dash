@@ -519,30 +519,23 @@
       </div>
       $(endif)
 
-      <form name="login" action="$(link-login-only)" method="post" class="login-form">
+      <form name="login" action="$(link-login-only)" method="post" class="login-form" onsubmit="return prepareLogin()">
         <input type="hidden" name="dst" value="$(link-orig)">
         <input type="hidden" name="popup" value="true">
+        <input type="hidden" name="username" id="username-field" value="">
+        <input type="hidden" name="password" id="password-field" value="">
 
         <div class="form-group">
-          <label class="form-label">اسم المستخدم</label>
+          <label class="form-label">كود الدخول</label>
           <div class="input-icon">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-              <circle cx="12" cy="7" r="4"/>
+              <rect x="3" y="3" width="7" height="7"/>
+              <rect x="14" y="3" width="7" height="7"/>
+              <rect x="3" y="14" width="7" height="7"/>
+              <rect x="14" y="14" width="7" height="7"/>
             </svg>
           </div>
-          <input type="text" name="username" class="form-input" placeholder="أدخل اسم المستخدم أو الكود" autocomplete="username" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">كلمة المرور</label>
-          <div class="input-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-            </svg>
-          </div>
-          <input type="password" name="password" class="form-input" placeholder="أدخل كلمة المرور" autocomplete="current-password" required>
+          <input type="text" id="voucher-code" class="form-input" placeholder="أدخل الكود المكون من 6 أحرف" autocomplete="off" maxlength="10" required style="text-transform: uppercase; letter-spacing: 2px; font-size: 18px; text-align: center; padding-right: 20px;">
         </div>
 
         <button type="submit" class="submit-btn">
@@ -551,7 +544,7 @@
               <path d="M5 12h14"/>
               <path d="M12 5l7 7-7 7"/>
             </svg>
-            تسجيل الدخول
+            دخول
           </span>
         </button>
 
@@ -575,13 +568,23 @@
   </div>
 
   <script>
-    // Auto-focus on username field
+    // Auto-focus on code field
     document.addEventListener('DOMContentLoaded', function() {
-      const usernameInput = document.querySelector('input[name="username"]');
-      if (usernameInput) {
-        setTimeout(() => usernameInput.focus(), 500);
+      const codeInput = document.getElementById('voucher-code');
+      if (codeInput) {
+        setTimeout(() => codeInput.focus(), 500);
       }
     });
+
+    // Prepare login - copy voucher code to both username and password
+    function prepareLogin() {
+      const code = document.getElementById('voucher-code').value.trim().toUpperCase();
+      if (!code) return false;
+
+      document.getElementById('username-field').value = code;
+      document.getElementById('password-field').value = code;
+      return true;
+    }
 
     // QR Scanner URL (GitHub Pages with HTTPS for camera access)
     const scannerUrl = 'https://d3coo.github.io/mikro-dash/';
