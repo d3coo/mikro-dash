@@ -334,7 +334,7 @@
     }
 
     function doLogin() {
-      const data = outputData.innerText;
+      const data = outputData.innerText.trim().toUpperCase();
 
       // If it's already a full login URL, redirect directly
       if (data.startsWith('http') && data.includes('/login')) {
@@ -342,12 +342,11 @@
         return;
       }
 
-      // Otherwise, construct login URL for the hotspot
-      const username = data;
-      const password = data;
+      // Single code login: username and password are the same
+      const code = data;
       const loginUrl = 'http://' + hotspotIP + '/login?username=' +
-                       encodeURIComponent(username) + '&password=' +
-                       encodeURIComponent(password) + '&dst=' +
+                       encodeURIComponent(code) + '&password=' +
+                       encodeURIComponent(code) + '&dst=' +
                        encodeURIComponent('http://google.com');
       window.location.href = loginUrl;
     }

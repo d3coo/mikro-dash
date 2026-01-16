@@ -121,4 +121,11 @@
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
   }
+
+  /* Hide sidebar when printing */
+  @media print {
+    .sidebar {
+      display: none !important;
+    }
+  }
 </style>

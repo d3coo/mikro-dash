@@ -5,10 +5,10 @@
   import { Button } from '$lib/components/ui/button';
   import ConfirmModal from '$lib/components/confirm-modal.svelte';
   import Modal from '$lib/components/modal.svelte';
-  import { Plus, Trash2, Printer, Package, Filter, CheckCircle, XCircle, Clock, Loader2, CloudOff, RefreshCw, Cloud, ChevronRight, ChevronLeft, QrCode, X, Copy, Check } from 'lucide-svelte';
+  import { Plus, Trash2, Printer, Package, Filter, CheckCircle, XCircle, Clock, Loader2, CloudOff, ChevronRight, ChevronLeft, QrCode, X, Copy, Check } from 'lucide-svelte';
   import { toast } from 'svelte-sonner';
   import QRCode from 'qrcode';
-
+  
   let { data, form } = $props();
 
   // Show toast notifications for form results
@@ -17,8 +17,11 @@
       if (form.created) {
         toast.success(`تم إنشاء ${form.created} كرت بنجاح`);
       }
-      if (form.deleted) {
+      if (form.deleted !== undefined && !form.message) {
         toast.success(`تم حذف ${form.deleted} كرت بنجاح`);
+      }
+      if (form.message) {
+        toast.success(form.message);
       }
     }
     if (form?.error) {
@@ -31,8 +34,11 @@
   let selectedIds = $state<string[]>([]);
   let isGenerating = $state(false);
   let isDeleting = $state(false);
+  let isCleaning = $state(false);
   let showDeleteModal = $state(false);
+  let showCleanupModal = $state(false);
   let deleteFormEl: HTMLFormElement;
+  let cleanupFormEl: HTMLFormElement;
 
   // QR Code Modal State
   let showQrModal = $state(false);
@@ -185,12 +191,23 @@
         <h1 class="page-title">الكروت</h1>
         <p class="page-subtitle">إنشاء وإدارة كروت الواي فاي</p>
       </div>
-      <a href="/vouchers/print?ids={selectedIds.join(',')}" class="print-link">
-        <Button variant="outline" disabled={selectedIds.length === 0}>
-          <Printer class="w-4 h-4" />
-          <span>طباعة ({selectedIds.length})</span>
-        </Button>
-      </a>
+      <div class="header-actions">
+        <!-- Print Selected -->
+        <a href="/vouchers/print?ids={selectedIds.join(',')}" class="print-link">
+          <Button variant="outline" disabled={selectedIds.length === 0}>
+            <Printer class="w-4 h-4" />
+            <span>طباعة ({selectedIds.length})</span>
+          </Button>
+        </a>
+
+        <!-- Print All Available -->
+        <a href="/vouchers/print?status=available" class="print-link">
+          <Button variant="outline" disabled={data.statusCounts.available === 0}>
+            <Printer class="w-4 h-4" />
+            <span>طباعة الكل ({data.statusCounts.available})</span>
+          </Button>
+        </a>
+      </div>
     </div>
   </header>
 
@@ -305,6 +322,40 @@
             <X class="w-4 h-4" />
             <span>مسح الفلاتر</span>
           </Button>
+        {/if}
+
+        <!-- Cleanup Exhausted Vouchers -->
+        {#if data.statusCounts.exhausted > 0}
+          <form
+            bind:this={cleanupFormEl}
+            method="POST"
+            action="?/cleanup"
+            use:enhance={() => {
+              isCleaning = true;
+              return async ({ update }) => {
+                await update();
+                isCleaning = false;
+                showCleanupModal = false;
+              };
+            }}
+          >
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isCleaning}
+              onclick={() => showCleanupModal = true}
+              class="btn-cleanup"
+            >
+              {#if isCleaning}
+                <Loader2 class="w-4 h-4 animate-spin" />
+                <span>جاري التنظيف...</span>
+              {:else}
+                <Trash2 class="w-4 h-4" />
+                <span>حذف المنتهي ({data.statusCounts.exhausted})</span>
+              {/if}
+            </Button>
+          </form>
         {/if}
 
         {#if selectedIds.length > 0}
@@ -466,6 +517,16 @@
   onConfirm={() => deleteFormEl.requestSubmit()}
 />
 
+<ConfirmModal
+  bind:open={showCleanupModal}
+  title="تنظيف الكروت المنتهية"
+  message="هل أنت متأكد من حذف جميع الكروت المنتهية ({data.statusCounts.exhausted} كرت)؟ لا يمكن التراجع عن هذا الإجراء."
+  confirmText="حذف المنتهي"
+  cancelText="إلغاء"
+  variant="destructive"
+  onConfirm={() => cleanupFormEl.requestSubmit()}
+/>
+
 <!-- QR Code Modal -->
 <Modal bind:open={showQrModal} onClose={closeQrModal}>
   {#snippet header()}
@@ -541,6 +602,13 @@
     display: flex;
     flex-direction: column;
     gap: 24px;
+  }
+
+  .header-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
   }
 
   .print-link {
@@ -735,5 +803,16 @@
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+
+  /* Cleanup button styling */
+  :global(.btn-cleanup) {
+    border-color: rgba(239, 68, 68, 0.4) !important;
+    color: #f87171 !important;
+  }
+
+  :global(.btn-cleanup:hover) {
+    background: rgba(239, 68, 68, 0.1) !important;
+    border-color: rgba(239, 68, 68, 0.6) !important;
   }
 </style>

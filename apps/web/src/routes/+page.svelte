@@ -1,10 +1,39 @@
 <script lang="ts">
-  import { Users, Ticket, Banknote, Wifi, WifiOff, TrendingUp, Activity, Clock, Monitor, Signal, XCircle, QrCode, CheckCircle, Loader2 } from 'lucide-svelte';
-  import { onMount } from 'svelte';
+  import { Users, Ticket, Banknote, Wifi, WifiOff, TrendingUp, Activity, Clock, Monitor, Signal, XCircle, QrCode, CheckCircle, Loader2, Cpu, HardDrive, Timer, Trash2, RefreshCw } from 'lucide-svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { toast } from 'svelte-sonner';
+  import { invalidateAll } from '$app/navigation';
   import Modal from '$lib/components/modal.svelte';
 
   let { data } = $props();
+
+  // Auto-refresh state
+  let refreshInterval: ReturnType<typeof setInterval> | null = null;
+  let isRefreshing = $state(false);
+  let lastRefresh = $state(new Date());
+
+  // Auto-refresh every 30 seconds
+  onMount(() => {
+    refreshInterval = setInterval(() => {
+      refreshData();
+    }, 30000);
+  });
+
+  onDestroy(() => {
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+    }
+  });
+
+  async function refreshData() {
+    isRefreshing = true;
+    try {
+      await invalidateAll();
+      lastRefresh = new Date();
+    } finally {
+      isRefreshing = false;
+    }
+  }
 
   // QR Scanner state
   let showQrScanner = $state(false);
@@ -135,6 +164,33 @@
     return parts.join(' ') || '-';
   }
 
+  // Format router uptime (e.g., "1w2d3h4m5s" -> "1 أسبوع 2 يوم")
+  function formatRouterUptime(uptime: string): string {
+    if (!uptime || uptime === '0s') return '-';
+
+    const weeks = uptime.match(/(\d+)w/);
+    const days = uptime.match(/(\d+)d/);
+    const hours = uptime.match(/(\d+)h/);
+    const minutes = uptime.match(/(\d+)m/);
+
+    const parts = [];
+    if (weeks) parts.push(`${weeks[1]}أ`);
+    if (days) parts.push(`${days[1]}ي`);
+    if (hours) parts.push(`${hours[1]}س`);
+    if (!weeks && !days && minutes) parts.push(`${minutes[1]}د`);
+
+    return parts.join(' ') || '-';
+  }
+
+  // Format memory size
+  function formatMemory(bytes: number): string {
+    const mb = bytes / (1024 * 1024);
+    if (mb >= 1024) {
+      return `${(mb / 1024).toFixed(1)} GB`;
+    }
+    return `${mb.toFixed(0)} MB`;
+  }
+
   // Get status badge class
   function getStatusClass(status: string): string {
     switch (status) {
@@ -198,9 +254,19 @@
         <h1 class="page-title">{data.businessName}</h1>
         <p class="page-subtitle">لوحة التحكم الرئيسية</p>
       </div>
-      <div class="hidden md:flex items-center gap-3 text-sm text-text-secondary">
-        <Activity class="w-4 h-4" />
-        <span>آخر تحديث: الآن</span>
+      <div class="flex items-center gap-4">
+        <div class="hidden md:flex items-center gap-2 text-sm text-text-secondary">
+          <Activity class="w-4 h-4" />
+          <span>آخر تحديث: {lastRefresh.toLocaleTimeString('ar-EG')}</span>
+        </div>
+        <button
+          onclick={refreshData}
+          disabled={isRefreshing}
+          class="refresh-btn"
+          title="تحديث البيانات"
+        >
+          <RefreshCw class="w-5 h-5 {isRefreshing ? 'animate-spin' : ''}" />
+        </button>
       </div>
     </div>
   </header>
@@ -249,7 +315,13 @@
         {/if}
       </div>
       <div class="stat-footer">
-        <span class="stat-subtitle">MikroTik Router</span>
+        <span class="stat-subtitle">
+          {#if data.stats.routerHealth}
+            {data.stats.routerHealth.boardName}
+          {:else}
+            MikroTik Router
+          {/if}
+        </span>
         {#if data.stats.routerConnected}
           <span class="status-dot status-dot-success"></span>
         {:else}
@@ -258,6 +330,64 @@
       </div>
     </div>
   </div>
+
+  <!-- Router Health Section -->
+  {#if data.stats.routerConnected && data.stats.routerHealth}
+    <section class="router-health opacity-0 animate-fade-in" style="animation-delay: 450ms">
+      <h2 class="section-title">
+        <Monitor class="w-5 h-5 inline-block ml-2" />
+        صحة الراوتر
+      </h2>
+      <div class="health-grid">
+        <!-- CPU -->
+        <div class="health-card glass-card">
+          <div class="health-icon">
+            <Cpu class="w-5 h-5" />
+          </div>
+          <div class="health-info">
+            <span class="health-label">المعالج</span>
+            <span class="health-value">{data.stats.routerHealth.cpuLoad}%</span>
+          </div>
+          <div class="health-bar">
+            <div
+              class="health-bar-fill {data.stats.routerHealth.cpuLoad > 80 ? 'danger' : data.stats.routerHealth.cpuLoad > 50 ? 'warning' : 'success'}"
+              style="width: {data.stats.routerHealth.cpuLoad}%"
+            ></div>
+          </div>
+        </div>
+
+        <!-- Memory -->
+        <div class="health-card glass-card">
+          <div class="health-icon">
+            <HardDrive class="w-5 h-5" />
+          </div>
+          <div class="health-info">
+            <span class="health-label">الذاكرة</span>
+            <span class="health-value">{data.stats.routerHealth.memoryPercent}%</span>
+          </div>
+          <div class="health-bar">
+            <div
+              class="health-bar-fill {data.stats.routerHealth.memoryPercent > 80 ? 'danger' : data.stats.routerHealth.memoryPercent > 50 ? 'warning' : 'success'}"
+              style="width: {data.stats.routerHealth.memoryPercent}%"
+            ></div>
+          </div>
+          <span class="health-detail">{formatMemory(data.stats.routerHealth.memoryUsed)} / {formatMemory(data.stats.routerHealth.memoryTotal)}</span>
+        </div>
+
+        <!-- Uptime -->
+        <div class="health-card glass-card">
+          <div class="health-icon">
+            <Timer class="w-5 h-5" />
+          </div>
+          <div class="health-info">
+            <span class="health-label">وقت التشغيل</span>
+            <span class="health-value">{formatRouterUptime(data.stats.routerHealth.uptime)}</span>
+          </div>
+          <span class="health-detail">RouterOS {data.stats.routerHealth.version}</span>
+        </div>
+      </div>
+    </section>
+  {/if}
 
   <!-- Quick Actions -->
   <section class="quick-actions opacity-0 animate-fade-in" style="animation-delay: 500ms">
@@ -513,6 +643,30 @@
     display: flex;
     flex-direction: column;
     gap: 32px;
+  }
+
+  .refresh-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: rgba(8, 145, 178, 0.1);
+    border: 1px solid rgba(8, 145, 178, 0.3);
+    color: var(--color-primary-light);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .refresh-btn:hover:not(:disabled) {
+    background: rgba(8, 145, 178, 0.2);
+    border-color: var(--color-primary);
+  }
+
+  .refresh-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .stats-grid {
@@ -787,6 +941,83 @@
     display: flex;
     gap: 12px;
     margin-top: 8px;
+  }
+
+  /* Router Health Section */
+  .router-health {
+    margin-top: -16px;
+  }
+
+  .health-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+  }
+
+  .health-card {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .health-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: rgba(8, 145, 178, 0.15);
+    border: 1px solid rgba(8, 145, 178, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-primary-light);
+  }
+
+  .health-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .health-label {
+    font-size: 13px;
+    color: var(--color-text-secondary);
+  }
+
+  .health-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--color-text-primary);
+  }
+
+  .health-bar {
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .health-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s ease;
+  }
+
+  .health-bar-fill.success {
+    background: linear-gradient(90deg, #10b981, #34d399);
+  }
+
+  .health-bar-fill.warning {
+    background: linear-gradient(90deg, #f59e0b, #fbbf24);
+  }
+
+  .health-bar-fill.danger {
+    background: linear-gradient(90deg, #ef4444, #f87171);
+  }
+
+  .health-detail {
+    font-size: 11px;
+    color: var(--color-text-muted);
   }
 
   /* Responsive */

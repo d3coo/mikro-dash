@@ -1,28 +1,31 @@
-import type { PageServerLoad } from './$types';
+import { json } from '@sveltejs/kit';
+import type { RequestHandler } from './$types';
 import { getMikroTikClient } from '$lib/server/services/mikrotik';
-import { getPackageFromComment, getPackageByCodePrefix, getSettings, type PackageConfig } from '$lib/server/config';
+import { getPackageFromComment, getPackageByCodePrefix, getSettings } from '$lib/server/config';
 
-interface PrintVoucher {
+interface VoucherForExport {
   id: string;
   name: string;
-  password: string;
-  profile: string;
+  packageName: string;
   priceLE: number;
-  pkg: PackageConfig | undefined;
 }
 
-export const load: PageServerLoad = async ({ url }) => {
+export const GET: RequestHandler = async ({ url }) => {
   const idsParam = url.searchParams.get('ids') ?? '';
   const ids = idsParam.split(',').filter(Boolean);
-  const status = url.searchParams.get('status'); // 'available' to get all available vouchers
+  const status = url.searchParams.get('status');
 
-  let vouchers: PrintVoucher[] = [];
+  const settings = getSettings();
+  let vouchers: VoucherForExport[] = [];
 
   try {
     const client = getMikroTikClient();
     const allUsers = await client.getHotspotUsers();
     const activeSessions = await client.getActiveSessions();
     const activeUsernames = new Set(activeSessions.map((a: any) => a.user));
+
+    // System users to exclude
+    const systemUsers = ['default-trial', 'default', 'admin', 'guest'];
 
     // Helper to determine voucher status
     const getVoucherStatus = (user: any): 'available' | 'used' | 'exhausted' => {
@@ -39,23 +42,18 @@ export const load: PageServerLoad = async ({ url }) => {
       return 'available';
     };
 
-    // Helper to convert user to PrintVoucher
-    const toPrintVoucher = (user: any): PrintVoucher => {
+    // Helper to convert user to export format
+    const toExportVoucher = (user: any): VoucherForExport => {
       const pkg = getPackageFromComment(user.comment || '', user.profile)
         || getPackageByCodePrefix(user.name);
 
       return {
         id: user['.id'],
         name: user.name,
-        password: user.password || '',
-        profile: user.profile,
-        priceLE: pkg?.priceLE || 0,
-        pkg
+        packageName: pkg?.nameAr || user.profile || 'باقة',
+        priceLE: pkg?.priceLE || 0
       };
     };
-
-    // System users to exclude (not real vouchers)
-    const systemUsers = ['default-trial', 'default', 'admin', 'guest'];
 
     if (status === 'available') {
       // Get all available vouchers (excluding system users)
@@ -64,26 +62,25 @@ export const load: PageServerLoad = async ({ url }) => {
           getVoucherStatus(user) === 'available' &&
           !systemUsers.includes(user.name?.toLowerCase())
         )
-        .map(toPrintVoucher);
+        .map(toExportVoucher);
     } else if (ids.length > 0) {
       // Get specific vouchers by ID
       vouchers = ids
         .map(id => {
           const user = allUsers.find((u: any) => u['.id'] === id);
           if (!user) return null;
-          return toPrintVoucher(user);
+          return toExportVoucher(user);
         })
-        .filter((v): v is PrintVoucher => v !== null);
+        .filter((v): v is VoucherForExport => v !== null);
     }
   } catch (error) {
-    console.error('Failed to fetch vouchers from MikroTik:', error);
+    console.error('Failed to fetch vouchers:', error);
+    return json({ error: 'Failed to fetch vouchers' }, { status: 500 });
   }
 
-  const settings = getSettings();
-
-  return {
+  return json({
     vouchers,
     businessName: settings.business.name,
     wifiSSID: settings.wifi.ssid
-  };
+  });
 };

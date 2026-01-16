@@ -3,6 +3,16 @@ import { getVouchers, getVoucherStats, type Voucher } from './vouchers';
 import { getActiveSessions, type ActiveSession } from './sessions';
 import { getSettings } from '$lib/server/config';
 
+export interface RouterHealth {
+  cpuLoad: number;
+  memoryUsed: number;
+  memoryTotal: number;
+  memoryPercent: number;
+  uptime: string;
+  version: string;
+  boardName: string;
+}
+
 export interface DashboardStats {
   activeUsers: number;
   availableVouchers: number;
@@ -11,6 +21,7 @@ export interface DashboardStats {
   totalVouchers: number;
   todayRevenue: number;
   routerConnected: boolean;
+  routerHealth: RouterHealth | null;
 }
 
 export interface DashboardData {
@@ -28,11 +39,27 @@ export async function getDashboardData(): Promise<DashboardData> {
   let routerConnected = false;
   let vouchers: Voucher[] = [];
   let activeSessions: ActiveSession[] = [];
+  let routerHealth: RouterHealth | null = null;
 
   try {
     const client = getMikroTikClient();
-    await client.getSystemResources(); // Test connection
+    const resources = await client.getSystemResources();
     routerConnected = true;
+
+    // Parse router health
+    const freeMemory = parseInt(resources['free-memory']) || 0;
+    const totalMemory = parseInt(resources['total-memory']) || 1;
+    const memoryUsed = totalMemory - freeMemory;
+
+    routerHealth = {
+      cpuLoad: parseInt(resources['cpu-load']) || 0,
+      memoryUsed,
+      memoryTotal: totalMemory,
+      memoryPercent: Math.round((memoryUsed / totalMemory) * 100),
+      uptime: resources.uptime || '0s',
+      version: resources.version || 'Unknown',
+      boardName: resources['board-name'] || 'MikroTik'
+    };
 
     // Fetch data in parallel
     [vouchers, activeSessions] = await Promise.all([
@@ -62,7 +89,8 @@ export async function getDashboardData(): Promise<DashboardData> {
       exhaustedVouchers: voucherStats.exhausted,
       totalVouchers: vouchers.length,
       todayRevenue: voucherStats.revenue,
-      routerConnected
+      routerConnected,
+      routerHealth
     },
     vouchers,
     activeSessions,

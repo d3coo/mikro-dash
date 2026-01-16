@@ -1,6 +1,7 @@
 import { getMikroTikClient } from './mikrotik';
 import { getPackages, getPackageById, type PackageConfig } from '$lib/server/config';
 import type { HotspotUser } from '$lib/server/mikrotik/types';
+import { getVoucherDeviceMap, recordVoucherUsage, deleteVoucherUsageHistory } from './voucher-usage';
 
 // Characters for generating codes (uppercase + numbers, excluding confusing ones like 0/O, 1/I)
 const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -22,6 +23,10 @@ export interface Voucher {
   packageId: string;
   packageName: string;
   priceLE: number;
+  // Device info (from cookies + DHCP leases)
+  macAddress?: string;
+  deviceName?: string;
+  isOnline: boolean;
 }
 
 /**
@@ -66,20 +71,34 @@ function parsePackageIdFromComment(comment: string): string | null {
 }
 
 /**
+ * Device info from cookies and DHCP
+ */
+interface DeviceInfo {
+  macAddress?: string;
+  deviceName?: string;
+  isOnline: boolean;
+}
+
+/**
  * Transform MikroTik hotspot user to Voucher format
  */
-function transformToVoucher(user: HotspotUser, packages: PackageConfig[]): Voucher {
+function transformToVoucher(
+  user: HotspotUser,
+  packages: PackageConfig[],
+  activeUsernames: Set<string>,
+  deviceInfoMap: Map<string, DeviceInfo>
+): Voucher {
   const bytesIn = parseInt(user['bytes-in'] || '0', 10);
   const bytesOut = parseInt(user['bytes-out'] || '0', 10);
   const bytesTotal = bytesIn + bytesOut;
   const bytesLimit = parseInt(user['limit-bytes-total'] || '0', 10);
   const uptime = user.uptime || '0s';
 
-  // Determine status
+  // Determine status - check active sessions, bytes used, and data limit
   let status: 'available' | 'used' | 'exhausted' = 'available';
   if (bytesLimit > 0 && bytesTotal >= bytesLimit) {
     status = 'exhausted';
-  } else if (uptime !== '0s' || bytesTotal > 0) {
+  } else if (activeUsernames.has(user.name) || uptime !== '0s' || bytesTotal > 0) {
     status = 'used';
   }
 
@@ -94,6 +113,9 @@ function transformToVoucher(user: HotspotUser, packages: PackageConfig[]): Vouch
   if (!matchingPkg) {
     matchingPkg = packages.find(p => p.profile === user.profile);
   }
+
+  // Get device info (MAC + device name)
+  const deviceInfo = deviceInfoMap.get(user.name) || { isOnline: false };
 
   return {
     id: user['.id'],
@@ -110,7 +132,10 @@ function transformToVoucher(user: HotspotUser, packages: PackageConfig[]): Vouch
     comment,
     packageId: matchingPkg?.id || '',
     packageName: matchingPkg?.nameAr || '',
-    priceLE: matchingPkg?.priceLE || 0
+    priceLE: matchingPkg?.priceLE || 0,
+    macAddress: deviceInfo.macAddress,
+    deviceName: deviceInfo.deviceName,
+    isOnline: deviceInfo.isOnline
   };
 }
 
@@ -119,12 +144,85 @@ function transformToVoucher(user: HotspotUser, packages: PackageConfig[]): Vouch
  */
 export async function getVouchers(): Promise<Voucher[]> {
   const client = getMikroTikClient();
-  const hotspotUsers = await client.getHotspotUsers();
+  const [hotspotUsers, activeSessions, cookies, dhcpLeases] = await Promise.all([
+    client.getHotspotUsers(),
+    client.getActiveSessions(),
+    client.getHotspotCookies(),
+    client.getDhcpLeases()
+  ]);
   const packages = getPackages();
+
+  // Create set of active usernames for status detection
+  const activeUsernames = new Set(activeSessions.map(s => s.user));
+
+  // Build MAC → device name map from DHCP leases
+  const macToDeviceName = new Map<string, string>();
+  for (const lease of dhcpLeases) {
+    const mac = lease['mac-address']?.toUpperCase();
+    const hostName = lease['host-name'];
+    if (mac && hostName) {
+      macToDeviceName.set(mac, hostName.replace(/-/g, ' '));
+    }
+  }
+
+  // Get stored device history from database (permanent storage)
+  const storedDeviceMap = getVoucherDeviceMap();
+
+  // Build voucher → device info map
+  // Priority: active sessions > cookies > stored history
+  const deviceInfoMap = new Map<string, DeviceInfo>();
+
+  // From active sessions (currently online) - also save to database
+  for (const session of activeSessions) {
+    const mac = session['mac-address']?.toUpperCase();
+    const deviceName = mac ? macToDeviceName.get(mac) : undefined;
+    deviceInfoMap.set(session.user, {
+      macAddress: session['mac-address'],
+      deviceName,
+      isOnline: true
+    });
+
+    // Save to permanent storage
+    if (mac) {
+      const bytesIn = parseInt(session['bytes-in'] || '0', 10);
+      const bytesOut = parseInt(session['bytes-out'] || '0', 10);
+      recordVoucherUsage(session.user, mac, deviceName, session.address, bytesIn + bytesOut);
+    }
+  }
+
+  // From cookies (for offline users who have connected before)
+  for (const cookie of cookies) {
+    // Don't overwrite active session info
+    if (!deviceInfoMap.has(cookie.user)) {
+      const mac = cookie['mac-address']?.toUpperCase();
+      const deviceName = mac ? macToDeviceName.get(mac) : undefined;
+      deviceInfoMap.set(cookie.user, {
+        macAddress: cookie['mac-address'],
+        deviceName,
+        isOnline: false
+      });
+
+      // Save to permanent storage if we have the info
+      if (mac) {
+        recordVoucherUsage(cookie.user, mac, deviceName);
+      }
+    }
+  }
+
+  // From stored history (for users whose cookies expired)
+  for (const [voucherCode, storedInfo] of storedDeviceMap) {
+    if (!deviceInfoMap.has(voucherCode)) {
+      deviceInfoMap.set(voucherCode, {
+        macAddress: storedInfo.macAddress,
+        deviceName: storedInfo.deviceName || undefined,
+        isOnline: false
+      });
+    }
+  }
 
   return hotspotUsers
     .filter(u => !u.name.includes('default') && u.name !== 'admin')
-    .map(u => transformToVoucher(u, packages));
+    .map(u => transformToVoucher(u, packages, activeUsernames, deviceInfoMap));
 }
 
 /**
@@ -160,11 +258,14 @@ export async function createVouchers(packageId: string, quantity: number): Promi
     // Generate a fully random 6-character code used as BOTH username AND password
     const code = await generateVoucherCode(client);
 
-    // Comment format: pkg:ID|Display text (for package matching)
+    // Comment format: pkg:ID|created:TIMESTAMP|Display text
+    // Timestamp used for "expire 24h after creation" logic
+    const createdAt = Date.now();
     await client.createHotspotUser(code, code, pkg.profile, {
       limitBytes: pkg.bytesLimit || undefined,
+      limitUptime: pkg.timeLimit || '1d',  // Safety net: 24h total connection time
       server: pkg.server || undefined,
-      comment: `pkg:${pkg.id}|${pkg.nameAr} - ${pkg.priceLE} LE`
+      comment: `pkg:${pkg.id}|created:${createdAt}|${pkg.nameAr} - ${pkg.priceLE} LE`
     });
     created++;
   }
@@ -173,22 +274,31 @@ export async function createVouchers(packageId: string, quantity: number): Promi
 }
 
 /**
- * Delete voucher from MikroTik
+ * Delete voucher from MikroTik and its usage history
  */
-export async function deleteVoucher(id: string): Promise<void> {
+export async function deleteVoucher(id: string, voucherCode?: string): Promise<void> {
   const client = getMikroTikClient();
+
+  // If we have the voucher code, delete its usage history
+  if (voucherCode) {
+    deleteVoucherUsageHistory(voucherCode);
+  }
+
   await client.deleteHotspotUser(id);
 }
 
 /**
- * Delete multiple vouchers
+ * Delete multiple vouchers and their usage history
  */
-export async function deleteVouchers(ids: string[]): Promise<{ deleted: number }> {
+export async function deleteVouchers(vouchers: Array<{ id: string; name: string }>): Promise<{ deleted: number }> {
   const client = getMikroTikClient();
   let deleted = 0;
 
-  for (const id of ids) {
-    await client.deleteHotspotUser(id);
+  for (const voucher of vouchers) {
+    // Delete usage history first
+    deleteVoucherUsageHistory(voucher.name);
+    // Then delete from MikroTik
+    await client.deleteHotspotUser(voucher.id);
     deleted++;
   }
 

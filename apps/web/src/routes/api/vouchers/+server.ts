@@ -40,7 +40,13 @@ export const DELETE: RequestHandler = async ({ request }) => {
       return json({ error: 'ids array required' }, { status: 400 });
     }
 
-    const result = await deleteVouchers(ids);
+    // Get voucher names before deleting (needed to delete usage history)
+    const allVouchers = await getVouchers();
+    const vouchersToDelete = allVouchers
+      .filter(v => ids.includes(v.id))
+      .map(v => ({ id: v.id, name: v.name }));
+
+    const result = await deleteVouchers(vouchersToDelete);
     return json({ success: true, deleted: result.deleted });
   } catch (error) {
     console.error('Delete vouchers error:', error);

@@ -63,4 +63,32 @@
 			padding: 20px;
 		}
 	}
+
+	/* Hide sidebar and adjust layout for printing */
+	@media print {
+		.app-layout {
+			display: block !important;
+		}
+
+		.app-layout > :global(.sidebar) {
+			display: none !important;
+		}
+
+		.main-content {
+			margin: 0 !important;
+			padding: 0 !important;
+			width: 100% !important;
+		}
+
+		.content-container {
+			padding: 0 !important;
+			max-width: 100% !important;
+		}
+
+		/* Hide toast notifications */
+		:global([data-sonner-toaster]),
+		:global(.sonner-toast-container) {
+			display: none !important;
+		}
+	}
 </style>

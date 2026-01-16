@@ -17,7 +17,9 @@ export const GET: RequestHandler = async ({ params }) => {
 
 export const DELETE: RequestHandler = async ({ params }) => {
   try {
-    await deleteVoucher(params.id);
+    // Get voucher name before deleting (needed to delete usage history)
+    const voucher = await getVoucherById(params.id);
+    await deleteVoucher(params.id, voucher?.name);
     return json({ success: true });
   } catch (error) {
     console.error('Delete voucher error:', error);

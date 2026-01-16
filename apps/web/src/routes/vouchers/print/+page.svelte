@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { page } from '$app/stores';
   import QRCode from 'qrcode';
 
   let { data } = $props();
@@ -16,6 +17,15 @@
       margin: 1,
       errorCorrectionLevel: 'M'
     });
+
+    // Auto-print if autoprint parameter is set (for PDF export)
+    const autoprint = $page.url.searchParams.get('autoprint');
+    if (autoprint === 'true' && data.vouchers.length > 0) {
+      // Wait a moment for QR codes to render
+      setTimeout(() => {
+        window.print();
+      }, 500);
+    }
   });
 
   function print() {
@@ -32,52 +42,40 @@
         margin: 5mm;
       }
 
-      /* Reset everything */
+      /* Print colors correctly */
+      * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+
       html, body {
         margin: 0 !important;
         padding: 0 !important;
         background: white !important;
-        -webkit-print-color-adjust: exact !important;
-        print-color-adjust: exact !important;
-        overflow: visible !important;
-      }
-
-      /* Hide ALL elements by default */
-      body * {
-        visibility: hidden;
-      }
-
-      /* Only show print-wrapper and its children */
-      .print-wrapper,
-      .print-wrapper * {
-        visibility: visible !important;
-      }
-
-      /* Position print-wrapper to cover entire page */
-      .print-wrapper {
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        width: 100% !important;
-        height: auto !important;
-        z-index: 999999 !important;
-        background: white !important;
       }
 
       /* Hide toolbar */
-      .no-print {
+      .no-print,
+      .toolbar {
         display: none !important;
-        visibility: hidden !important;
       }
 
-      /* Page breaks */
-      .print-page {
-        page-break-after: always;
-        page-break-inside: avoid;
+      /* Simple layout for print */
+      .print-layout {
+        background: white !important;
+        padding: 0 !important;
+        margin: 0 !important;
       }
-      .print-page:last-child {
-        page-break-after: auto;
+
+      /* Page breaks - only between pages, not after last */
+      .print-page {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }
+
+      .print-page:not(:last-child) {
+        page-break-after: always !important;
+        break-after: page !important;
       }
     }
   </style>
@@ -211,7 +209,7 @@
   .cards-grid {
     display: grid;
     grid-template-columns: repeat(3, 52mm);
-    grid-template-rows: repeat(4, 65mm);
+    grid-auto-rows: 65mm;
     gap: 6mm;
     justify-content: center;
     align-content: start;
@@ -351,76 +349,52 @@
   /* Print-specific */
   @media print {
     .print-wrapper {
-      position: fixed !important;
-      top: 0 !important;
-      left: 0 !important;
-      width: 100% !important;
       background: white !important;
-      z-index: 999999 !important;
     }
 
     .print-container {
+      margin: 0 !important;
       padding: 0 !important;
-      margin: 0 auto !important;
-      box-sizing: border-box !important;
     }
 
     .print-page {
-      padding: 8mm !important;
-      box-sizing: border-box !important;
+      padding: 5mm !important;
+      margin: 0 !important;
+      height: auto !important;
+      min-height: 0 !important;
+      max-height: none !important;
+      overflow: visible !important;
     }
 
     .cards-grid {
-      gap: 6mm !important;
-      grid-template-columns: repeat(3, 52mm) !important;
-      grid-template-rows: repeat(4, 65mm) !important;
-      justify-content: center !important;
-      align-content: start !important;
+      gap: 5mm !important;
+      grid-auto-rows: auto !important;
     }
 
     .voucher-card {
       border: 1pt solid #000 !important;
-      visibility: visible !important;
-      width: 52mm !important;
-      height: 65mm !important;
-      box-sizing: border-box !important;
+      height: 63mm !important;
     }
 
     .card-header {
       background: #0891b2 !important;
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
     }
 
     .card-footer {
       background: #1a1a1a !important;
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
     }
 
     .qr-section {
       background: white !important;
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
-    }
-
-    .qr-image {
-      visibility: visible !important;
-      width: 32mm !important;
-      height: 32mm !important;
     }
 
     .code-section {
       background: #f8f8f8 !important;
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
     }
 
     .code-value {
       border: 2pt solid #0891b2 !important;
       background: white !important;
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
     }
   }
 </style>

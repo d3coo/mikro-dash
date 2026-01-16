@@ -81,6 +81,7 @@ export class MikroTikClient {
     profile: string,
     options?: {
       limitBytes?: number;
+      limitUptime?: string;  // Total lifetime limit e.g., "1d", "12h"
       server?: string;
       comment?: string;
     }
@@ -92,6 +93,9 @@ export class MikroTikClient {
     };
     if (options?.limitBytes) {
       body['limit-bytes-total'] = options.limitBytes.toString();
+    }
+    if (options?.limitUptime) {
+      body['limit-uptime'] = options.limitUptime;
     }
     if (options?.server) {
       body.server = options.server;
@@ -357,6 +361,61 @@ export class MikroTikClient {
   // Hotspot Cookies (MAC bindings for session persistence)
   async getHotspotCookies(): Promise<HotspotCookie[]> {
     return this.request<HotspotCookie[]>('/ip/hotspot/cookie');
+  }
+
+  // IP Bindings (devices that bypass or are blocked from hotspot)
+  async getIpBindings(): Promise<Array<{
+    '.id': string;
+    'mac-address'?: string;
+    address?: string;
+    'to-address'?: string;
+    type: 'regular' | 'bypassed' | 'blocked';
+    comment?: string;
+    disabled?: string;
+  }>> {
+    return this.request('/ip/hotspot/ip-binding');
+  }
+
+  // Add IP binding (bypass or block a device)
+  async addIpBinding(
+    macAddress: string,
+    type: 'bypassed' | 'blocked',
+    comment?: string
+  ): Promise<void> {
+    await this.request('/ip/hotspot/ip-binding/add', 'POST', {
+      'mac-address': macAddress,
+      type,
+      comment: comment || `Added from dashboard`
+    });
+  }
+
+  // Remove IP binding
+  async removeIpBinding(id: string): Promise<void> {
+    await this.request('/ip/hotspot/ip-binding/remove', 'POST', {
+      '.id': id
+    });
+  }
+
+  // Delete hotspot cookie (force re-authentication)
+  async deleteHotspotCookie(id: string): Promise<void> {
+    await this.request('/ip/hotspot/cookie/remove', 'POST', {
+      '.id': id
+    });
+  }
+
+  // Get hotspot hosts (all devices that have contacted the hotspot)
+  async getHotspotHosts(): Promise<Array<{
+    '.id': string;
+    'mac-address': string;
+    address: string;
+    'to-address'?: string;
+    authorized: string;  // "true" or "false"
+    'bytes-in': string;
+    'bytes-out': string;
+    bypassed?: string;
+    comment?: string;
+  }>> {
+    return this.request('/ip/hotspot/host');
   }
 
   // DHCP Leases (for device names)

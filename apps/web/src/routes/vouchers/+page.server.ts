@@ -116,11 +116,42 @@ export const actions: Actions = {
     }
 
     try {
-      const result = await deleteVouchers(ids);
+      // Get voucher names before deleting (needed to delete usage history)
+      const allVouchers = await getVouchers();
+      const vouchersToDelete = allVouchers
+        .filter(v => ids.includes(v.id))
+        .map(v => ({ id: v.id, name: v.name }));
+
+      const result = await deleteVouchers(vouchersToDelete);
       return { success: true, deleted: result.deleted };
     } catch (error) {
       console.error('Delete vouchers error:', error);
       return fail(500, { error: 'فشل في حذف الكروت' });
+    }
+  },
+
+  cleanup: async () => {
+    try {
+      // Get all vouchers and filter exhausted ones
+      const allVouchers = await getVouchers();
+      const exhaustedVouchers = allVouchers
+        .filter(v => v.status === 'exhausted')
+        .map(v => ({ id: v.id, name: v.name }));
+
+      if (exhaustedVouchers.length === 0) {
+        return { success: true, deleted: 0, message: 'لا توجد كروت منتهية للحذف' };
+      }
+
+      const result = await deleteVouchers(exhaustedVouchers);
+
+      return {
+        success: true,
+        deleted: result.deleted,
+        message: `تم حذف ${result.deleted} كرت منتهي`
+      };
+    } catch (error) {
+      console.error('Cleanup vouchers error:', error);
+      return fail(500, { error: 'فشل في حذف الكروت المنتهية' });
     }
   }
 };

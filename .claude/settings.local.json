@@ -17,7 +17,8 @@
       "Bash(pm2 save:*)",
       "Bash(pm2 startup:*)",
       "Bash(pm2-startup:*)",
-      "Bash(pm2 list:*)"
+      "Bash(pm2 list:*)",
+      "Bash(powershell -Command \"Invoke-RestMethod -Uri ''http://192.168.1.109/rest/ip/hotspot/user/profile'' -Credential \\(New-Object PSCredential\\(''admin'', \\(ConvertTo-SecureString ''need4speed'' -AsPlainText -Force\\)\\)\\) | ConvertTo-Json -Depth 10\")"
     ]
   }
 }
