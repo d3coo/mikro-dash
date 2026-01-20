@@ -54,6 +54,10 @@
     { label: 'المستهلك', data: data.charts.dataUsage.map(d => d.used), color: '#a78bfa' }
   ]);
 
+  // Calculate costs
+  const dataSoldCost = $derived(data.summary.dataSoldGB * data.costPerGb);
+  const dataUsedCost = $derived(data.summary.dataUsedGB * data.costPerGb);
+
   // Stats cards
   const stats = $derived([
     {
@@ -73,16 +77,23 @@
     {
       title: 'صافي الربح',
       value: formatCurrency(data.summary.netProfit),
-      subtitle: data.summary.netProfit >= 0 ? 'ربح' : 'خسارة',
+      subtitle: `تكلفة البيانات: ${formatCurrency(dataSoldCost)}`,
       icon: data.summary.netProfit >= 0 ? TrendingUp : TrendingDown,
       color: data.summary.netProfit >= 0 ? 'success' : 'danger'
     },
     {
       title: 'البيانات المباعة',
       value: formatGB(data.summary.dataSoldGB),
-      subtitle: `${formatGB(data.summary.dataUsedGB)} مستهلك`,
+      subtitle: `التكلفة: ${formatCurrency(dataSoldCost)}`,
       icon: HardDrive,
       color: 'warning'
+    },
+    {
+      title: 'البيانات المستهلكة',
+      value: formatGB(data.summary.dataUsedGB),
+      subtitle: `التكلفة: ${formatCurrency(dataUsedCost)}`,
+      icon: HardDrive,
+      color: 'info'
     }
   ]);
 
@@ -431,6 +442,7 @@
 
   .period-tabs {
     display: flex;
+    flex-direction: row-reverse;
     background: var(--bg-glass);
     border-radius: 0.75rem;
     padding: 0.25rem;
@@ -450,12 +462,14 @@
   }
 
   .period-tab:hover {
-    color: var(--text-primary);
+    color: #f1f5f9;
+    background: rgba(34, 211, 238, 0.1);
   }
 
   .period-tab.active {
-    background: var(--primary);
-    color: white;
+    background: #0891b2 !important;
+    color: white !important;
+    box-shadow: 0 0 12px rgba(34, 211, 238, 0.3);
   }
 
   .stats-grid {
@@ -515,6 +529,12 @@
     background: rgba(239, 68, 68, 0.15);
     color: #f87171;
     border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+
+  .stat-icon-info {
+    background: rgba(167, 139, 250, 0.15);
+    color: #a78bfa;
+    border: 1px solid rgba(167, 139, 250, 0.3);
   }
 
   .stat-value {

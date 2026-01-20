@@ -2,6 +2,7 @@ import { getMikroTikClient } from './mikrotik';
 import { getVouchers, getVoucherStats, type Voucher } from './vouchers';
 import { getActiveSessions, type ActiveSession } from './sessions';
 import { getSettings } from '$lib/server/config';
+import { getTodayPsRevenue, getStations, getActiveSessions as getPsActiveSessions } from './playstation';
 
 export interface RouterHealth {
   cpuLoad: number;
@@ -22,6 +23,10 @@ export interface DashboardStats {
   todayRevenue: number;
   routerConnected: boolean;
   routerHealth: RouterHealth | null;
+  // PlayStation stats
+  psStations: number;
+  psActiveSessions: number;
+  psTodayRevenue: number;
 }
 
 export interface DashboardData {
@@ -81,6 +86,11 @@ export async function getDashboardData(): Promise<DashboardData> {
       .reduce((sum, v) => sum + v.priceLE, 0)
   };
 
+  // PlayStation stats
+  const psStations = getStations();
+  const psActiveSessions = getPsActiveSessions();
+  const psTodayRevenue = getTodayPsRevenue(); // In piasters
+
   return {
     stats: {
       activeUsers: activeSessions.length,
@@ -90,7 +100,11 @@ export async function getDashboardData(): Promise<DashboardData> {
       totalVouchers: vouchers.length,
       todayRevenue: voucherStats.revenue,
       routerConnected,
-      routerHealth
+      routerHealth,
+      // PlayStation stats
+      psStations: psStations.length,
+      psActiveSessions: psActiveSessions.length,
+      psTodayRevenue: Math.round(psTodayRevenue / 100) // Convert to EGP
     },
     vouchers,
     activeSessions,

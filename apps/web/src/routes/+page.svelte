@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Users, Ticket, Banknote, Wifi, WifiOff, TrendingUp, Activity, Clock, Monitor, Signal, XCircle, QrCode, CheckCircle, Loader2, Cpu, HardDrive, Timer, Trash2, RefreshCw } from 'lucide-svelte';
+  import { Users, Ticket, Banknote, Wifi, WifiOff, TrendingUp, Activity, Clock, Monitor, Signal, XCircle, QrCode, CheckCircle, Loader2, Cpu, HardDrive, Timer, Trash2, RefreshCw, Gamepad2 } from 'lucide-svelte';
   import { onMount, onDestroy } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { invalidateAll } from '$app/navigation';
@@ -218,7 +218,10 @@
   let limitedSessions = $derived(data.activeSessions.slice(0, MAX_SESSIONS));
   let limitedVouchers = $derived(data.vouchers.slice(0, MAX_VOUCHERS));
 
-  const stats = [
+  // Combined today revenue (WiFi + PlayStation)
+  let totalTodayRevenue = $derived(data.stats.todayRevenue + data.stats.psTodayRevenue);
+
+  const stats = $derived([
     {
       title: 'المستخدمين النشطين',
       value: data.stats.activeUsers,
@@ -237,13 +240,13 @@
     },
     {
       title: 'إيراد اليوم',
-      value: `${data.stats.todayRevenue} ج.م`,
-      subtitle: 'المبيعات اليوم',
+      value: `${totalTodayRevenue} ج.م`,
+      subtitle: `كروت: ${data.stats.todayRevenue} | PS: ${data.stats.psTodayRevenue}`,
       icon: Banknote,
       color: 'warning',
       delay: 2
     }
-  ];
+  ]);
 </script>
 
 <div class="dashboard">
@@ -409,6 +412,15 @@
         <div class="action-content">
           <h3>إنشاء كروت</h3>
           <p>إنشاء كروت واي فاي جديدة</p>
+        </div>
+      </a>
+      <a href="/playstation" class="action-card glass-card">
+        <div class="action-icon">
+          <Gamepad2 class="w-6 h-6" />
+        </div>
+        <div class="action-content">
+          <h3>البلايستيشن</h3>
+          <p>{data.stats.psActiveSessions} جلسة نشطة من {data.stats.psStations}</p>
         </div>
       </a>
       <a href="/settings" class="action-card glass-card">

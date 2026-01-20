@@ -64,6 +64,70 @@ export const dailyStats = sqliteTable('daily_stats', {
   updatedAt: integer('updated_at').notNull()
 });
 
+// PlayStation stations
+export const psStations = sqliteTable('ps_stations', {
+  id: text('id').primaryKey(),                    // e.g., "PS-01"
+  name: text('name').notNull(),                   // "Station 1"
+  nameAr: text('name_ar').notNull(),              // "جهاز ١"
+  macAddress: text('mac_address').notNull(),      // PlayStation MAC
+  hourlyRate: integer('hourly_rate').notNull(),   // Piasters (2000 = 20 EGP/hr)
+  status: text('status').notNull().default('available'), // available|occupied|maintenance
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull()
+});
+
+// PlayStation time-based sessions
+export const psSessions = sqliteTable('ps_sessions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  stationId: text('station_id').notNull(),
+  startedAt: integer('started_at').notNull(),
+  endedAt: integer('ended_at'),                   // NULL = active
+  hourlyRateSnapshot: integer('hourly_rate_snapshot').notNull(), // Rate at start
+  totalCost: integer('total_cost'),               // Calculated on end (piasters)
+  ordersCost: integer('orders_cost').default(0),  // Total food/drinks cost (piasters)
+  startedBy: text('started_by').notNull().default('manual'), // manual|auto
+  timerMinutes: integer('timer_minutes'),         // Optional timer (30, 60, etc.) - NULL = no timer
+  timerNotified: integer('timer_notified').default(0), // 1 = notification sent
+  notes: text('notes'),
+  createdAt: integer('created_at').notNull()
+});
+
+// PlayStation daily stats
+export const psDailyStats = sqliteTable('ps_daily_stats', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  date: text('date').notNull().unique(),          // YYYY-MM-DD
+  totalSessions: integer('total_sessions').notNull().default(0),
+  totalMinutes: integer('total_minutes').notNull().default(0),
+  totalRevenue: integer('total_revenue').notNull().default(0),
+  sessionsByStation: text('sessions_by_station').notNull().default('{}'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull()
+});
+
+// PlayStation menu items (food/drinks)
+export const psMenuItems = sqliteTable('ps_menu_items', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),                   // "Pepsi"
+  nameAr: text('name_ar').notNull(),              // "بيبسي"
+  category: text('category').notNull(),           // "drinks" | "food" | "snacks"
+  price: integer('price').notNull(),              // Price in piasters (500 = 5 EGP)
+  isAvailable: integer('is_available').notNull().default(1),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull()
+});
+
+// PlayStation session orders (items ordered during a session)
+export const psSessionOrders = sqliteTable('ps_session_orders', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  sessionId: integer('session_id').notNull(),     // Links to ps_sessions
+  menuItemId: integer('menu_item_id').notNull(),  // Links to ps_menu_items
+  quantity: integer('quantity').notNull().default(1),
+  priceSnapshot: integer('price_snapshot').notNull(), // Price at time of order (piasters)
+  createdAt: integer('created_at').notNull()
+});
+
 // Type exports
 export type Setting = typeof settings.$inferSelect;
 export type NewSetting = typeof settings.$inferInsert;
@@ -77,3 +141,13 @@ export type DailyStat = typeof dailyStats.$inferSelect;
 export type NewDailyStat = typeof dailyStats.$inferInsert;
 export type PrintedVoucher = typeof printedVouchers.$inferSelect;
 export type NewPrintedVoucher = typeof printedVouchers.$inferInsert;
+export type PsStation = typeof psStations.$inferSelect;
+export type NewPsStation = typeof psStations.$inferInsert;
+export type PsSession = typeof psSessions.$inferSelect;
+export type NewPsSession = typeof psSessions.$inferInsert;
+export type PsDailyStat = typeof psDailyStats.$inferSelect;
+export type NewPsDailyStat = typeof psDailyStats.$inferInsert;
+export type PsMenuItem = typeof psMenuItems.$inferSelect;
+export type NewPsMenuItem = typeof psMenuItems.$inferInsert;
+export type PsSessionOrder = typeof psSessionOrders.$inferSelect;
+export type NewPsSessionOrder = typeof psSessionOrders.$inferInsert;

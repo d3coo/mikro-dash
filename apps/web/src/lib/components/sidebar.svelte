@@ -9,7 +9,8 @@
     Settings,
     Zap,
     Globe,
-    BarChart3
+    BarChart3,
+    Gamepad2
   } from 'lucide-svelte';
 
   const navItems = [
@@ -17,6 +18,7 @@
     { href: '/vouchers', label: 'الكروت', icon: Ticket },
     { href: '/users', label: 'المستخدمين', icon: Users },
     { href: '/sessions', label: 'الجلسات', icon: Radio },
+    { href: '/playstation', label: 'البلايستيشن', icon: Gamepad2 },
     { href: '/analytics', label: 'التقارير', icon: BarChart3 },
     { href: '/wifi', label: 'الواي فاي', icon: Wifi },
     { href: '/portal', label: 'البوابة', icon: Globe },

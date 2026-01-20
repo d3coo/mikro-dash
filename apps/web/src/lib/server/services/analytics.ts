@@ -262,8 +262,9 @@ async function calculateSummary(
   const costPerGb = getCostPerGb();
   const monthlyFixedCosts = getMonthlyFixedCosts();
 
-  // Calculate profit
-  const dataCost = dataUsedGB * costPerGb;
+  // Calculate profit based on data SOLD (not data used)
+  // This reflects the actual cost of the vouchers sold
+  const dataCost = dataSoldGB * costPerGb;
   const grossProfit = revenue - dataCost;
 
   // Prorate fixed costs
@@ -388,9 +389,9 @@ export async function getProfitChartData(days: number): Promise<ChartDataPoint[]
     });
 
     const revenue = dayVouchers.reduce((sum, v) => sum + v.priceLE, 0);
-    const dataUsedBytes = dayVouchers.reduce((sum, v) => sum + v.bytesTotal, 0);
-    const dataUsedGB = dataUsedBytes / (1024 * 1024 * 1024);
-    const dataCost = dataUsedGB * costPerGb;
+    const dataSoldBytes = dayVouchers.reduce((sum, v) => sum + v.bytesLimit, 0);
+    const dataSoldGB = dataSoldBytes / (1024 * 1024 * 1024);
+    const dataCost = dataSoldGB * costPerGb;
     const netProfit = revenue - dataCost - dailyFixed;
 
     const d = new Date(date);

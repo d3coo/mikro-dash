@@ -28,9 +28,9 @@
   onMount(async () => {
     if (!browser) return;
 
-    const { Chart, ArcElement, Title, Tooltip, Legend } = await import('chart.js');
+    const { Chart, ArcElement, DoughnutController, Title, Tooltip, Legend } = await import('chart.js');
 
-    Chart.register(ArcElement, Title, Tooltip, Legend);
+    Chart.register(ArcElement, DoughnutController, Title, Tooltip, Legend);
 
     const ctx = canvasEl.getContext('2d');
     if (!ctx) return;

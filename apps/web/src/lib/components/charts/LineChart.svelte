@@ -18,9 +18,9 @@
   onMount(async () => {
     if (!browser) return;
 
-    const { Chart, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } = await import('chart.js');
+    const { Chart, CategoryScale, LinearScale, PointElement, LineElement, LineController, Title, Tooltip, Legend, Filler } = await import('chart.js');
 
-    Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
+    Chart.register(CategoryScale, LinearScale, PointElement, LineElement, LineController, Title, Tooltip, Legend, Filler);
 
     const ctx = canvasEl.getContext('2d');
     if (!ctx) return;

@@ -103,6 +103,65 @@ export function initializeDb() {
       voucher_code TEXT PRIMARY KEY,
       printed_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS ps_stations (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      name_ar TEXT NOT NULL,
+      mac_address TEXT NOT NULL,
+      hourly_rate INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'available',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ps_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      station_id TEXT NOT NULL,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER,
+      hourly_rate_snapshot INTEGER NOT NULL,
+      total_cost INTEGER,
+      orders_cost INTEGER DEFAULT 0,
+      started_by TEXT NOT NULL DEFAULT 'manual',
+      timer_minutes INTEGER,
+      timer_notified INTEGER DEFAULT 0,
+      notes TEXT,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ps_daily_stats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL UNIQUE,
+      total_sessions INTEGER NOT NULL DEFAULT 0,
+      total_minutes INTEGER NOT NULL DEFAULT 0,
+      total_revenue INTEGER NOT NULL DEFAULT 0,
+      sessions_by_station TEXT NOT NULL DEFAULT '{}',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ps_menu_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      name_ar TEXT NOT NULL,
+      category TEXT NOT NULL,
+      price INTEGER NOT NULL,
+      is_available INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ps_session_orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id INTEGER NOT NULL,
+      menu_item_id INTEGER NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      price_snapshot INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
   `);
 
   // Migration: add bytes_limit column if it doesn't exist
@@ -116,6 +175,30 @@ export function initializeDb() {
   try {
     sqlite.exec("ALTER TABLE packages ADD COLUMN time_limit TEXT DEFAULT '1d'");
     console.log('[DB] Added time_limit column to packages table');
+  } catch {
+    // Column already exists
+  }
+
+  // Migration: add orders_cost column to ps_sessions if it doesn't exist
+  try {
+    sqlite.exec('ALTER TABLE ps_sessions ADD COLUMN orders_cost INTEGER DEFAULT 0');
+    console.log('[DB] Added orders_cost column to ps_sessions table');
+  } catch {
+    // Column already exists
+  }
+
+  // Migration: add timer_minutes column to ps_sessions if it doesn't exist
+  try {
+    sqlite.exec('ALTER TABLE ps_sessions ADD COLUMN timer_minutes INTEGER');
+    console.log('[DB] Added timer_minutes column to ps_sessions table');
+  } catch {
+    // Column already exists
+  }
+
+  // Migration: add timer_notified column to ps_sessions if it doesn't exist
+  try {
+    sqlite.exec('ALTER TABLE ps_sessions ADD COLUMN timer_notified INTEGER DEFAULT 0');
+    console.log('[DB] Added timer_notified column to ps_sessions table');
   } catch {
     // Column already exists
   }
