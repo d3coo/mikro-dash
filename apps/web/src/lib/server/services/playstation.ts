@@ -53,6 +53,11 @@ const gracePeriodTracker = new Map<string, number>(); // stationId -> disconnect
 // This prevents auto-starting sessions when device is already online
 const stationOnlineStates = new Map<string, 'up' | 'down'>();
 
+// Track manually ended sessions to prevent auto-restart
+// Maps stationId -> timestamp when manually ended
+const manualEndCooldown = new Map<string, number>();
+const MANUAL_END_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes cooldown after manual end
+
 /**
  * Get the last known online state of a station by MAC address
  */
@@ -69,12 +74,48 @@ export function setStationOnlineState(mac: string, state: 'up' | 'down'): void {
   stationOnlineStates.set(normalizedMac, state);
   console.log(`[State] ${normalizedMac} -> ${state}`);
 }
+
+/**
+ * Check if a station is in manual-end cooldown (shouldn't auto-start)
+ */
+export function isInManualEndCooldown(stationId: string): boolean {
+  const endTime = manualEndCooldown.get(stationId);
+  if (!endTime) return false;
+
+  const elapsed = Date.now() - endTime;
+  if (elapsed >= MANUAL_END_COOLDOWN_MS) {
+    // Cooldown expired, remove from map
+    manualEndCooldown.delete(stationId);
+    return false;
+  }
+
+  console.log(`[Cooldown] Station ${stationId} in manual-end cooldown (${Math.round((MANUAL_END_COOLDOWN_MS - elapsed) / 1000)}s remaining)`);
+  return true;
+}
+
+/**
+ * Set manual-end cooldown for a station (called when session is manually ended)
+ */
+export function setManualEndCooldown(stationId: string): void {
+  manualEndCooldown.set(stationId, Date.now());
+  console.log(`[Cooldown] Station ${stationId} entering 5-minute auto-start cooldown`);
+}
+
+/**
+ * Clear manual-end cooldown (called when device actually disconnects)
+ */
+export function clearManualEndCooldown(stationId: string): void {
+  if (manualEndCooldown.has(stationId)) {
+    manualEndCooldown.delete(stationId);
+    console.log(`[Cooldown] Station ${stationId} cooldown cleared (device disconnected)`);
+  }
+}
 const GRACE_PERIOD_MS = 1 * 60 * 1000; // 1 minute grace period before auto-ending
 
 // ===== STATION CRUD =====
 
 export function getStations(): PsStation[] {
-  return db.select().from(psStations).orderBy(psStations.sortOrder).all();
+  return db.select().from(psStations).orderBy(psStations.id).all();
 }
 
 export function getStationById(id: string): PsStation | undefined {
@@ -217,6 +258,12 @@ export function endSession(sessionId: number, notes?: string, customTotalCost?: 
   // Clear grace period
   gracePeriodTracker.delete(session.stationId);
 
+  // If session was manual or has custom cost, set cooldown to prevent auto-restart
+  // (auto sessions ended by webhook don't need cooldown as device already disconnected)
+  if (session.startedBy === 'manual' || customTotalCost !== undefined) {
+    setManualEndCooldown(session.stationId);
+  }
+
   return db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get()!;
 }
 
@@ -306,7 +353,7 @@ export interface StationStatus {
   lastSession: PsSession | null;  // Most recent ended session (for showing final cost)
   elapsedMinutes: number;
   currentCost: number;
-  inGracePeriod: boolean;
+  isOfflineWithSession: boolean;  // Device offline but session still running - show RED card
 }
 
 /**
@@ -365,39 +412,26 @@ export async function syncStationStatus(): Promise<{
       const isFirstConnect = previousState !== 'up';
       stationOnlineStates.set(normalizedMac, 'up');
 
-      // Auto-start only on first connect (state transition)
+      // Auto-start only on first connect (state transition) and not in cooldown
       if (!activeSession && isFirstConnect) {
-        try {
-          startSession(station.id, 'auto');
-          started.push(station.id);
-          console.log(`[Sync] Auto-started session for ${station.id} - first connect`);
-        } catch (e) {
-          console.error(`Failed to auto-start session for ${station.id}:`, e);
-        }
-      }
-    } else {
-      // Device is offline - update state
-      stationOnlineStates.set(normalizedMac, 'down');
-
-      if (activeSession) {
-        const graceStart = gracePeriodTracker.get(station.id);
-
-        if (!graceStart) {
-          // Start grace period
-          gracePeriodTracker.set(station.id, now);
-        } else if (now - graceStart >= GRACE_PERIOD_MS) {
-          // Grace period expired, end session (only auto-started ones)
-          if (activeSession.startedBy === 'auto') {
-            try {
-              endSession(activeSession.id, 'Auto-ended: device disconnected');
-              ended.push(station.id);
-              gracePeriodTracker.delete(station.id);
-            } catch (e) {
-              console.error(`Failed to auto-end session for ${station.id}:`, e);
-            }
+        // Check cooldown
+        if (isInManualEndCooldown(station.id)) {
+          console.log(`[Sync] Station ${station.id} in cooldown - not auto-starting`);
+        } else {
+          try {
+            startSession(station.id, 'auto');
+            started.push(station.id);
+            console.log(`[Sync] Auto-started session for ${station.id} - first connect`);
+          } catch (e) {
+            console.error(`Failed to auto-start session for ${station.id}:`, e);
           }
         }
       }
+    } else {
+      // Device is offline - just update state, NEVER auto-end
+      stationOnlineStates.set(normalizedMac, 'down');
+      clearManualEndCooldown(station.id);
+      // Sessions are NEVER auto-ended - admin must end them manually
     }
   }
 
@@ -441,7 +475,7 @@ export async function getStationStatuses(): Promise<StationStatus[]> {
       lastSession,
       elapsedMinutes,
       currentCost,
-      inGracePeriod: !isOnline && !!graceStart
+      isOfflineWithSession: !isOnline && !!activeSession  // RED card when offline but session running
     };
   });
 }

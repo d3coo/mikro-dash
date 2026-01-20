@@ -6,7 +6,9 @@ import {
   startSession,
   endSession,
   getStationOnlineState,
-  setStationOnlineState
+  setStationOnlineState,
+  isInManualEndCooldown,
+  clearManualEndCooldown
 } from '$lib/server/services/playstation';
 
 // Track last webhook update time (for UI refresh)
@@ -84,6 +86,12 @@ export const POST: RequestHandler = async ({ request, url }) => {
       setStationOnlineState(normalizedMac, 'up');
 
       if (!activeSession && isFirstConnect) {
+        // Check if station is in manual-end cooldown
+        if (isInManualEndCooldown(station.id)) {
+          console.log(`[Webhook] Station ${station.id} in cooldown - not auto-starting`);
+          return json({ success: true, message: 'Station in manual-end cooldown, no auto-start' });
+        }
+
         // Auto-start session only on first connect
         console.log(`[Webhook] Auto-starting session for ${station.id} (${station.nameAr}) - first connect`);
         const session = startSession(station.id, 'auto');
@@ -100,17 +108,14 @@ export const POST: RequestHandler = async ({ request, url }) => {
     if (action === 'disconnect' || action === 'down') {
       setStationOnlineState(normalizedMac, 'down');
 
-      if (activeSession && activeSession.startedBy === 'auto') {
-        // Only auto-end sessions that were auto-started
-        console.log(`[Webhook] Auto-ending session for ${station.id} (${station.nameAr})`);
-        const session = endSession(activeSession.id, 'Auto-ended: device disconnected (webhook)');
-        lastWebhookUpdate = Date.now();
-        return json({ success: true, action: 'ended', totalCost: session.totalCost });
-      }
+      // Clear manual-end cooldown since device actually disconnected
+      clearManualEndCooldown(station.id);
 
-      if (activeSession && activeSession.startedBy === 'manual') {
-        console.log(`[Webhook] Device disconnected but session was manual - not auto-ending for ${station.id}`);
-        return json({ success: true, message: 'Manual session - not auto-ending' });
+      // Never auto-end sessions - admin must end them manually with price selection
+      if (activeSession) {
+        console.log(`[Webhook] Device disconnected for ${station.id} - session stays open for admin to end with price selection`);
+        lastWebhookUpdate = Date.now();
+        return json({ success: true, message: 'Device disconnected - session stays open for manual end' });
       }
 
       return json({ success: true, message: 'No active session' });

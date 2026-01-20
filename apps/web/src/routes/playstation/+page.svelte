@@ -179,17 +179,17 @@
   }
 
   // Get status color
-  function getStatusColor(status: string, isOnline: boolean, inGracePeriod: boolean): string {
+  function getStatusColor(status: string, isOnline: boolean, isOfflineWithSession: boolean): string {
     if (status === 'maintenance') return 'maintenance';
-    if (inGracePeriod) return 'grace';
+    if (isOfflineWithSession) return 'offline-session';  // RED - device off but session running
     if (status === 'occupied') return 'occupied';
     return 'available';
   }
 
   // Get status text
-  function getStatusText(status: string, isOnline: boolean, inGracePeriod: boolean): string {
+  function getStatusText(status: string, isOnline: boolean, isOfflineWithSession: boolean): string {
     if (status === 'maintenance') return 'صيانة';
-    if (inGracePeriod) return 'انتظار';
+    if (isOfflineWithSession) return 'غير متصل';  // Disconnected
     if (status === 'occupied') return 'مشغول';
     return 'متاح';
   }
@@ -498,7 +498,7 @@
 
       <div class="stations-grid">
         {#each data.stationStatuses as status, index}
-          {@const statusColor = getStatusColor(status.station.status, status.isOnline, status.inGracePeriod)}
+          {@const statusColor = getStatusColor(status.station.status, status.isOnline, status.isOfflineWithSession)}
           <div
             class="station-card glass-card station-{statusColor} opacity-0 animate-fade-in"
             style="animation-delay: {300 + index * 50}ms"
@@ -511,7 +511,7 @@
               </div>
               <div class="station-status">
                 <span class="status-badge status-{statusColor}">
-                  {getStatusText(status.station.status, status.isOnline, status.inGracePeriod)}
+                  {getStatusText(status.station.status, status.isOnline, status.isOfflineWithSession)}
                 </span>
                 <div class="online-indicator" class:online={status.isOnline}>
                   {#if status.isOnline}
@@ -606,10 +606,10 @@
                 {/if}
               </div>
 
-              {#if status.inGracePeriod}
-                <div class="grace-warning">
+              {#if status.isOfflineWithSession}
+                <div class="offline-warning">
                   <AlertTriangle class="w-4 h-4" />
-                  <span>الجهاز غير متصل - سيتم إنهاء الجلسة تلقائياً</span>
+                  <span>الجهاز غير متصل - يرجى إنهاء الجلسة يدوياً</span>
                 </div>
               {/if}
             {:else}
@@ -1421,14 +1421,11 @@
     opacity: 0.7;
   }
 
-  .station-grace {
-    border-color: rgba(139, 92, 246, 0.5);
-    animation: pulse-border 2s ease-in-out infinite;
-  }
-
-  @keyframes pulse-border {
-    0%, 100% { border-color: rgba(139, 92, 246, 0.5); }
-    50% { border-color: rgba(139, 92, 246, 0.8); }
+  .station-offline-session {
+    border-color: rgba(239, 68, 68, 0.7) !important;
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(239, 68, 68, 0.05) 100%) !important;
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+    opacity: 1 !important;
   }
 
   .station-header {
@@ -1486,10 +1483,10 @@
     border: 1px solid rgba(239, 68, 68, 0.3);
   }
 
-  .status-grace {
-    background: rgba(139, 92, 246, 0.15);
-    color: #a78bfa;
-    border: 1px solid rgba(139, 92, 246, 0.3);
+  .status-offline-session {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.4);
   }
 
   .online-indicator {
@@ -1570,16 +1567,17 @@
     font-family: monospace;
   }
 
-  .grace-warning {
+  .offline-warning {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 12px;
-    background: rgba(139, 92, 246, 0.1);
-    border: 1px solid rgba(139, 92, 246, 0.3);
+    padding: 10px 14px;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.4);
     border-radius: 8px;
-    color: #a78bfa;
-    font-size: 12px;
+    color: #f87171;
+    font-size: 13px;
+    font-weight: 500;
   }
 
   /* Last Session Summary */
