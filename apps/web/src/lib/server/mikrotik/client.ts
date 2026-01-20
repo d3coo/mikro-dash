@@ -33,9 +33,11 @@ export class MikroTikClient {
   ): Promise<T> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+    const url = `${this.baseUrl}${endpoint}`;
 
     try {
-      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      console.log(`[MikroTik] ${method} ${endpoint}`);
+      const response = await fetch(url, {
         method,
         headers: {
           'Authorization': this.authHeader,
@@ -47,10 +49,20 @@ export class MikroTikClient {
 
       if (!response.ok) {
         const error = await response.text();
+        console.error(`[MikroTik] Error ${response.status}: ${error}`);
         throw new Error(`MikroTik API error: ${response.status} - ${error}`);
       }
 
       return response.json();
+    } catch (err) {
+      if (err instanceof Error) {
+        if (err.name === 'AbortError') {
+          console.error(`[MikroTik] Request timeout for ${endpoint}`);
+          throw new Error(`MikroTik API timeout: ${endpoint}`);
+        }
+        console.error(`[MikroTik] Request failed: ${err.message}`);
+      }
+      throw err;
     } finally {
       clearTimeout(timeoutId);
     }
@@ -111,6 +123,23 @@ export class MikroTikClient {
     await this.request('/ip/hotspot/user/remove', 'POST', {
       '.id': id
     });
+  }
+
+  async updateHotspotUser(
+    id: string,
+    updates: {
+      limitUptime?: string;
+      limitBytes?: number;
+      profile?: string;
+      comment?: string;
+    }
+  ): Promise<void> {
+    const body: Record<string, string> = { '.id': id };
+    if (updates.limitUptime) body['limit-uptime'] = updates.limitUptime;
+    if (updates.limitBytes !== undefined) body['limit-bytes-total'] = updates.limitBytes.toString();
+    if (updates.profile) body['profile'] = updates.profile;
+    if (updates.comment) body['comment'] = updates.comment;
+    await this.request(`/ip/hotspot/user/${id}`, 'PATCH', body);
   }
 
   // Active Sessions

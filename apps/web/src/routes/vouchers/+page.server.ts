@@ -3,6 +3,11 @@ import { fail } from '@sveltejs/kit';
 import { getVouchers, createVouchers, deleteVouchers, type Voucher } from '$lib/server/services/vouchers';
 import { getMikroTikClient } from '$lib/server/services/mikrotik';
 import { getPackages, getSettings } from '$lib/server/config';
+import { getAllPrintedVoucherCodes, removePrintTracking } from '$lib/server/services/print-tracking';
+
+interface VoucherWithPrint extends Voucher {
+  isPrinted: boolean;
+}
 
 const PAGE_SIZE = 10;
 
@@ -11,6 +16,7 @@ export const load: PageServerLoad = async ({ url }) => {
   const statusFilter = url.searchParams.get('status') || 'all';
   const packageFilter = url.searchParams.get('package') || '';
   const profileFilter = url.searchParams.get('profile') || '';
+  const printFilter = url.searchParams.get('print') || 'all'; // 'all', 'printed', 'unprinted'
 
   let allVouchers: Voucher[] = [];
   let routerConnected = false;
@@ -31,10 +37,19 @@ export const load: PageServerLoad = async ({ url }) => {
     routerConnected = false;
   }
 
+  // Get printed voucher codes
+  const printedCodes = getAllPrintedVoucherCodes();
+
+  // Add print status to vouchers
+  const vouchersWithPrint: VoucherWithPrint[] = allVouchers.map(v => ({
+    ...v,
+    isPrinted: printedCodes.has(v.name)
+  }));
+
   // Apply filters
   let filteredVouchers = statusFilter === 'all'
-    ? allVouchers
-    : allVouchers.filter(v => v.status === statusFilter);
+    ? vouchersWithPrint
+    : vouchersWithPrint.filter(v => v.status === statusFilter);
 
   if (packageFilter) {
     filteredVouchers = filteredVouchers.filter(v => v.packageId === packageFilter);
@@ -42,6 +57,13 @@ export const load: PageServerLoad = async ({ url }) => {
 
   if (profileFilter) {
     filteredVouchers = filteredVouchers.filter(v => v.profile === profileFilter);
+  }
+
+  // Apply print filter
+  if (printFilter === 'printed') {
+    filteredVouchers = filteredVouchers.filter(v => v.isPrinted);
+  } else if (printFilter === 'unprinted') {
+    filteredVouchers = filteredVouchers.filter(v => !v.isPrinted);
   }
 
   // Calculate pagination
@@ -61,18 +83,33 @@ export const load: PageServerLoad = async ({ url }) => {
     exhausted: allVouchers.filter(v => v.status === 'exhausted').length
   };
 
+  // Count by print status (for all vouchers in filter)
+  const printCounts = {
+    all: vouchersWithPrint.length,
+    printed: vouchersWithPrint.filter(v => v.isPrinted).length,
+    unprinted: vouchersWithPrint.filter(v => !v.isPrinted).length
+  };
+
+  // Count unprinted AVAILABLE vouchers (for the print button)
+  const unprintedAvailableCount = vouchersWithPrint.filter(
+    v => v.status === 'available' && !v.isPrinted
+  ).length;
+
   const settings = getSettings();
 
   return {
     vouchers: paginatedVouchers,
     totalVouchers: totalItems,
     statusCounts,
+    printCounts,
+    unprintedAvailableCount,
     packages,
     profiles,
     routerConnected,
     currentFilter: statusFilter,
     packageFilter,
     profileFilter,
+    printFilter,
     wifiSSID: settings.wifi.ssid,
     pagination: {
       currentPage,
@@ -122,6 +159,9 @@ export const actions: Actions = {
         .filter(v => ids.includes(v.id))
         .map(v => ({ id: v.id, name: v.name }));
 
+      // Remove print tracking for deleted vouchers
+      removePrintTracking(vouchersToDelete.map(v => v.name));
+
       const result = await deleteVouchers(vouchersToDelete);
       return { success: true, deleted: result.deleted };
     } catch (error) {
@@ -141,6 +181,9 @@ export const actions: Actions = {
       if (exhaustedVouchers.length === 0) {
         return { success: true, deleted: 0, message: 'لا توجد كروت منتهية للحذف' };
       }
+
+      // Remove print tracking for exhausted vouchers
+      removePrintTracking(exhaustedVouchers.map(v => v.name));
 
       const result = await deleteVouchers(exhaustedVouchers);
 

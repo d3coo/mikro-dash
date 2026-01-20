@@ -10,7 +10,11 @@ const config = {
 	kit: {
 		adapter: adapter({
 			out: 'build'
-		})
+		}),
+		// Allow form submissions from local network
+		csrf: {
+			checkOrigin: false
+		}
 	}
 };
 

@@ -2,10 +2,37 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import QRCode from 'qrcode';
+  import { toast } from 'svelte-sonner';
 
   let { data } = $props();
 
   let wifiQrCode = $state<string>('');
+  let isMarking = $state(false);
+
+  async function markAsPrinted() {
+    if (data.vouchers.length === 0 || isMarking) return;
+
+    isMarking = true;
+    try {
+      const codes = data.vouchers.map(v => v.name);
+      const response = await fetch('/api/vouchers/print', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codes })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to mark as printed');
+      }
+
+      toast.success(`تم تسجيل ${codes.length} كرت كمطبوع`);
+    } catch (error) {
+      console.error('Failed to mark vouchers as printed:', error);
+      toast.error('فشل في تسجيل الكروت كمطبوعة');
+    } finally {
+      isMarking = false;
+    }
+  }
 
   onMount(async () => {
     // Generate WiFi connection QR code (same for all cards)
@@ -30,6 +57,10 @@
 
   function print() {
     window.print();
+    // Mark as printed after print dialog closes
+    setTimeout(() => {
+      markAsPrinted();
+    }, 1000);
   }
 </script>
 
@@ -84,14 +115,22 @@
 <!-- Toolbar -->
 <div class="no-print toolbar">
   <span class="card-count">عدد الكروت: {data.vouchers.length}</span>
-  <button onclick={print} class="print-btn">
-    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <polyline points="6 9 6 2 18 2 18 9"></polyline>
-      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
-      <rect x="6" y="14" width="12" height="8"></rect>
-    </svg>
-    طباعة
-  </button>
+  <div class="toolbar-actions">
+    <button onclick={markAsPrinted} class="mark-btn" disabled={isMarking}>
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M20 6 9 17l-5-5"></path>
+      </svg>
+      {isMarking ? 'جاري التسجيل...' : 'تسجيل كمطبوع'}
+    </button>
+    <button onclick={print} class="print-btn">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="6 9 6 2 18 2 18 9"></polyline>
+        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+        <rect x="6" y="14" width="12" height="8"></rect>
+      </svg>
+      طباعة
+    </button>
+  </div>
 </div>
 
 <!-- Print Wrapper - This is what gets printed -->
@@ -159,10 +198,42 @@
     border-bottom: 1px solid rgba(8, 145, 178, 0.3);
   }
 
+  .toolbar-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+
   .card-count {
     color: #94a3b8;
     font-size: 15px;
     font-family: 'Cairo', sans-serif;
+  }
+
+  .mark-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    font-size: 14px;
+    font-weight: 600;
+    font-family: 'Cairo', sans-serif;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .mark-btn:hover:not(:disabled) {
+    background: rgba(34, 197, 94, 0.25);
+    border-color: rgba(34, 197, 94, 0.5);
+  }
+
+  .mark-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .print-btn {

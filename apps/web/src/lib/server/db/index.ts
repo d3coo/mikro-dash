@@ -1,8 +1,25 @@
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import Database from 'better-sqlite3';
 import * as schema from './schema';
+import { resolve } from 'path';
 
-const sqlite = new Database('data.db');
+// Database path - use environment variable or default to ./data.db in current working directory
+// For PM2: set DATABASE_PATH=/full/path/to/data.db in ecosystem config
+const dbPath = process.env.DATABASE_PATH || resolve(process.cwd(), 'data.db');
+
+console.log(`[DB] Using database at: ${dbPath}`);
+console.log(`[DB] Current working directory: ${process.cwd()}`);
+console.log(`[DB] NODE_ENV: ${process.env.NODE_ENV}`);
+
+let sqlite: Database.Database;
+try {
+  sqlite = new Database(dbPath);
+  console.log('[DB] Database connection established');
+} catch (err) {
+  console.error('[DB] Failed to open database:', err);
+  throw err;
+}
+
 export const db = drizzle(sqlite, { schema });
 
 // Default settings
@@ -22,6 +39,11 @@ const defaultPackages = [
   { id: '10GB', name: '10 GB', nameAr: '١٠ جيجا', priceLE: 30, bytesLimit: 10737418240, codePrefix: '', profile: 'aboyassen-users', sortOrder: 4 }
 ];
 
+// Default expense (per-GB cost)
+const defaultExpenses = [
+  { type: 'per_gb', name: 'ISP Data Cost', nameAr: 'تكلفة البيانات', amount: 100 } // 1 EGP per GB (100 piasters)
+];
+
 export function initializeDb() {
   // Create tables
   sqlite.exec(`
@@ -36,16 +58,64 @@ export function initializeDb() {
       name_ar TEXT NOT NULL,
       price_le INTEGER NOT NULL,
       bytes_limit INTEGER NOT NULL DEFAULT 0,
+      time_limit TEXT DEFAULT '1d',
       code_prefix TEXT NOT NULL DEFAULT '',
       profile TEXT NOT NULL,
       server TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS voucher_usage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      voucher_code TEXT NOT NULL,
+      mac_address TEXT NOT NULL,
+      device_name TEXT,
+      ip_address TEXT,
+      first_connected_at INTEGER NOT NULL,
+      last_connected_at INTEGER NOT NULL,
+      total_bytes INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS expenses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      name_ar TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS daily_stats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL UNIQUE,
+      vouchers_sold INTEGER NOT NULL DEFAULT 0,
+      revenue INTEGER NOT NULL DEFAULT 0,
+      data_sold INTEGER NOT NULL DEFAULT 0,
+      data_used INTEGER NOT NULL DEFAULT 0,
+      sales_by_package TEXT NOT NULL DEFAULT '{}',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS printed_vouchers (
+      voucher_code TEXT PRIMARY KEY,
+      printed_at INTEGER NOT NULL
     );
   `);
 
   // Migration: add bytes_limit column if it doesn't exist
   try {
     sqlite.exec('ALTER TABLE packages ADD COLUMN bytes_limit INTEGER NOT NULL DEFAULT 0');
+  } catch {
+    // Column already exists
+  }
+
+  // Migration: add time_limit column if it doesn't exist
+  try {
+    sqlite.exec("ALTER TABLE packages ADD COLUMN time_limit TEXT DEFAULT '1d'");
+    console.log('[DB] Added time_limit column to packages table');
   } catch {
     // Column already exists
   }
@@ -73,7 +143,25 @@ export function initializeDb() {
   for (const pkg of defaultPackages) {
     updatePackageLimits.run(pkg.bytesLimit, pkg.id);
   }
+
+  // Insert default expenses if table is empty
+  const expenseCount = sqlite.prepare('SELECT COUNT(*) as count FROM expenses').get() as { count: number };
+  if (expenseCount.count === 0) {
+    const now = Date.now();
+    const insertExpense = sqlite.prepare(
+      'INSERT INTO expenses (type, name, name_ar, amount, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)'
+    );
+    for (const expense of defaultExpenses) {
+      insertExpense.run(expense.type, expense.name, expense.nameAr, expense.amount, now, now);
+    }
+  }
 }
 
 // Initialize on import
-initializeDb();
+try {
+  initializeDb();
+  console.log('[DB] Database initialized successfully');
+} catch (err) {
+  console.error('[DB] Database initialization failed:', err);
+  throw err;
+}

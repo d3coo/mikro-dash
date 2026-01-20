@@ -5,7 +5,7 @@
   import { Button } from '$lib/components/ui/button';
   import ConfirmModal from '$lib/components/confirm-modal.svelte';
   import Modal from '$lib/components/modal.svelte';
-  import { Plus, Trash2, Printer, Package, Filter, CheckCircle, XCircle, Clock, Loader2, CloudOff, ChevronRight, ChevronLeft, QrCode, X, Copy, Check } from 'lucide-svelte';
+  import { Plus, Trash2, Printer, Package, Filter, CheckCircle, XCircle, Clock, Loader2, CloudOff, ChevronRight, ChevronLeft, QrCode, X, Copy, Check, Timer, FileCheck } from 'lucide-svelte';
   import { toast } from 'svelte-sonner';
   import QRCode from 'qrcode';
   
@@ -46,6 +46,49 @@
   let qrCodeDataUrl = $state('');
   let codeCopied = $state(false);
 
+  // Extend Time State
+  let showExtendOptions = $state(false);
+  let isExtending = $state(false);
+  let selectedDuration = $state('3d');
+
+  const durationOptions = [
+    { value: '1d', label: 'يوم واحد (24 ساعة)' },
+    { value: '2d', label: 'يومين (48 ساعة)' },
+    { value: '3d', label: '3 أيام (72 ساعة)' },
+    { value: '4d', label: '4 أيام (96 ساعة)' },
+    { value: '5d', label: '5 أيام (120 ساعة)' },
+    { value: '7d', label: 'أسبوع (168 ساعة)' },
+  ];
+
+  async function extendVoucherTime() {
+    if (!selectedVoucher || isExtending) return;
+
+    isExtending = true;
+    try {
+      const response = await fetch(`/api/vouchers/${selectedVoucher.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limitUptime: selectedDuration })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'فشل في تمديد الوقت');
+      }
+
+      const durationLabel = durationOptions.find(d => d.value === selectedDuration)?.label || selectedDuration;
+      toast.success(`تم تمديد الوقت إلى ${durationLabel}`);
+      showExtendOptions = false;
+
+      // Refresh the page to get updated data
+      window.location.reload();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'فشل في تمديد الوقت');
+    } finally {
+      isExtending = false;
+    }
+  }
+
   function generateWifiQRString(ssid: string): string {
     // WiFi QR code format for open networks
     return `WIFI:T:nopass;S:${ssid};H:false;;`;
@@ -78,6 +121,7 @@
     showQrModal = false;
     selectedVoucher = null;
     qrCodeDataUrl = '';
+    showExtendOptions = false;
   }
 
   async function copyCode() {
@@ -127,10 +171,22 @@
     goto(url.toString());
   }
 
+  function setPrintFilter(printStatus: string) {
+    const url = new URL($page.url);
+    if (printStatus && printStatus !== 'all') {
+      url.searchParams.set('print', printStatus);
+    } else {
+      url.searchParams.delete('print');
+    }
+    url.searchParams.set('page', '1');
+    goto(url.toString());
+  }
+
   function clearFilters() {
     const url = new URL($page.url);
     url.searchParams.delete('package');
     url.searchParams.delete('profile');
+    url.searchParams.delete('print');
     url.searchParams.set('status', 'all');
     url.searchParams.set('page', '1');
     goto(url.toString());
@@ -138,7 +194,7 @@
 
   // Check if any filters are active
   let hasActiveFilters = $derived(
-    data.packageFilter !== '' || data.profileFilter !== '' || data.currentFilter !== 'all'
+    data.packageFilter !== '' || data.profileFilter !== '' || data.currentFilter !== 'all' || data.printFilter !== 'all'
   );
 
   function toggleSelect(id: string) {
@@ -200,13 +256,15 @@
           </Button>
         </a>
 
-        <!-- Print All Available -->
-        <a href="/vouchers/print?status=available" class="print-link">
-          <Button variant="outline" disabled={data.statusCounts.available === 0}>
-            <Printer class="w-4 h-4" />
-            <span>طباعة الكل ({data.statusCounts.available})</span>
-          </Button>
-        </a>
+        <!-- Print Unprinted -->
+        {#if data.unprintedAvailableCount > 0}
+          <a href="/vouchers/print?status=available&unprinted=true" class="print-link">
+            <Button variant="default">
+              <Printer class="w-4 h-4" />
+              <span>طباعة غير المطبوع</span>
+            </Button>
+          </a>
+        {/if}
       </div>
     </div>
   </header>
@@ -314,6 +372,15 @@
             {#each data.profiles as profile}
               <option value={profile}>{profile}</option>
             {/each}
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <FileCheck class="w-4 h-4 text-text-muted" />
+          <select value={data.printFilter} onchange={(e) => setPrintFilter(e.currentTarget.value)} class="select-modern text-sm">
+            <option value="all">كل الطباعة</option>
+            <option value="printed">مطبوع ({data.printCounts.printed})</option>
+            <option value="unprinted">غير مطبوع ({data.printCounts.unprinted})</option>
           </select>
         </div>
 
@@ -450,10 +517,17 @@
                 </div>
               </td>
               <td>
-                <span class="badge {config.class}">
-                  <svelte:component this={config.icon} class="w-3 h-3" />
-                  {config.label}
-                </span>
+                <div class="status-cell">
+                  <span class="badge {config.class}">
+                    <svelte:component this={config.icon} class="w-3 h-3" />
+                    {config.label}
+                  </span>
+                  {#if voucher.isPrinted}
+                    <span class="badge badge-printed" title="تم الطباعة">
+                      <FileCheck class="w-3 h-3" />
+                    </span>
+                  {/if}
+                </div>
               </td>
             </tr>
           {/each}
@@ -587,7 +661,62 @@
             <span class="info-value">{formatBytes(selectedVoucher.bytesLimit)}</span>
           </div>
         {/if}
+        {#if selectedVoucher.uptime && selectedVoucher.uptime !== '0s'}
+          <div class="voucher-info-row">
+            <span class="info-label">وقت الاستخدام:</span>
+            <span class="info-value">{selectedVoucher.uptime}</span>
+          </div>
+        {/if}
       </div>
+
+      <!-- Extend Time Section (for used vouchers) -->
+      {#if selectedVoucher.status === 'used' || selectedVoucher.status === 'available'}
+        <div class="extend-time-section">
+          {#if !showExtendOptions}
+            <button class="extend-time-btn" onclick={() => showExtendOptions = true}>
+              <Timer class="w-4 h-4" />
+              <span>تمديد الوقت</span>
+            </button>
+          {:else}
+            <div class="extend-time-form">
+              <label for="duration-select" class="extend-label">اختر المدة الجديدة:</label>
+              <select
+                id="duration-select"
+                bind:value={selectedDuration}
+                class="select-modern w-full"
+                disabled={isExtending}
+              >
+                {#each durationOptions as option}
+                  <option value={option.value}>{option.label}</option>
+                {/each}
+              </select>
+              <div class="extend-actions">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onclick={() => showExtendOptions = false}
+                  disabled={isExtending}
+                >
+                  إلغاء
+                </Button>
+                <Button
+                  size="sm"
+                  onclick={extendVoucherTime}
+                  disabled={isExtending}
+                >
+                  {#if isExtending}
+                    <Loader2 class="w-4 h-4 animate-spin" />
+                    <span>جاري التمديد...</span>
+                  {:else}
+                    <Timer class="w-4 h-4" />
+                    <span>تأكيد التمديد</span>
+                  {/if}
+                </Button>
+              </div>
+            </div>
+          {/if}
+        </div>
+      {/if}
 
       <p class="qr-hint-footer">
         ١. امسح الكود للاتصال بالواي فاي<br>
@@ -814,5 +943,73 @@
   :global(.btn-cleanup:hover) {
     background: rgba(239, 68, 68, 0.1) !important;
     border-color: rgba(239, 68, 68, 0.6) !important;
+  }
+
+  /* Extend Time Section */
+  .extend-time-section {
+    width: 100%;
+    margin-top: 8px;
+  }
+
+  .extend-time-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 12px 20px;
+    border-radius: 10px;
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    color: #4ade80;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--animation-duration-normal) ease;
+  }
+
+  .extend-time-btn:hover {
+    background: rgba(34, 197, 94, 0.2);
+    border-color: rgba(34, 197, 94, 0.5);
+  }
+
+  .extend-time-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    background: var(--color-bg-elevated);
+    border-radius: 12px;
+    border: 1px solid rgba(34, 197, 94, 0.2);
+  }
+
+  .extend-label {
+    font-size: 14px;
+    color: var(--color-text-secondary);
+    font-weight: 500;
+  }
+
+  .extend-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+
+  /* Status Cell */
+  .status-cell {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* Printed Badge */
+  .badge-printed {
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    padding: 2px 6px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
   }
 </style>

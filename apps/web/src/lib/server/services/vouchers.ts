@@ -306,6 +306,16 @@ export async function deleteVouchers(vouchers: Array<{ id: string; name: string 
 }
 
 /**
+ * Extend voucher time limit
+ * @param id - MikroTik user ID
+ * @param newLimitUptime - New total time limit (e.g., "3d", "4d", "72h")
+ */
+export async function extendVoucherTime(id: string, newLimitUptime: string): Promise<void> {
+  const client = getMikroTikClient();
+  await client.updateHotspotUser(id, { limitUptime: newLimitUptime });
+}
+
+/**
  * Get voucher statistics
  */
 export async function getVoucherStats(): Promise<{

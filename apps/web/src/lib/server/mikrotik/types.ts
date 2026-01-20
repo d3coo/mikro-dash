@@ -5,6 +5,7 @@ export interface HotspotUser {
   profile: string;
   server?: string;
   'limit-bytes-total'?: string;
+  'limit-uptime'?: string;
   'bytes-in'?: string;
   'bytes-out'?: string;
   uptime?: string;

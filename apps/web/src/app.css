@@ -5,9 +5,9 @@
    ============================================ */
 
 @theme {
-  /* Typography */
-  --font-family-cairo: 'Cairo', sans-serif;
-  --font-family-mono: 'IBM Plex Mono', 'Fira Code', monospace;
+  /* Typography - with Arabic-supporting system font fallbacks */
+  --font-family-cairo: 'Cairo', 'Segoe UI', 'Tahoma', 'Arial', sans-serif;
+  --font-family-mono: 'IBM Plex Mono', 'Fira Code', 'Consolas', 'Courier New', monospace;
 
   /* Primary Palette - Vibrant Teal */
   --color-primary: #0891b2;
@@ -45,18 +45,34 @@
   --color-border-strong: rgba(148, 163, 184, 0.25);
 }
 
-/* Font Imports */
+/* Font Imports - Local fonts for offline use */
 @font-face {
   font-family: 'Cairo';
-  src: url('https://fonts.gstatic.com/s/cairo/v28/SLXgc1nY6HkvangtZmpcWmhzfH5lWWgcQyyS4J0.woff2') format('woff2');
-  font-weight: 400 700;
+  src: url('/fonts/cairo-arabic-400.woff2') format('woff2'),
+       url('/fonts/cairo-latin-400.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Cairo';
+  src: url('/fonts/cairo-arabic-700.woff2') format('woff2'),
+       url('/fonts/cairo-latin-700.woff2') format('woff2');
+  font-weight: 700;
   font-display: swap;
 }
 
 @font-face {
   font-family: 'IBM Plex Mono';
-  src: url('https://fonts.gstatic.com/s/ibmplexmono/v19/-F63fjptAgt5VM-kVkqdyU8n5igg1l9kn-s.woff2') format('woff2');
-  font-weight: 400 600;
+  src: url('/fonts/ibm-plex-mono-400.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/ibm-plex-mono-600.woff2') format('woff2');
+  font-weight: 600;
   font-display: swap;
 }
 

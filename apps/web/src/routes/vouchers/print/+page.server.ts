@@ -1,6 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { getMikroTikClient } from '$lib/server/services/mikrotik';
 import { getPackageFromComment, getPackageByCodePrefix, getSettings, type PackageConfig } from '$lib/server/config';
+import { getAllPrintedVoucherCodes } from '$lib/server/services/print-tracking';
 
 interface PrintVoucher {
   id: string;
@@ -15,6 +16,7 @@ export const load: PageServerLoad = async ({ url }) => {
   const idsParam = url.searchParams.get('ids') ?? '';
   const ids = idsParam.split(',').filter(Boolean);
   const status = url.searchParams.get('status'); // 'available' to get all available vouchers
+  const unprintedOnly = url.searchParams.get('unprinted') === 'true'; // Only get unprinted vouchers
 
   let vouchers: PrintVoucher[] = [];
 
@@ -23,6 +25,9 @@ export const load: PageServerLoad = async ({ url }) => {
     const allUsers = await client.getHotspotUsers();
     const activeSessions = await client.getActiveSessions();
     const activeUsernames = new Set(activeSessions.map((a: any) => a.user));
+
+    // Get printed voucher codes if filtering by unprinted
+    const printedCodes = unprintedOnly ? getAllPrintedVoucherCodes() : new Set<string>();
 
     // Helper to determine voucher status
     const getVoucherStatus = (user: any): 'available' | 'used' | 'exhausted' => {
@@ -60,10 +65,12 @@ export const load: PageServerLoad = async ({ url }) => {
     if (status === 'available') {
       // Get all available vouchers (excluding system users)
       vouchers = allUsers
-        .filter((user: any) =>
-          getVoucherStatus(user) === 'available' &&
-          !systemUsers.includes(user.name?.toLowerCase())
-        )
+        .filter((user: any) => {
+          const isAvailable = getVoucherStatus(user) === 'available';
+          const isNotSystem = !systemUsers.includes(user.name?.toLowerCase());
+          const isNotPrinted = unprintedOnly ? !printedCodes.has(user.name) : true;
+          return isAvailable && isNotSystem && isNotPrinted;
+        })
         .map(toPrintVoucher);
     } else if (ids.length > 0) {
       // Get specific vouchers by ID

@@ -33,6 +33,37 @@ export const voucherUsage = sqliteTable('voucher_usage', {
   totalBytes: integer('total_bytes').default(0),      // Total bytes used
 });
 
+// Expenses - tracks costs for profit calculation
+export const expenses = sqliteTable('expenses', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  type: text('type').notNull(),                       // 'per_gb' | 'fixed_monthly'
+  name: text('name').notNull(),                       // English name: "ISP Data Cost"
+  nameAr: text('name_ar').notNull(),                  // Arabic name: "تكلفة البيانات"
+  amount: integer('amount').notNull(),                // Amount in piasters (1/100 EGP) for precision
+  isActive: integer('is_active').notNull().default(1), // 1 = active, 0 = inactive
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull()
+});
+
+// Printed vouchers - tracks which vouchers have been printed
+export const printedVouchers = sqliteTable('printed_vouchers', {
+  voucherCode: text('voucher_code').primaryKey(),    // The voucher code (e.g., "TBJ26N")
+  printedAt: integer('printed_at').notNull(),        // Timestamp when printed
+});
+
+// Daily stats - pre-aggregated statistics for performance
+export const dailyStats = sqliteTable('daily_stats', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  date: text('date').notNull().unique(),              // YYYY-MM-DD format
+  vouchersSold: integer('vouchers_sold').notNull().default(0),
+  revenue: integer('revenue').notNull().default(0),   // In piasters (1/100 EGP)
+  dataSold: integer('data_sold').notNull().default(0),     // Total bytes from packages sold
+  dataUsed: integer('data_used').notNull().default(0),     // Actual bytes consumed
+  salesByPackage: text('sales_by_package').notNull().default('{}'), // JSON: { "3GB": 5, "5GB": 3 }
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull()
+});
+
 // Type exports
 export type Setting = typeof settings.$inferSelect;
 export type NewSetting = typeof settings.$inferInsert;
@@ -40,3 +71,9 @@ export type Package = typeof packages.$inferSelect;
 export type NewPackage = typeof packages.$inferInsert;
 export type VoucherUsage = typeof voucherUsage.$inferSelect;
 export type NewVoucherUsage = typeof voucherUsage.$inferInsert;
+export type Expense = typeof expenses.$inferSelect;
+export type NewExpense = typeof expenses.$inferInsert;
+export type DailyStat = typeof dailyStats.$inferSelect;
+export type NewDailyStat = typeof dailyStats.$inferInsert;
+export type PrintedVoucher = typeof printedVouchers.$inferSelect;
+export type NewPrintedVoucher = typeof printedVouchers.$inferInsert;
