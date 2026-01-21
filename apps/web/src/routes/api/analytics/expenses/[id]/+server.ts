@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { getExpenseById, updateExpense, deleteExpense } from '$lib/server/services/analytics';
+import { getExpenseById, updateExpense, deleteExpense, type ExpenseCategory } from '$lib/server/services/analytics';
 
 /**
  * GET /api/analytics/expenses/[id] - Get single expense
@@ -32,7 +32,7 @@ export const GET: RequestHandler = async ({ params }) => {
 
 /**
  * PUT /api/analytics/expenses/[id] - Update expense
- * Body: { name?: string, nameAr?: string, amount?: number, isActive?: boolean }
+ * Body: { name?: string, nameAr?: string, amount?: number, category?: string, isActive?: boolean }
  */
 export const PUT: RequestHandler = async ({ params, request }) => {
   try {
@@ -47,11 +47,19 @@ export const PUT: RequestHandler = async ({ params, request }) => {
     }
 
     const body = await request.json();
-    const updates: Partial<{ name: string; nameAr: string; amount: number; isActive: number }> = {};
+
+    // Validate category if provided
+    const validCategories = ['wifi', 'playstation', 'fnb', 'general'];
+    if (body.category && !validCategories.includes(body.category)) {
+      return json({ error: 'Invalid category. Use: wifi, playstation, fnb, or general' }, { status: 400 });
+    }
+
+    const updates: Partial<{ name: string; nameAr: string; amount: number; category: ExpenseCategory; isActive: number }> = {};
 
     if (body.name !== undefined) updates.name = body.name;
     if (body.nameAr !== undefined) updates.nameAr = body.nameAr;
     if (body.amount !== undefined) updates.amount = Math.round(body.amount);
+    if (body.category !== undefined) updates.category = body.category as ExpenseCategory;
     if (body.isActive !== undefined) updates.isActive = body.isActive ? 1 : 0;
 
     const expense = updateExpense(id, updates);

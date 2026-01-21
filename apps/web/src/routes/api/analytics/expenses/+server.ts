@@ -1,13 +1,34 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { getExpenses, createExpense, getCostPerGb, getMonthlyFixedCosts } from '$lib/server/services/analytics';
+import {
+  getExpenses,
+  getExpensesByCategory,
+  createExpense,
+  getCostPerGb,
+  getMonthlyFixedCosts,
+  type ExpenseCategory
+} from '$lib/server/services/analytics';
 
 /**
- * GET /api/analytics/expenses - List all expenses
+ * GET /api/analytics/expenses - List expenses
+ * Query params:
+ *   - category: 'wifi' | 'playstation' | 'fnb' | 'general' (optional)
  */
-export const GET: RequestHandler = async () => {
+export const GET: RequestHandler = async ({ url }) => {
   try {
-    const expensesList = getExpenses();
+    const categoryParam = url.searchParams.get('category');
+
+    // Validate category if provided
+    const validCategories = ['wifi', 'playstation', 'fnb', 'general'];
+    if (categoryParam && !validCategories.includes(categoryParam)) {
+      return json({
+        success: false,
+        error: 'Invalid category. Use: wifi, playstation, fnb, or general'
+      }, { status: 400 });
+    }
+
+    const category = categoryParam as ExpenseCategory | undefined;
+    const expensesList = category ? getExpensesByCategory(category) : getExpenses();
     const costPerGb = getCostPerGb();
     const monthlyFixed = getMonthlyFixedCosts();
 
@@ -30,16 +51,21 @@ export const GET: RequestHandler = async () => {
 
 /**
  * POST /api/analytics/expenses - Create new expense
- * Body: { type: 'per_gb' | 'fixed_monthly', name: string, nameAr: string, amount: number }
+ * Body: { type: 'per_gb' | 'fixed_monthly', category?: 'wifi' | 'playstation' | 'fnb' | 'general', name: string, nameAr: string, amount: number }
  */
 export const POST: RequestHandler = async ({ request }) => {
   try {
     const body = await request.json();
-    const { type, name, nameAr, amount } = body;
+    const { type, category, name, nameAr, amount } = body;
 
     // Validation
     if (!type || !['per_gb', 'fixed_monthly'].includes(type)) {
       return json({ error: 'Invalid type. Use: per_gb or fixed_monthly' }, { status: 400 });
+    }
+
+    const validCategories = ['wifi', 'playstation', 'fnb', 'general'];
+    if (category && !validCategories.includes(category)) {
+      return json({ error: 'Invalid category. Use: wifi, playstation, fnb, or general' }, { status: 400 });
     }
 
     if (!name || typeof name !== 'string') {
@@ -56,6 +82,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
     const expense = createExpense({
       type,
+      category: category as ExpenseCategory,
       name,
       nameAr,
       amount: Math.round(amount) // Ensure integer (piasters)

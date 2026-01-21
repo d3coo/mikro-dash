@@ -7,22 +7,70 @@ import {
   getMonthlyFixedCosts,
   createExpense,
   updateExpense,
-  deleteExpense
+  deleteExpense,
+  type ExpenseCategory
 } from '$lib/server/services/analytics';
+import {
+  getUnifiedAnalytics,
+  getRevenueBySegmentChart,
+  getProfitBySegmentChart,
+  type TimePeriod
+} from '$lib/server/services/unified-analytics';
 import { getPackages } from '$lib/server/config';
 
 export const load: PageServerLoad = async ({ url }) => {
-  const period = (url.searchParams.get('period') || 'today') as 'today' | 'week' | 'month';
+  const periodParam = url.searchParams.get('period') || 'today';
+  const startDate = url.searchParams.get('start');
+  const endDate = url.searchParams.get('end');
+  const categoryFilter = url.searchParams.get('category') as ExpenseCategory | null;
+
+  // Validate period
+  const validPeriods = ['today', 'week', 'month', 'custom'];
+  const period = validPeriods.includes(periodParam) ? periodParam as TimePeriod : 'today';
 
   try {
-    const analyticsData = await getAnalyticsData(period);
+    // Get custom range if provided
+    const customRange = period === 'custom' && startDate && endDate
+      ? { start: startDate, end: endDate }
+      : undefined;
+
+    // Get unified analytics data
+    const unifiedAnalytics = await getUnifiedAnalytics(period, customRange);
+
+    // Get chart data
+    const chartDays = period === 'month' ? 30 : period === 'week' ? 7 : 7;
+    const [revenueBySegment, profitBySegment] = await Promise.all([
+      getRevenueBySegmentChart(chartDays),
+      getProfitBySegmentChart(chartDays)
+    ]);
+
+    // Get legacy analytics for backward compatibility
+    const legacyPeriod = period === 'custom' ? 'month' : period;
+    const analyticsData = await getAnalyticsData(legacyPeriod);
+
+    // Get expenses (optionally filtered by category)
     const expensesList = getExpenses();
+    const filteredExpenses = categoryFilter
+      ? expensesList.filter(e => e.category === categoryFilter)
+      : expensesList;
     const packages = getPackages();
 
     return {
       period,
+      startDate: customRange?.start || null,
+      endDate: customRange?.end || null,
+      categoryFilter,
+      // Unified analytics
+      unified: unifiedAnalytics,
+      // Segment charts
+      segmentCharts: {
+        revenue: revenueBySegment,
+        profit: profitBySegment
+      },
+      // Legacy data for backward compatibility
       ...analyticsData,
-      expenses: expensesList,
+      expenses: filteredExpenses,
+      allExpenses: expensesList,
       costPerGb: getCostPerGb(),
       monthlyFixed: getMonthlyFixedCosts(),
       packages
@@ -31,6 +79,11 @@ export const load: PageServerLoad = async ({ url }) => {
     console.error('Analytics load error:', error);
     return {
       period,
+      startDate: null,
+      endDate: null,
+      categoryFilter: null,
+      unified: null,
+      segmentCharts: { revenue: [], profit: [] },
       summary: {
         period,
         vouchersSold: 0,
@@ -48,6 +101,7 @@ export const load: PageServerLoad = async ({ url }) => {
         dataUsage: []
       },
       expenses: [],
+      allExpenses: [],
       costPerGb: 0,
       monthlyFixed: 0,
       packages: [],
@@ -60,12 +114,18 @@ export const actions: Actions = {
   addExpense: async ({ request }) => {
     const formData = await request.formData();
     const type = formData.get('type') as 'per_gb' | 'fixed_monthly';
+    const category = formData.get('category') as ExpenseCategory | null;
     const name = formData.get('name') as string;
     const nameAr = formData.get('nameAr') as string;
     const amount = parseFloat(formData.get('amount') as string);
 
     if (!type || !['per_gb', 'fixed_monthly'].includes(type)) {
       return fail(400, { error: 'نوع المصروف غير صالح' });
+    }
+
+    const validCategories = ['wifi', 'playstation', 'fnb', 'general'];
+    if (category && !validCategories.includes(category)) {
+      return fail(400, { error: 'فئة المصروف غير صالحة' });
     }
 
     if (!name || !nameAr) {
@@ -78,7 +138,13 @@ export const actions: Actions = {
 
     try {
       // Convert EGP to piasters (multiply by 100)
-      createExpense({ type, name, nameAr, amount: Math.round(amount * 100) });
+      createExpense({
+        type,
+        category: category || undefined,
+        name,
+        nameAr,
+        amount: Math.round(amount * 100)
+      });
       return { success: true, message: 'تم إضافة المصروف بنجاح' };
     } catch (error) {
       console.error('Add expense error:', error);
@@ -90,16 +156,25 @@ export const actions: Actions = {
     const formData = await request.formData();
     const id = parseInt(formData.get('id') as string, 10);
     const amount = parseFloat(formData.get('amount') as string);
+    const category = formData.get('category') as ExpenseCategory | null;
     const isActive = formData.get('isActive') === 'true';
 
     if (isNaN(id)) {
       return fail(400, { error: 'معرف المصروف غير صالح' });
     }
 
+    const validCategories = ['wifi', 'playstation', 'fnb', 'general'];
+    if (category && !validCategories.includes(category)) {
+      return fail(400, { error: 'فئة المصروف غير صالحة' });
+    }
+
     try {
-      const updates: Partial<{ amount: number; isActive: number }> = {};
+      const updates: Partial<{ amount: number; category: ExpenseCategory; isActive: number }> = {};
       if (!isNaN(amount)) {
         updates.amount = Math.round(amount * 100); // Convert to piasters
+      }
+      if (category) {
+        updates.category = category;
       }
       updates.isActive = isActive ? 1 : 0;
 

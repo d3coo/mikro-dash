@@ -11,9 +11,10 @@
   interface Props {
     labels: string[];
     datasets: DataSet[];
+    stacked?: boolean;
   }
 
-  let { labels, datasets }: Props = $props();
+  let { labels, datasets, stacked = false }: Props = $props();
 
   let canvasEl: HTMLCanvasElement;
   let chart: any = null;
@@ -69,12 +70,14 @@
         scales: {
           x: {
             grid: { color: 'rgba(148, 163, 184, 0.1)' },
-            ticks: { color: '#94a3b8' }
+            ticks: { color: '#94a3b8' },
+            stacked: stacked
           },
           y: {
             grid: { color: 'rgba(148, 163, 184, 0.1)' },
             ticks: { color: '#94a3b8' },
-            beginAtZero: true
+            beginAtZero: true,
+            stacked: stacked
           }
         }
       }

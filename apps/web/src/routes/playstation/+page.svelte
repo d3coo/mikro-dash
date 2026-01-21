@@ -1,11 +1,124 @@
 <script lang="ts">
-  import { Gamepad2, Play, Square, Clock, Settings, RefreshCw, Timer, Banknote, Activity, Wifi, WifiOff, AlertTriangle, History, TrendingUp, UtensilsCrossed, Plus, Minus, X, Bell, Coffee, Radio, Power } from 'lucide-svelte';
+  import { Gamepad2, Play, Square, Clock, Settings, RefreshCw, Timer, Banknote, Activity, Wifi, WifiOff, AlertTriangle, History, TrendingUp, UtensilsCrossed, Plus, Minus, X, Bell, Coffee, Radio, Power, Volume2 } from 'lucide-svelte';
   import { onMount, onDestroy } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { invalidateAll } from '$app/navigation';
   import { enhance } from '$app/forms';
+  import { browser } from '$app/environment';
 
   let { data } = $props();
+
+  // ===== NOTIFICATION SOUND SYSTEM =====
+  let audioContext: AudioContext | null = null;
+  let notifiedTimerIds = $state(new Set<number>()); // Track which timers already played sound
+  let soundEnabled = $state(true);
+
+  // Initialize audio context (must be after user interaction)
+  function initAudioContext() {
+    if (!browser || audioContext) return;
+    try {
+      audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    } catch (e) {
+      console.warn('Web Audio API not supported');
+    }
+  }
+
+  // Play a single train horn blast
+  function playHornBlast(startTime: number) {
+    if (!audioContext) return;
+
+    const masterGain = audioContext.createGain();
+    masterGain.connect(audioContext.destination);
+    masterGain.gain.value = 0.6;
+
+    // Train horn frequencies (two-tone like real train horns)
+    const hornFrequencies = [
+      { freq: 277, gain: 1.0 },    // Main low tone
+      { freq: 349, gain: 0.8 },    // Second tone (major third up)
+      { freq: 554, gain: 0.3 },    // Harmonic
+      { freq: 698, gain: 0.2 },    // Higher harmonic
+    ];
+
+    hornFrequencies.forEach(({ freq, gain }) => {
+      const oscillator = audioContext!.createOscillator();
+      const gainNode = audioContext!.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(masterGain);
+
+      // Sawtooth wave for that brassy horn sound
+      oscillator.type = 'sawtooth';
+      oscillator.frequency.value = freq;
+
+      // Horn envelope: quick attack, sustain, quick release
+      const blastDuration = 0.4;
+      gainNode.gain.setValueAtTime(0, startTime);
+      gainNode.gain.linearRampToValueAtTime(gain, startTime + 0.02);
+      gainNode.gain.setValueAtTime(gain, startTime + blastDuration - 0.05);
+      gainNode.gain.linearRampToValueAtTime(0, startTime + blastDuration);
+
+      oscillator.start(startTime);
+      oscillator.stop(startTime + blastDuration + 0.1);
+    });
+  }
+
+  // Play notification sound using Web Audio API - TRAIN HORN
+  function playNotificationSound() {
+    if (!browser || !soundEnabled) return;
+
+    // Initialize on first play (requires user interaction)
+    if (!audioContext) {
+      initAudioContext();
+    }
+
+    if (!audioContext) return;
+
+    try {
+      // Resume context if suspended (browser autoplay policy)
+      if (audioContext.state === 'suspended') {
+        audioContext.resume();
+      }
+
+      const now = audioContext.currentTime;
+
+      // Play 3 horn blasts with gaps
+      playHornBlast(now);
+      playHornBlast(now + 0.5);
+      playHornBlast(now + 1.0);
+
+      // Repeat the whole sequence 2 more times (total 3 rounds = 9 blasts)
+      setTimeout(() => {
+        if (!audioContext || audioContext.state !== 'running' || !soundEnabled) return;
+        const now2 = audioContext.currentTime;
+        playHornBlast(now2);
+        playHornBlast(now2 + 0.5);
+        playHornBlast(now2 + 1.0);
+      }, 2000);
+
+      setTimeout(() => {
+        if (!audioContext || audioContext.state !== 'running' || !soundEnabled) return;
+        const now3 = audioContext.currentTime;
+        playHornBlast(now3);
+        playHornBlast(now3 + 0.5);
+        playHornBlast(now3 + 1.0);
+      }, 4000);
+
+    } catch (e) {
+      console.warn('Failed to play notification sound:', e);
+    }
+  }
+
+  // Toggle sound on/off
+  function toggleSound() {
+    soundEnabled = !soundEnabled;
+    if (soundEnabled) {
+      initAudioContext();
+      playNotificationSound(); // Play test sound
+      toast.success('تم تفعيل صوت التنبيه');
+    } else {
+      toast.success('تم إيقاف صوت التنبيه');
+    }
+  }
 
   // Auto-refresh state
   let refreshInterval: ReturnType<typeof setInterval> | null = null;
@@ -109,6 +222,25 @@
     fetchSyncStatus();
     pollWebhook();
 
+    // Initialize audio context on first user interaction
+    const initAudio = () => {
+      initAudioContext();
+      document.removeEventListener('click', initAudio);
+    };
+    document.addEventListener('click', initAudio);
+
+    // Check for already expired timers from server on initial load
+    if (data.timerAlerts && data.timerAlerts.length > 0) {
+      // Play sound for alerts that came from server
+      data.timerAlerts.forEach((alert: any) => {
+        if (!notifiedTimerIds.has(alert.sessionId)) {
+          notifiedTimerIds.add(alert.sessionId);
+          // Delay sound to allow audio context init
+          setTimeout(() => playNotificationSound(), 500);
+        }
+      });
+    }
+
     // Poll webhook every 500ms for instant updates when MikroTik triggers
     webhookPollInterval = setInterval(() => {
       pollWebhook();
@@ -122,6 +254,7 @@
     // Update timers every second
     timerInterval = setInterval(() => {
       currentTime = Date.now();
+      checkForExpiredTimers(); // Check for newly expired timers
     }, 1000);
 
     // Update sync status every 5 seconds
@@ -136,6 +269,31 @@
     if (syncStatusInterval) clearInterval(syncStatusInterval);
     if (webhookPollInterval) clearInterval(webhookPollInterval);
   });
+
+  // Check for timers that just expired during live countdown
+  function checkForExpiredTimers() {
+    if (!data.stationStatuses) return;
+
+    for (const status of data.stationStatuses) {
+      if (status.activeSession?.timerMinutes && !status.activeSession.timerNotified) {
+        const elapsed = (currentTime - status.activeSession.startedAt) / 60000;
+        const remaining = status.activeSession.timerMinutes - elapsed;
+
+        // Timer just expired (within last 2 seconds to catch it)
+        if (remaining <= 0 && remaining > -2/60) {
+          const sessionId = status.activeSession.id;
+          if (!notifiedTimerIds.has(sessionId)) {
+            notifiedTimerIds.add(sessionId);
+            playNotificationSound();
+            // Show toast notification too
+            toast.warning(`⏰ انتهى وقت ${status.station.name}!`, {
+              duration: 10000
+            });
+          }
+        }
+      }
+    }
+  }
 
   async function refreshData() {
     isRefreshing = true;
@@ -317,6 +475,7 @@
   // Duration options
   const durationOptions = [
     { value: null, label: 'مفتوح', description: 'بدون حد زمني' },
+    { value: 1, label: '1 دقيقة', description: 'للاختبار' },
     { value: 30, label: '30 دقيقة', description: 'نصف ساعة' },
     { value: 60, label: 'ساعة', description: '60 دقيقة' },
     { value: 90, label: '90 دقيقة', description: 'ساعة ونصف' },
@@ -336,6 +495,19 @@
         <p class="page-subtitle">إدارة أجهزة الألعاب</p>
       </div>
       <div class="flex items-center gap-3">
+        <!-- Sound Toggle -->
+        <button
+          class="sound-toggle-btn"
+          class:active={soundEnabled}
+          onclick={toggleSound}
+          title={soundEnabled ? 'صوت التنبيه مفعل - اضغط للإيقاف' : 'صوت التنبيه متوقف - اضغط للتفعيل'}
+        >
+          <Volume2 class="w-4 h-4" />
+          {#if !soundEnabled}
+            <span class="sound-off-line"></span>
+          {/if}
+        </button>
+
         <!-- Background Sync Status -->
         {#if syncStatus}
           <button
@@ -1154,6 +1326,41 @@
   .sync-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  /* Sound Toggle Button */
+  .sound-toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #f87171;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+  }
+
+  .sound-toggle-btn.active {
+    background: rgba(16, 185, 129, 0.1);
+    border-color: rgba(16, 185, 129, 0.3);
+    color: #34d399;
+  }
+
+  .sound-toggle-btn:hover {
+    transform: scale(1.05);
+  }
+
+  .sound-off-line {
+    position: absolute;
+    width: 24px;
+    height: 2px;
+    background: #f87171;
+    transform: rotate(-45deg);
+    border-radius: 1px;
   }
 
   /* Background Sync Status Button */

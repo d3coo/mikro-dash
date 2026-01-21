@@ -21,24 +21,45 @@ export function getActiveExpenses(): Expense[] {
 }
 
 /**
+ * Get expenses filtered by category
+ */
+export function getExpensesByCategory(category?: ExpenseCategory): Expense[] {
+  if (category) {
+    return db.select()
+      .from(expenses)
+      .where(eq(expenses.category, category))
+      .orderBy(expenses.type, expenses.name)
+      .all();
+  }
+  return getExpenses();
+}
+
+/**
  * Get expense by ID
  */
 export function getExpenseById(id: number): Expense | undefined {
   return db.select().from(expenses).where(eq(expenses.id, id)).get();
 }
 
+export type ExpenseCategory = 'wifi' | 'playstation' | 'fnb' | 'general';
+
 /**
  * Create new expense
  */
 export function createExpense(expense: {
   type: 'per_gb' | 'fixed_monthly';
+  category?: ExpenseCategory;
   name: string;
   nameAr: string;
   amount: number;
 }): Expense {
   const now = Date.now();
+  // Default category based on type
+  const category = expense.category || (expense.type === 'per_gb' ? 'wifi' : 'general');
+
   const result = db.insert(expenses).values({
     type: expense.type,
+    category,
     name: expense.name,
     nameAr: expense.nameAr,
     amount: expense.amount,
@@ -56,6 +77,7 @@ export function updateExpense(id: number, updates: Partial<{
   name: string;
   nameAr: string;
   amount: number;
+  category: ExpenseCategory;
   isActive: number;
 }>): Expense | undefined {
   const now = Date.now();

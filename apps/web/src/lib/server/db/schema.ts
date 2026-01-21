@@ -37,6 +37,7 @@ export const voucherUsage = sqliteTable('voucher_usage', {
 export const expenses = sqliteTable('expenses', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   type: text('type').notNull(),                       // 'per_gb' | 'fixed_monthly'
+  category: text('category').notNull().default('general'), // 'wifi' | 'playstation' | 'fnb' | 'general'
   name: text('name').notNull(),                       // English name: "ISP Data Cost"
   nameAr: text('name_ar').notNull(),                  // Arabic name: "تكلفة البيانات"
   amount: integer('amount').notNull(),                // Amount in piasters (1/100 EGP) for precision
@@ -128,6 +129,38 @@ export const psSessionOrders = sqliteTable('ps_session_orders', {
   createdAt: integer('created_at').notNull()
 });
 
+// Standalone F&B sales (not tied to PlayStation sessions)
+export const fnbSales = sqliteTable('fnb_sales', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  menuItemId: integer('menu_item_id').notNull(),  // Links to ps_menu_items
+  quantity: integer('quantity').notNull().default(1),
+  priceSnapshot: integer('price_snapshot').notNull(), // Price at time of sale (piasters)
+  soldAt: integer('sold_at').notNull(),           // Timestamp when sold
+  createdAt: integer('created_at').notNull()
+});
+
+// Unified daily stats - aggregated statistics across all business segments
+export const unifiedDailyStats = sqliteTable('unified_daily_stats', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  date: text('date').notNull().unique(),          // YYYY-MM-DD format
+  // WiFi segment
+  wifiRevenue: integer('wifi_revenue').notNull().default(0),       // Piasters
+  wifiVouchersSold: integer('wifi_vouchers_sold').notNull().default(0),
+  wifiDataSold: integer('wifi_data_sold').notNull().default(0),    // Bytes
+  wifiDataUsed: integer('wifi_data_used').notNull().default(0),    // Bytes
+  // PlayStation segment (gaming only, excludes orders)
+  psGamingRevenue: integer('ps_gaming_revenue').notNull().default(0), // Piasters
+  psSessions: integer('ps_sessions').notNull().default(0),
+  psMinutes: integer('ps_minutes').notNull().default(0),
+  psOrdersRevenue: integer('ps_orders_revenue').notNull().default(0), // Piasters - F&B during PS sessions
+  // Standalone F&B
+  fnbRevenue: integer('fnb_revenue').notNull().default(0),         // Piasters
+  fnbItemsSold: integer('fnb_items_sold').notNull().default(0),
+  // Timestamps
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull()
+});
+
 // Type exports
 export type Setting = typeof settings.$inferSelect;
 export type NewSetting = typeof settings.$inferInsert;
@@ -151,3 +184,7 @@ export type PsMenuItem = typeof psMenuItems.$inferSelect;
 export type NewPsMenuItem = typeof psMenuItems.$inferInsert;
 export type PsSessionOrder = typeof psSessionOrders.$inferSelect;
 export type NewPsSessionOrder = typeof psSessionOrders.$inferInsert;
+export type FnbSale = typeof fnbSales.$inferSelect;
+export type NewFnbSale = typeof fnbSales.$inferInsert;
+export type UnifiedDailyStat = typeof unifiedDailyStats.$inferSelect;
+export type NewUnifiedDailyStat = typeof unifiedDailyStats.$inferInsert;

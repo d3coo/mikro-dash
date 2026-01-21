@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Banknote, TrendingUp, TrendingDown, Package, HardDrive, Plus, Trash2, Edit2, Check, X, DollarSign, PieChart, BarChart3 } from 'lucide-svelte';
+  import { Banknote, TrendingUp, TrendingDown, Package, HardDrive, Plus, Trash2, Edit2, Check, X, DollarSign, PieChart, BarChart3, Wifi, Gamepad2, Coffee, Building } from 'lucide-svelte';
   import { enhance } from '$app/forms';
   import { goto, invalidateAll } from '$app/navigation';
   import { page } from '$app/stores';
@@ -8,28 +8,73 @@
   import LineChart from '$lib/components/charts/LineChart.svelte';
   import BarChartComponent from '$lib/components/charts/BarChart.svelte';
   import DonutChart from '$lib/components/charts/DonutChart.svelte';
+  import DateRangePicker from '$lib/components/DateRangePicker.svelte';
+  import SegmentCard from '$lib/components/analytics/SegmentCard.svelte';
 
   let { data, form } = $props();
 
-  // Period tabs
-  const periods = [
-    { id: 'today', label: 'اليوم' },
-    { id: 'week', label: 'الأسبوع' },
-    { id: 'month', label: 'الشهر' }
-  ];
+  type TimePeriod = 'today' | 'week' | 'month' | 'custom';
+  type ExpenseCategory = 'wifi' | 'playstation' | 'fnb' | 'general';
 
-  function selectPeriod(period: string) {
-    goto(`/analytics?period=${period}`);
-  }
+  let currentPeriod = $state(data.period as TimePeriod);
+  let customStart = $state(data.startDate || '');
+  let customEnd = $state(data.endDate || '');
+  let selectedCategory = $state<ExpenseCategory | 'all'>(data.categoryFilter || 'all');
 
   // Add expense modal
   let showAddExpense = $state(false);
   let newExpenseType = $state<'per_gb' | 'fixed_monthly'>('fixed_monthly');
+  let newExpenseCategory = $state<ExpenseCategory>('general');
   let editingExpense = $state<number | null>(null);
   let editAmount = $state(0);
+  let editCategory = $state<ExpenseCategory>('general');
 
-  // Format currency
-  function formatCurrency(amount: number): string {
+  // Category options
+  const categories: { id: ExpenseCategory | 'all'; label: string; icon: typeof Wifi }[] = [
+    { id: 'all', label: 'الكل', icon: Building },
+    { id: 'wifi', label: 'WiFi', icon: Wifi },
+    { id: 'playstation', label: 'PlayStation', icon: Gamepad2 },
+    { id: 'fnb', label: 'مأكولات', icon: Coffee },
+    { id: 'general', label: 'عام', icon: Building }
+  ];
+
+  const categoryLabels: Record<ExpenseCategory, string> = {
+    wifi: 'WiFi',
+    playstation: 'PlayStation',
+    fnb: 'مأكولات',
+    general: 'عام'
+  };
+
+  function handlePeriodChange(period: TimePeriod, start?: string, end?: string) {
+    let url = `/analytics?period=${period}`;
+    if (period === 'custom' && start && end) {
+      url += `&start=${start}&end=${end}`;
+    }
+    if (selectedCategory !== 'all') {
+      url += `&category=${selectedCategory}`;
+    }
+    goto(url);
+  }
+
+  function handleCategoryFilter(cat: ExpenseCategory | 'all') {
+    selectedCategory = cat;
+    let url = `/analytics?period=${currentPeriod}`;
+    if (currentPeriod === 'custom' && customStart && customEnd) {
+      url += `&start=${customStart}&end=${customEnd}`;
+    }
+    if (cat !== 'all') {
+      url += `&category=${cat}`;
+    }
+    goto(url);
+  }
+
+  // Format currency (piasters to EGP)
+  function formatCurrency(piasters: number): string {
+    return `${(piasters / 100).toFixed(0)} ج.م`;
+  }
+
+  // Format currency from EGP
+  function formatCurrencyEgp(amount: number): string {
     return `${amount.toFixed(0)} ج.م`;
   }
 
@@ -38,64 +83,90 @@
     return `${gb.toFixed(1)} GB`;
   }
 
-  // Chart data derived from server data
-  const revenueChartLabels = $derived(data.charts.revenue.map(d => d.label));
-  const revenueChartData = $derived(data.charts.revenue.map(d => d.value));
+  // Derived data from unified analytics
+  const unified = $derived(data.unified);
 
-  const profitChartLabels = $derived(data.charts.profit.map(d => d.label));
-  const profitChartData = $derived(data.charts.profit.map(d => d.value));
-
-  const packageChartLabels = $derived(data.charts.salesByPackage.map(d => d.packageName));
-  const packageChartData = $derived(data.charts.salesByPackage.map(d => d.count));
-
-  const dataUsageLabels = $derived(data.charts.dataUsage.map(d => d.label));
-  const dataUsageDatasets = $derived([
-    { label: 'المباع', data: data.charts.dataUsage.map(d => d.sold), color: '#22d3ee' },
-    { label: 'المستهلك', data: data.charts.dataUsage.map(d => d.used), color: '#a78bfa' }
-  ]);
-
-  // Calculate costs
-  const dataSoldCost = $derived(data.summary.dataSoldGB * data.costPerGb);
-  const dataUsedCost = $derived(data.summary.dataUsedGB * data.costPerGb);
-
-  // Stats cards
-  const stats = $derived([
+  // Total stats cards
+  const totalStats = $derived(unified ? [
     {
-      title: 'الكروت المباعة',
-      value: data.summary.vouchersSold,
-      subtitle: 'كرت',
-      icon: Package,
-      color: 'primary'
-    },
-    {
-      title: 'الإيرادات',
-      value: formatCurrency(data.summary.revenue),
-      subtitle: 'إجمالي المبيعات',
+      title: 'إجمالي الإيرادات',
+      value: formatCurrency(unified.totals.revenue),
+      subtitle: `${unified.period.days} يوم`,
       icon: Banknote,
       color: 'success'
     },
     {
+      title: 'إجمالي المصروفات',
+      value: formatCurrency(unified.totals.expenses),
+      subtitle: `عام: ${formatCurrency(unified.totals.generalExpenses)}`,
+      icon: DollarSign,
+      color: 'danger'
+    },
+    {
       title: 'صافي الربح',
-      value: formatCurrency(data.summary.netProfit),
-      subtitle: `تكلفة البيانات: ${formatCurrency(dataSoldCost)}`,
-      icon: data.summary.netProfit >= 0 ? TrendingUp : TrendingDown,
-      color: data.summary.netProfit >= 0 ? 'success' : 'danger'
+      value: formatCurrency(unified.totals.netProfit),
+      subtitle: `إجمالي: ${formatCurrency(unified.totals.grossProfit)}`,
+      icon: unified.totals.netProfit >= 0 ? TrendingUp : TrendingDown,
+      color: unified.totals.netProfit >= 0 ? 'success' : 'danger'
     },
     {
-      title: 'البيانات المباعة',
-      value: formatGB(data.summary.dataSoldGB),
-      subtitle: `التكلفة: ${formatCurrency(dataSoldCost)}`,
-      icon: HardDrive,
-      color: 'warning'
-    },
-    {
-      title: 'البيانات المستهلكة',
-      value: formatGB(data.summary.dataUsedGB),
-      subtitle: `التكلفة: ${formatCurrency(dataUsedCost)}`,
-      icon: HardDrive,
-      color: 'info'
+      title: 'المعاملات',
+      value: `${(unified.segments.wifi.vouchersSold || 0) + (unified.segments.playstation.sessions || 0) + (unified.segments.fnb.itemsSold || 0)}`,
+      subtitle: 'معاملة',
+      icon: Package,
+      color: 'primary'
     }
+  ] : []);
+
+  // Segment-specific metrics
+  const wifiMetrics = $derived(unified ? [
+    { label: 'كروت', value: `${unified.segments.wifi.vouchersSold}` },
+    { label: 'بيانات مباعة', value: formatGB(unified.segments.wifi.dataSoldGB) },
+    { label: 'بيانات مستهلكة', value: formatGB(unified.segments.wifi.dataUsedGB) }
+  ] : []);
+
+  const psMetrics = $derived(unified ? [
+    { label: 'جلسات', value: `${unified.segments.playstation.sessions}` },
+    { label: 'دقائق', value: `${unified.segments.playstation.minutes}` },
+    { label: 'طلبات', value: formatCurrency(unified.segments.playstation.ordersRevenue) }
+  ] : []);
+
+  const fnbMetrics = $derived(unified ? [
+    { label: 'عناصر', value: `${unified.segments.fnb.itemsSold}` }
+  ] : []);
+
+  // Legacy chart data
+  const revenueChartLabels = $derived(data.charts.revenue.map((d: any) => d.label));
+  const revenueChartData = $derived(data.charts.revenue.map((d: any) => d.value));
+  const profitChartLabels = $derived(data.charts.profit.map((d: any) => d.label));
+  const profitChartData = $derived(data.charts.profit.map((d: any) => d.value));
+  const packageChartLabels = $derived(data.charts.salesByPackage.map((d: any) => d.packageName));
+  const packageChartData = $derived(data.charts.salesByPackage.map((d: any) => d.count));
+
+  // Segment chart data
+  const segmentRevenueLabels = $derived(data.segmentCharts?.revenue?.map((d: any) => d.label) || []);
+  const segmentRevenueDatasets = $derived([
+    { label: 'WiFi', data: data.segmentCharts?.revenue?.map((d: any) => d.wifi / 100) || [], color: '#22d3ee' },
+    { label: 'PlayStation', data: data.segmentCharts?.revenue?.map((d: any) => d.playstation / 100) || [], color: '#a78bfa' },
+    { label: 'مأكولات', data: data.segmentCharts?.revenue?.map((d: any) => d.fnb / 100) || [], color: '#fbbf24' }
   ]);
+
+  // Revenue distribution donut
+  const revenueDistributionLabels = $derived(unified ? ['WiFi', 'PlayStation', 'مأكولات'] : []);
+  const revenueDistributionData = $derived(unified ? [
+    unified.segments.wifi.revenue / 100,
+    unified.segments.playstation.revenue / 100,
+    unified.segments.fnb.revenue / 100
+  ] : []);
+
+  // Expenses distribution donut
+  const expensesDistributionLabels = $derived(unified ? ['WiFi', 'PlayStation', 'مأكولات', 'عام'] : []);
+  const expensesDistributionData = $derived(unified ? [
+    unified.expensesByCategory.wifi / 100,
+    unified.expensesByCategory.playstation / 100,
+    unified.expensesByCategory.fnb / 100,
+    unified.expensesByCategory.general / 100
+  ] : []);
 
   // Show toast for form results
   $effect(() => {
@@ -110,7 +181,8 @@
 
   function startEditExpense(expense: any) {
     editingExpense = expense.id;
-    editAmount = expense.amount / 100; // Convert from piasters
+    editAmount = expense.amount / 100;
+    editCategory = expense.category || 'general';
   }
 
   function cancelEdit() {
@@ -124,26 +196,22 @@
     <div class="flex items-center justify-between flex-wrap gap-4">
       <div>
         <h1 class="page-title">التقارير والإحصائيات</h1>
-        <p class="page-subtitle">تتبع المبيعات والأرباح والمصروفات</p>
+        <p class="page-subtitle">تتبع المبيعات والأرباح عبر جميع الأقسام</p>
       </div>
 
       <!-- Period Selector -->
-      <div class="period-tabs">
-        {#each periods as period}
-          <button
-            class="period-tab {data.period === period.id ? 'active' : ''}"
-            onclick={() => selectPeriod(period.id)}
-          >
-            {period.label}
-          </button>
-        {/each}
-      </div>
+      <DateRangePicker
+        bind:period={currentPeriod}
+        bind:startDate={customStart}
+        bind:endDate={customEnd}
+        onPeriodChange={handlePeriodChange}
+      />
     </div>
   </header>
 
-  <!-- Stats Grid -->
+  <!-- Totals Row -->
   <div class="stats-grid">
-    {#each stats as stat, index}
+    {#each totalStats as stat, index}
       <div
         class="stat-card glass-card opacity-0 animate-fade-in"
         style="animation-delay: {100 + index * 100}ms"
@@ -162,26 +230,57 @@
     {/each}
   </div>
 
+  <!-- Segment Cards -->
+  {#if unified}
+    <section class="segment-section opacity-0 animate-fade-in" style="animation-delay: 500ms">
+      <h2 class="section-title-text">الأداء حسب القسم</h2>
+      <div class="segment-grid">
+        <SegmentCard
+          segment="wifi"
+          revenue={unified.segments.wifi.revenue}
+          expenses={unified.segments.wifi.expenses}
+          profit={unified.segments.wifi.profit}
+          contribution={unified.segments.wifi.contribution}
+          metrics={wifiMetrics}
+        />
+        <SegmentCard
+          segment="playstation"
+          revenue={unified.segments.playstation.revenue}
+          expenses={unified.segments.playstation.expenses}
+          profit={unified.segments.playstation.profit}
+          contribution={unified.segments.playstation.contribution}
+          metrics={psMetrics}
+        />
+        <SegmentCard
+          segment="fnb"
+          revenue={unified.segments.fnb.revenue}
+          expenses={unified.segments.fnb.expenses}
+          profit={unified.segments.fnb.profit}
+          contribution={unified.segments.fnb.contribution}
+          metrics={fnbMetrics}
+        />
+      </div>
+    </section>
+  {/if}
+
   <!-- Charts Section -->
   <div class="charts-grid">
-    <!-- Revenue Chart -->
-    <div class="glass-card chart-card opacity-0 animate-fade-in" style="animation-delay: 500ms">
+    <!-- Revenue by Segment (Stacked) -->
+    <div class="glass-card chart-card opacity-0 animate-fade-in" style="animation-delay: 600ms">
       <div class="chart-header">
         <h3 class="chart-title">
           <Banknote class="w-5 h-5 inline-block ml-2" />
-          الإيرادات
+          الإيرادات حسب القسم
         </h3>
       </div>
       <div class="chart-content">
-        {#if browser && revenueChartData.length > 0}
-          <LineChart
-            labels={revenueChartLabels}
-            data={revenueChartData}
-            label="الإيرادات (ج.م)"
-            color="#34d399"
-            fillColor="rgba(52, 211, 153, 0.1)"
+        {#if browser && segmentRevenueLabels.length > 0}
+          <BarChartComponent
+            labels={segmentRevenueLabels}
+            datasets={segmentRevenueDatasets}
+            stacked={true}
           />
-        {:else if revenueChartData.length === 0}
+        {:else if segmentRevenueLabels.length === 0}
           <div class="chart-empty">
             <BarChart3 class="w-12 h-12 text-text-secondary opacity-50" />
             <p>لا توجد بيانات</p>
@@ -193,7 +292,7 @@
     </div>
 
     <!-- Profit Chart -->
-    <div class="glass-card chart-card opacity-0 animate-fade-in" style="animation-delay: 600ms">
+    <div class="glass-card chart-card opacity-0 animate-fade-in" style="animation-delay: 700ms">
       <div class="chart-header">
         <h3 class="chart-title">
           <TrendingUp class="w-5 h-5 inline-block ml-2" />
@@ -220,59 +319,55 @@
       </div>
     </div>
 
-    <!-- Sales by Package Chart -->
-    <div class="glass-card chart-card opacity-0 animate-fade-in" style="animation-delay: 700ms">
+    <!-- Revenue Distribution Donut -->
+    <div class="glass-card chart-card opacity-0 animate-fade-in" style="animation-delay: 800ms">
       <div class="chart-header">
         <h3 class="chart-title">
           <PieChart class="w-5 h-5 inline-block ml-2" />
-          المبيعات حسب الباقة
+          توزيع الإيرادات
         </h3>
       </div>
       <div class="chart-content">
-        {#if browser && packageChartData.length > 0}
+        {#if browser && revenueDistributionData.some(v => v > 0)}
           <DonutChart
-            labels={packageChartLabels}
-            data={packageChartData}
+            labels={revenueDistributionLabels}
+            data={revenueDistributionData}
           />
-        {:else if packageChartData.length === 0}
+        {:else}
           <div class="chart-empty">
             <PieChart class="w-12 h-12 text-text-secondary opacity-50" />
-            <p>لا توجد مبيعات</p>
+            <p>لا توجد إيرادات</p>
           </div>
-        {:else}
-          <div class="chart-loading">جاري التحميل...</div>
         {/if}
       </div>
     </div>
 
-    <!-- Data Usage Comparison -->
-    <div class="glass-card chart-card opacity-0 animate-fade-in" style="animation-delay: 800ms">
+    <!-- Expenses Distribution Donut -->
+    <div class="glass-card chart-card opacity-0 animate-fade-in" style="animation-delay: 900ms">
       <div class="chart-header">
         <h3 class="chart-title">
-          <HardDrive class="w-5 h-5 inline-block ml-2" />
-          البيانات: المباعة vs المستهلكة
+          <DollarSign class="w-5 h-5 inline-block ml-2" />
+          توزيع المصروفات
         </h3>
       </div>
       <div class="chart-content">
-        {#if browser && dataUsageLabels.length > 0}
-          <BarChartComponent
-            labels={dataUsageLabels}
-            datasets={dataUsageDatasets}
+        {#if browser && expensesDistributionData.some(v => v > 0)}
+          <DonutChart
+            labels={expensesDistributionLabels}
+            data={expensesDistributionData}
           />
-        {:else if dataUsageLabels.length === 0}
-          <div class="chart-empty">
-            <HardDrive class="w-12 h-12 text-text-secondary opacity-50" />
-            <p>لا توجد بيانات</p>
-          </div>
         {:else}
-          <div class="chart-loading">جاري التحميل...</div>
+          <div class="chart-empty">
+            <PieChart class="w-12 h-12 text-text-secondary opacity-50" />
+            <p>لا توجد مصروفات</p>
+          </div>
         {/if}
       </div>
     </div>
   </div>
 
   <!-- Expense Management Section -->
-  <section class="expenses-section glass-card opacity-0 animate-fade-in" style="animation-delay: 900ms">
+  <section class="expenses-section glass-card opacity-0 animate-fade-in" style="animation-delay: 1000ms">
     <div class="section-header">
       <h2 class="section-title">
         <DollarSign class="w-5 h-5 inline-block ml-2" />
@@ -284,15 +379,28 @@
       </button>
     </div>
 
+    <!-- Category Filter -->
+    <div class="category-filter">
+      {#each categories as cat}
+        <button
+          class="category-btn {selectedCategory === cat.id ? 'active' : ''}"
+          onclick={() => handleCategoryFilter(cat.id)}
+        >
+          <cat.icon class="w-4 h-4" />
+          {cat.label}
+        </button>
+      {/each}
+    </div>
+
     <!-- Cost Summary -->
     <div class="cost-summary">
       <div class="cost-item">
-        <span class="cost-label">تكلفة الجيجا</span>
-        <span class="cost-value">{formatCurrency(data.costPerGb)}</span>
+        <span class="cost-label">تكلفة الجيجا (WiFi)</span>
+        <span class="cost-value">{formatCurrencyEgp(data.costPerGb)}</span>
       </div>
       <div class="cost-item">
         <span class="cost-label">المصروفات الثابتة (شهري)</span>
-        <span class="cost-value">{formatCurrency(data.monthlyFixed)}</span>
+        <span class="cost-value">{formatCurrencyEgp(data.monthlyFixed)}</span>
       </div>
     </div>
 
@@ -301,6 +409,7 @@
       <table class="table-modern">
         <thead>
           <tr>
+            <th>الفئة</th>
             <th>النوع</th>
             <th>الاسم</th>
             <th>المبلغ</th>
@@ -312,6 +421,11 @@
           {#each data.expenses as expense}
             <tr>
               <td>
+                <span class="badge badge-category-{expense.category || 'general'}">
+                  {categoryLabels[expense.category as ExpenseCategory] || 'عام'}
+                </span>
+              </td>
+              <td>
                 <span class="badge {expense.type === 'per_gb' ? 'badge-primary' : 'badge-neutral'}">
                   {expense.type === 'per_gb' ? 'لكل جيجا' : 'شهري ثابت'}
                 </span>
@@ -322,6 +436,7 @@
                   <form method="POST" action="?/updateExpense" use:enhance>
                     <input type="hidden" name="id" value={expense.id} />
                     <input type="hidden" name="isActive" value={expense.isActive ? 'true' : 'false'} />
+                    <input type="hidden" name="category" value={editCategory} />
                     <div class="flex items-center gap-2">
                       <input
                         type="number"
@@ -331,6 +446,12 @@
                         class="input-modern w-24"
                       />
                       <span class="text-text-secondary">ج.م</span>
+                      <select bind:value={editCategory} class="select-modern w-28">
+                        <option value="wifi">WiFi</option>
+                        <option value="playstation">PlayStation</option>
+                        <option value="fnb">مأكولات</option>
+                        <option value="general">عام</option>
+                      </select>
                       <button type="submit" class="btn-icon btn-success">
                         <Check class="w-4 h-4" />
                       </button>
@@ -340,13 +461,14 @@
                     </div>
                   </form>
                 {:else}
-                  {formatCurrency(expense.amount / 100)}
+                  {formatCurrencyEgp(expense.amount / 100)}
                 {/if}
               </td>
               <td>
                 <form method="POST" action="?/updateExpense" use:enhance>
                   <input type="hidden" name="id" value={expense.id} />
                   <input type="hidden" name="amount" value={expense.amount / 100} />
+                  <input type="hidden" name="category" value={expense.category || 'general'} />
                   <input type="hidden" name="isActive" value={expense.isActive ? 'false' : 'true'} />
                   <button type="submit" class="badge cursor-pointer hover:opacity-80 {expense.isActive ? 'badge-success' : 'badge-danger'}">
                     {expense.isActive ? 'مفعل' : 'معطل'}
@@ -373,7 +495,7 @@
             </tr>
           {:else}
             <tr>
-              <td colspan="5" class="text-center text-text-secondary py-8">
+              <td colspan="6" class="text-center text-text-secondary py-8">
                 لا توجد مصروفات مسجلة
               </td>
             </tr>
@@ -390,6 +512,16 @@
     <div class="modal-content glass-card" onclick={(e) => e.stopPropagation()}>
       <h3 class="modal-title">إضافة مصروف جديد</h3>
       <form method="POST" action="?/addExpense" use:enhance>
+        <div class="form-group">
+          <label class="form-label">فئة المصروف</label>
+          <select name="category" bind:value={newExpenseCategory} class="select-modern">
+            <option value="wifi">WiFi</option>
+            <option value="playstation">PlayStation</option>
+            <option value="fnb">مأكولات ومشروبات</option>
+            <option value="general">عام</option>
+          </select>
+        </div>
+
         <div class="form-group">
           <label class="form-label">نوع المصروف</label>
           <select name="type" bind:value={newExpenseType} class="select-modern">
@@ -440,50 +572,18 @@
     gap: 1.5rem;
   }
 
-  .period-tabs {
-    display: flex;
-    flex-direction: row-reverse;
-    background: var(--bg-glass);
-    border-radius: 0.75rem;
-    padding: 0.25rem;
-    border: 1px solid var(--border-glass);
-  }
-
-  .period-tab {
-    padding: 0.5rem 1.25rem;
-    border-radius: 0.5rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--text-secondary);
-    transition: all 0.2s ease;
-    background: transparent;
-    border: none;
-    cursor: pointer;
-  }
-
-  .period-tab:hover {
-    color: #f1f5f9;
-    background: rgba(34, 211, 238, 0.1);
-  }
-
-  .period-tab.active {
-    background: #0891b2 !important;
-    color: white !important;
-    box-shadow: 0 0 12px rgba(34, 211, 238, 0.3);
-  }
-
   .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 1rem;
   }
 
   /* Stat Card Styles */
   .stat-card {
-    padding: 24px;
+    padding: 20px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
   }
 
   .stat-header {
@@ -493,15 +593,15 @@
   }
 
   .stat-title {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 500;
     color: var(--color-text-secondary);
   }
 
   .stat-icon-wrapper {
-    width: 42px;
-    height: 42px;
-    border-radius: 12px;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -531,14 +631,8 @@
     border: 1px solid rgba(239, 68, 68, 0.3);
   }
 
-  .stat-icon-info {
-    background: rgba(167, 139, 250, 0.15);
-    color: #a78bfa;
-    border: 1px solid rgba(167, 139, 250, 0.3);
-  }
-
   .stat-value {
-    font-size: 36px;
+    font-size: 28px;
     font-weight: 700;
     color: var(--color-text-primary);
     line-height: 1;
@@ -551,8 +645,26 @@
   }
 
   .stat-subtitle {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--color-text-muted);
+  }
+
+  /* Segment Section */
+  .segment-section {
+    margin-top: 0.5rem;
+  }
+
+  .section-title-text {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 1rem;
+  }
+
+  .segment-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
   }
 
   .charts-grid {
@@ -615,6 +727,39 @@
     color: var(--text-primary);
     display: flex;
     align-items: center;
+  }
+
+  .category-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .category-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: var(--bg-glass);
+    border: 1px solid var(--border-glass);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .category-btn:hover {
+    color: var(--text-primary);
+    background: rgba(34, 211, 238, 0.1);
+  }
+
+  .category-btn.active {
+    background: #0891b2;
+    color: white;
+    border-color: transparent;
   }
 
   .cost-summary {
@@ -686,6 +831,31 @@
 
   .btn-icon.btn-success:hover {
     background: rgba(34, 197, 94, 0.2);
+  }
+
+  /* Category badges */
+  .badge-category-wifi {
+    background: rgba(34, 211, 238, 0.1);
+    color: #22d3ee;
+    border: 1px solid rgba(34, 211, 238, 0.3);
+  }
+
+  .badge-category-playstation {
+    background: rgba(167, 139, 250, 0.1);
+    color: #a78bfa;
+    border: 1px solid rgba(167, 139, 250, 0.3);
+  }
+
+  .badge-category-fnb {
+    background: rgba(251, 191, 36, 0.1);
+    color: #fbbf24;
+    border: 1px solid rgba(251, 191, 36, 0.3);
+  }
+
+  .badge-category-general {
+    background: rgba(148, 163, 184, 0.1);
+    color: #94a3b8;
+    border: 1px solid rgba(148, 163, 184, 0.3);
   }
 
   .modal-overlay {

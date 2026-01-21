@@ -162,6 +162,32 @@ export function initializeDb() {
       price_snapshot INTEGER NOT NULL,
       created_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS fnb_sales (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      menu_item_id INTEGER NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      price_snapshot INTEGER NOT NULL,
+      sold_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS unified_daily_stats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL UNIQUE,
+      wifi_revenue INTEGER NOT NULL DEFAULT 0,
+      wifi_vouchers_sold INTEGER NOT NULL DEFAULT 0,
+      wifi_data_sold INTEGER NOT NULL DEFAULT 0,
+      wifi_data_used INTEGER NOT NULL DEFAULT 0,
+      ps_gaming_revenue INTEGER NOT NULL DEFAULT 0,
+      ps_sessions INTEGER NOT NULL DEFAULT 0,
+      ps_minutes INTEGER NOT NULL DEFAULT 0,
+      ps_orders_revenue INTEGER NOT NULL DEFAULT 0,
+      fnb_revenue INTEGER NOT NULL DEFAULT 0,
+      fnb_items_sold INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `);
 
   // Migration: add bytes_limit column if it doesn't exist
@@ -199,6 +225,17 @@ export function initializeDb() {
   try {
     sqlite.exec('ALTER TABLE ps_sessions ADD COLUMN timer_notified INTEGER DEFAULT 0');
     console.log('[DB] Added timer_notified column to ps_sessions table');
+  } catch {
+    // Column already exists
+  }
+
+  // Migration: add category column to expenses if it doesn't exist
+  try {
+    sqlite.exec("ALTER TABLE expenses ADD COLUMN category TEXT NOT NULL DEFAULT 'general'");
+    console.log('[DB] Added category column to expenses table');
+    // Migrate existing per_gb expenses to wifi category
+    sqlite.exec("UPDATE expenses SET category = 'wifi' WHERE type = 'per_gb'");
+    console.log('[DB] Migrated per_gb expenses to wifi category');
   } catch {
     // Column already exists
   }
