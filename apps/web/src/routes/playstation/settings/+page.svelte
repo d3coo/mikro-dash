@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Gamepad2, Plus, Pencil, Trash2, ArrowRight, Save, X, AlertTriangle, Wrench } from 'lucide-svelte';
+  import { Gamepad2, Plus, Pencil, Trash2, ArrowRight, Save, X, AlertTriangle, Wrench, Monitor, Wifi, WifiOff, Volume2 } from 'lucide-svelte';
   import { toast } from 'svelte-sonner';
   import { enhance } from '$app/forms';
   import { invalidateAll } from '$app/navigation';
@@ -20,6 +20,11 @@
   let formMacAddress = $state('');
   let formHourlyRate = $state(20);
   let formStatus = $state('available');
+  let formMonitorIp = $state('');
+  let formMonitorPort = $state(8080);
+
+  // Test connection state
+  let testingConnection = $state<string | null>(null);
 
   function openAddModal() {
     formId = `PS-${String(data.stations.length + 1).padStart(2, '0')}`;
@@ -27,6 +32,8 @@
     formNameAr = `جهاز ${data.stations.length + 1}`;
     formMacAddress = '';
     formHourlyRate = 20;
+    formMonitorIp = '';
+    formMonitorPort = 8080;
     showAddModal = true;
   }
 
@@ -38,7 +45,43 @@
     formMacAddress = station.macAddress;
     formHourlyRate = station.hourlyRate / 100; // Convert from piasters to EGP
     formStatus = station.status;
+    formMonitorIp = station.monitorIp || '';
+    formMonitorPort = station.monitorPort || 8080;
     showEditModal = true;
+  }
+
+  // Test monitor connection
+  async function testMonitorConnection(ip: string, port: number, stationId: string) {
+    if (!ip) {
+      toast.error('أدخل عنوان IP للشاشة أولاً');
+      return;
+    }
+
+    testingConnection = stationId;
+    try {
+      const response = await fetch('/api/playstation/kiosk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'test', ip, port })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success('تم الاتصال بالشاشة بنجاح! ستسمع صوت تنبيه.');
+      } else {
+        toast.error(`فشل الاتصال: ${result.error || 'غير معروف'}`);
+      }
+    } catch (err) {
+      toast.error('فشل في الاتصال بالشاشة');
+    } finally {
+      testingConnection = null;
+    }
+  }
+
+  // Test form connection (from modal)
+  async function testFormConnection() {
+    await testMonitorConnection(formMonitorIp, formMonitorPort, 'form');
   }
 
   function openDeleteModal(station: typeof data.stations[0]) {
@@ -115,9 +158,9 @@
           <tr>
             <th>المعرف</th>
             <th>الاسم</th>
-            <th>الاسم بالعربية</th>
             <th>MAC Address</th>
             <th>السعر/ساعة</th>
+            <th>شاشة Android</th>
             <th>الحالة</th>
             <th>الإجراءات</th>
           </tr>
@@ -128,13 +171,38 @@
               <td>
                 <span class="font-mono text-primary-light">{station.id}</span>
               </td>
-              <td>{station.name}</td>
-              <td>{station.nameAr}</td>
+              <td>
+                <div class="station-name">
+                  <span>{station.name}</span>
+                  <span class="name-ar">{station.nameAr}</span>
+                </div>
+              </td>
               <td>
                 <span class="font-mono text-sm text-text-secondary">{station.macAddress}</span>
               </td>
               <td>
                 <span class="font-mono">{(station.hourlyRate / 100).toFixed(0)} ج.م</span>
+              </td>
+              <td>
+                {#if station.monitorIp}
+                  <div class="monitor-info">
+                    <span class="monitor-ip font-mono text-sm">{station.monitorIp}:{station.monitorPort || 8080}</span>
+                    <button
+                      class="btn-icon btn-icon-success btn-icon-sm"
+                      onclick={() => testMonitorConnection(station.monitorIp!, station.monitorPort || 8080, station.id)}
+                      disabled={testingConnection === station.id}
+                      title="اختبار الاتصال"
+                    >
+                      {#if testingConnection === station.id}
+                        <span class="loading-spinner"></span>
+                      {:else}
+                        <Volume2 class="w-3 h-3" />
+                      {/if}
+                    </button>
+                  </div>
+                {:else}
+                  <span class="text-text-muted text-sm">غير مُعد</span>
+                {/if}
               </td>
               <td>
                 <span class="badge {getStatusClass(station.status)}">
@@ -287,6 +355,56 @@
       />
     </div>
 
+    <!-- Monitor Settings Section -->
+    <div class="form-section">
+      <h4 class="form-section-title">
+        <Monitor class="w-4 h-4" />
+        إعدادات الشاشة (FreeKiosk)
+      </h4>
+      <p class="form-section-hint">اختياري - للتحكم في شاشة Android</p>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group flex-1">
+        <label for="add-monitor-ip">عنوان IP الشاشة</label>
+        <input
+          type="text"
+          id="add-monitor-ip"
+          name="monitorIp"
+          bind:value={formMonitorIp}
+          class="input-modern font-mono"
+          placeholder="192.168.1.50"
+        />
+      </div>
+      <div class="form-group" style="width: 100px">
+        <label for="add-monitor-port">المنفذ</label>
+        <input
+          type="number"
+          id="add-monitor-port"
+          name="monitorPort"
+          bind:value={formMonitorPort}
+          class="input-modern font-mono"
+          min="1"
+          max="65535"
+        />
+      </div>
+      <div class="form-group" style="width: auto; align-self: flex-end">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          onclick={testFormConnection}
+          disabled={!formMonitorIp || testingConnection === 'form'}
+        >
+          {#if testingConnection === 'form'}
+            <span class="loading-spinner"></span>
+          {:else}
+            <Volume2 class="w-4 h-4" />
+          {/if}
+          اختبار
+        </button>
+      </div>
+    </div>
+
     <div class="form-actions">
       <button type="button" class="btn btn-secondary" onclick={closeModals}>
         إلغاء
@@ -393,6 +511,56 @@
         <option value="available">متاح</option>
         <option value="maintenance">صيانة</option>
       </select>
+    </div>
+
+    <!-- Monitor Settings Section -->
+    <div class="form-section">
+      <h4 class="form-section-title">
+        <Monitor class="w-4 h-4" />
+        إعدادات الشاشة (FreeKiosk)
+      </h4>
+      <p class="form-section-hint">اختياري - للتحكم في شاشة Android</p>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group flex-1">
+        <label for="edit-monitor-ip">عنوان IP الشاشة</label>
+        <input
+          type="text"
+          id="edit-monitor-ip"
+          name="monitorIp"
+          bind:value={formMonitorIp}
+          class="input-modern font-mono"
+          placeholder="192.168.1.50"
+        />
+      </div>
+      <div class="form-group" style="width: 100px">
+        <label for="edit-monitor-port">المنفذ</label>
+        <input
+          type="number"
+          id="edit-monitor-port"
+          name="monitorPort"
+          bind:value={formMonitorPort}
+          class="input-modern font-mono"
+          min="1"
+          max="65535"
+        />
+      </div>
+      <div class="form-group" style="width: auto; align-self: flex-end">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          onclick={testFormConnection}
+          disabled={!formMonitorIp || testingConnection === 'form'}
+        >
+          {#if testingConnection === 'form'}
+            <span class="loading-spinner"></span>
+          {:else}
+            <Volume2 class="w-4 h-4" />
+          {/if}
+          اختبار
+        </button>
+      </div>
     </div>
 
     <div class="form-actions">
@@ -608,10 +776,102 @@
     color: var(--color-primary-light);
   }
 
+  /* Station name column */
+  .station-name {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .station-name .name-ar {
+    font-size: 12px;
+    color: var(--color-text-muted);
+  }
+
+  /* Monitor info */
+  .monitor-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .monitor-ip {
+    color: var(--color-primary-light);
+  }
+
+  .btn-icon-success {
+    background: rgba(16, 185, 129, 0.1);
+    color: #34d399;
+  }
+
+  .btn-icon-success:hover:not(:disabled) {
+    background: rgba(16, 185, 129, 0.2);
+  }
+
+  .btn-icon-sm {
+    width: 24px;
+    height: 24px;
+  }
+
+  /* Form sections */
+  .form-section {
+    border-top: 1px solid var(--color-border);
+    padding-top: 16px;
+    margin-top: 8px;
+  }
+
+  .form-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-primary-light);
+    margin: 0;
+  }
+
+  .form-section-hint {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    margin-top: 4px;
+  }
+
+  .form-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .flex-1 {
+    flex: 1;
+  }
+
+  /* Loading spinner */
+  .loading-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
   /* Responsive */
   @media (max-width: 640px) {
     .table-modern {
-      min-width: 700px;
+      min-width: 800px;
+    }
+
+    .form-row {
+      flex-direction: column;
+    }
+
+    .form-row .form-group {
+      width: 100% !important;
     }
   }
 </style>

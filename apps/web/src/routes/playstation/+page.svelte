@@ -289,6 +289,20 @@
             toast.warning(`⏰ انتهى وقت ${status.station.name}!`, {
               duration: 10000
             });
+
+            // Notify the Android monitor if configured
+            if (status.station.monitorIp) {
+              fetch('/api/playstation/kiosk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'timer_expired',
+                  ip: status.station.monitorIp,
+                  port: status.station.monitorPort || 8080,
+                  stationName: status.station.nameAr
+                })
+              }).catch(err => console.error('[FreeKiosk] Timer expired notification failed:', err));
+            }
           }
         }
       }

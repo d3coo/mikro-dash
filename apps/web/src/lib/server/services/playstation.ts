@@ -128,6 +128,8 @@ export function createStation(data: {
   nameAr: string;
   macAddress: string;
   hourlyRate: number;
+  monitorIp?: string | null;
+  monitorPort?: number | null;
   sortOrder?: number;
 }): PsStation {
   const now = Date.now();
@@ -138,6 +140,8 @@ export function createStation(data: {
     macAddress: data.macAddress.toUpperCase().replace(/-/g, ':'),
     hourlyRate: data.hourlyRate,
     status: 'available',
+    monitorIp: data.monitorIp ?? null,
+    monitorPort: data.monitorPort ?? 8080,
     sortOrder: data.sortOrder ?? 0,
     createdAt: now,
     updatedAt: now
@@ -153,6 +157,8 @@ export function updateStation(id: string, updates: Partial<{
   macAddress: string;
   hourlyRate: number;
   status: string;
+  monitorIp: string | null;
+  monitorPort: number | null;
   sortOrder: number;
 }>): void {
   const station = getStationById(id);
@@ -164,6 +170,8 @@ export function updateStation(id: string, updates: Partial<{
   if (updates.macAddress !== undefined) updateData.macAddress = updates.macAddress.toUpperCase().replace(/-/g, ':');
   if (updates.hourlyRate !== undefined) updateData.hourlyRate = updates.hourlyRate;
   if (updates.status !== undefined) updateData.status = updates.status;
+  if (updates.monitorIp !== undefined) updateData.monitorIp = updates.monitorIp;
+  if (updates.monitorPort !== undefined) updateData.monitorPort = updates.monitorPort;
   if (updates.sortOrder !== undefined) updateData.sortOrder = updates.sortOrder;
 
   db.update(psStations).set(updateData).where(eq(psStations.id, id)).run();

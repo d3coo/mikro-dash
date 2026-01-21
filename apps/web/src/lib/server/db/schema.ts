@@ -73,6 +73,8 @@ export const psStations = sqliteTable('ps_stations', {
   macAddress: text('mac_address').notNull(),      // PlayStation MAC
   hourlyRate: integer('hourly_rate').notNull(),   // Piasters (2000 = 20 EGP/hr)
   status: text('status').notNull().default('available'), // available|occupied|maintenance
+  monitorIp: text('monitor_ip'),                  // FreeKiosk monitor IP (e.g., "192.168.1.50")
+  monitorPort: integer('monitor_port').default(8080), // FreeKiosk API port (default 8080)
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull()

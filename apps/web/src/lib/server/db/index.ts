@@ -240,6 +240,22 @@ export function initializeDb() {
     // Column already exists
   }
 
+  // Migration: add monitor_ip column to ps_stations if it doesn't exist
+  try {
+    sqlite.exec('ALTER TABLE ps_stations ADD COLUMN monitor_ip TEXT');
+    console.log('[DB] Added monitor_ip column to ps_stations table');
+  } catch {
+    // Column already exists
+  }
+
+  // Migration: add monitor_port column to ps_stations if it doesn't exist
+  try {
+    sqlite.exec('ALTER TABLE ps_stations ADD COLUMN monitor_port INTEGER DEFAULT 8080');
+    console.log('[DB] Added monitor_port column to ps_stations table');
+  } catch {
+    // Column already exists
+  }
+
   // Insert default settings if not exist
   const insertSetting = sqlite.prepare(
     'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)'

@@ -21,6 +21,8 @@ export const actions: Actions = {
     const nameAr = (formData.get('nameAr') as string)?.trim();
     const macAddress = (formData.get('macAddress') as string)?.trim();
     const hourlyRate = parseInt(formData.get('hourlyRate') as string, 10);
+    const monitorIp = (formData.get('monitorIp') as string)?.trim() || null;
+    const monitorPort = parseInt(formData.get('monitorPort') as string, 10) || 8080;
 
     if (!id || !name || !nameAr || !macAddress || isNaN(hourlyRate)) {
       return fail(400, { error: 'جميع الحقول مطلوبة' });
@@ -38,6 +40,14 @@ export const actions: Actions = {
       return fail(400, { error: 'صيغة MAC Address غير صحيحة' });
     }
 
+    // Validate IP address format if provided
+    if (monitorIp) {
+      const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+      if (!ipRegex.test(monitorIp)) {
+        return fail(400, { error: 'صيغة عنوان IP غير صحيحة' });
+      }
+    }
+
     try {
       // Convert rate from EGP to piasters (multiply by 100)
       const stations = getStations();
@@ -47,6 +57,8 @@ export const actions: Actions = {
         nameAr,
         macAddress,
         hourlyRate: hourlyRate * 100, // Store in piasters
+        monitorIp,
+        monitorPort,
         sortOrder: stations.length
       });
       return { success: true };
@@ -63,6 +75,8 @@ export const actions: Actions = {
     const macAddress = (formData.get('macAddress') as string)?.trim();
     const hourlyRate = parseInt(formData.get('hourlyRate') as string, 10);
     const status = formData.get('status') as string;
+    const monitorIp = (formData.get('monitorIp') as string)?.trim() || null;
+    const monitorPort = parseInt(formData.get('monitorPort') as string, 10) || 8080;
 
     if (!id) {
       return fail(400, { error: 'معرف الجهاز مطلوب' });
@@ -76,6 +90,14 @@ export const actions: Actions = {
       }
     }
 
+    // Validate IP address format if provided
+    if (monitorIp) {
+      const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+      if (!ipRegex.test(monitorIp)) {
+        return fail(400, { error: 'صيغة عنوان IP غير صحيحة' });
+      }
+    }
+
     try {
       const updates: Parameters<typeof updateStation>[1] = {};
       if (name) updates.name = name;
@@ -83,6 +105,8 @@ export const actions: Actions = {
       if (macAddress) updates.macAddress = macAddress;
       if (!isNaN(hourlyRate)) updates.hourlyRate = hourlyRate * 100; // Store in piasters
       if (status) updates.status = status;
+      updates.monitorIp = monitorIp;
+      updates.monitorPort = monitorPort;
 
       updateStation(id, updates);
       return { success: true };
