@@ -73,8 +73,11 @@ export const psStations = sqliteTable('ps_stations', {
   macAddress: text('mac_address').notNull(),      // PlayStation MAC
   hourlyRate: integer('hourly_rate').notNull(),   // Piasters (2000 = 20 EGP/hr)
   status: text('status').notNull().default('available'), // available|occupied|maintenance
-  monitorIp: text('monitor_ip'),                  // FreeKiosk monitor IP (e.g., "192.168.1.50")
+  monitorIp: text('monitor_ip'),                  // Android monitor IP (e.g., "10.10.10.188")
   monitorPort: integer('monitor_port').default(8080), // FreeKiosk API port (default 8080)
+  monitorType: text('monitor_type').default('tcl'), // 'tcl' | 'skyworth' - affects ADB commands
+  timerEndAction: text('timer_end_action').default('notify'), // 'notify' | 'screen_off'
+  hdmiInput: integer('hdmi_input').default(2),    // HDMI input number (1-4)
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull()
@@ -92,6 +95,10 @@ export const psSessions = sqliteTable('ps_sessions', {
   startedBy: text('started_by').notNull().default('manual'), // manual|auto
   timerMinutes: integer('timer_minutes'),         // Optional timer (30, 60, etc.) - NULL = no timer
   timerNotified: integer('timer_notified').default(0), // 1 = notification sent
+  costLimitPiasters: integer('cost_limit_piasters'), // Optional cost limit (1000 = 10 EGP) - NULL = no limit
+  costLimitNotified: integer('cost_limit_notified').default(0), // 1 = notification sent when limit reached
+  pausedAt: integer('paused_at'),                 // Timestamp when PS went offline (NULL = not paused)
+  totalPausedMs: integer('total_paused_ms').default(0), // Total milliseconds session was paused
   notes: text('notes'),
   createdAt: integer('created_at').notNull()
 });

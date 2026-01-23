@@ -20,14 +20,53 @@ interface FreeKioskResponse {
   data?: unknown;
 }
 
+interface MonitorHealth {
+  ip: string;
+  port: number;
+  online: boolean;
+  lastChecked: Date;
+  lastSeen?: Date;
+  consecutiveFailures: number;
+}
+
+// Monitor health tracking
+const monitorHealth = new Map<string, MonitorHealth>();
+
+// Retry configuration
+const RETRY_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 500;
+
 export class FreeKioskClient {
   private baseUrl: string;
   private apiKey?: string;
+  private ip: string;
+  private port: number;
   private timeout = 5000; // 5 second timeout
 
   constructor(config: FreeKioskConfig) {
+    this.ip = config.ip;
+    this.port = config.port;
     this.baseUrl = `http://${config.ip}:${config.port}`;
     this.apiKey = config.apiKey;
+  }
+
+  private getHealthKey(): string {
+    return `${this.ip}:${this.port}`;
+  }
+
+  private updateHealth(online: boolean): void {
+    const key = this.getHealthKey();
+    const existing = monitorHealth.get(key);
+    const now = new Date();
+
+    monitorHealth.set(key, {
+      ip: this.ip,
+      port: this.port,
+      online,
+      lastChecked: now,
+      lastSeen: online ? now : existing?.lastSeen,
+      consecutiveFailures: online ? 0 : (existing?.consecutiveFailures ?? 0) + 1
+    });
   }
 
   private async request(endpoint: string, method: 'GET' | 'POST' = 'GET', body?: Record<string, unknown>): Promise<FreeKioskResponse> {
@@ -44,9 +83,9 @@ export class FreeKioskClient {
         headers['X-Api-Key'] = this.apiKey;
       }
 
-      // Add content type for POST with body
+      // Add content type for POST with body (UTF-8 charset for Arabic support)
       if (method === 'POST' && body) {
-        headers['Content-Type'] = 'application/json';
+        headers['Content-Type'] = 'application/json; charset=utf-8';
       }
 
       const response = await fetch(url.toString(), {
@@ -74,12 +113,43 @@ export class FreeKioskClient {
         data = text;
       }
 
+      this.updateHealth(true);
       return { success: true, data };
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Unknown error';
       console.error(`[FreeKiosk] Request failed: ${endpoint}`, error);
+      this.updateHealth(false);
       return { success: false, error };
     }
+  }
+
+  /**
+   * Execute a request with retry logic
+   */
+  private async requestWithRetry(
+    endpoint: string,
+    method: 'GET' | 'POST' = 'GET',
+    body?: Record<string, unknown>,
+    maxRetries: number = RETRY_ATTEMPTS
+  ): Promise<FreeKioskResponse> {
+    let lastError: string | undefined;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const result = await this.request(endpoint, method, body);
+
+      if (result.success) {
+        return result;
+      }
+
+      lastError = result.error;
+
+      if (attempt < maxRetries) {
+        // Wait before retry with exponential backoff
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS * attempt));
+      }
+    }
+
+    return { success: false, error: `Failed after ${maxRetries} attempts: ${lastError}` };
   }
 
   /**
@@ -88,6 +158,20 @@ export class FreeKioskClient {
   async ping(): Promise<boolean> {
     const result = await this.request('/api/status');
     return result.success;
+  }
+
+  /**
+   * Check health and return detailed status
+   */
+  async healthCheck(): Promise<MonitorHealth> {
+    const online = await this.ping();
+    return monitorHealth.get(this.getHealthKey()) || {
+      ip: this.ip,
+      port: this.port,
+      online,
+      lastChecked: new Date(),
+      consecutiveFailures: online ? 0 : 1
+    };
   }
 
   /**
@@ -120,10 +204,55 @@ export class FreeKioskClient {
   }
 
   /**
-   * Play text-to-speech
+   * Play a beep sound with retry (for critical notifications)
    */
-  async speak(text: string): Promise<FreeKioskResponse> {
-    return this.request('/api/tts', 'POST', { text });
+  async beepWithRetry(): Promise<FreeKioskResponse> {
+    return this.requestWithRetry('/api/audio/beep', 'POST');
+  }
+
+  /**
+   * Play text-to-speech
+   * @param text - Text to speak
+   * @param lang - Language code (e.g., 'ar', 'en'). Defaults to Arabic.
+   */
+  async speak(text: string, lang: string = 'ar'): Promise<FreeKioskResponse> {
+    return this.request('/api/tts', 'POST', { text, lang });
+  }
+
+  /**
+   * Play text-to-speech with retry (for critical notifications)
+   */
+  async speakWithRetry(text: string, lang: string = 'ar'): Promise<FreeKioskResponse> {
+    return this.requestWithRetry('/api/tts', 'POST', { text, lang });
+  }
+
+  /**
+   * Show toast notification on screen
+   */
+  async toast(text: string): Promise<FreeKioskResponse> {
+    return this.request('/api/toast', 'POST', { text });
+  }
+
+  /**
+   * Show toast notification with retry (for critical notifications)
+   */
+  async toastWithRetry(text: string): Promise<FreeKioskResponse> {
+    return this.requestWithRetry('/api/toast', 'POST', { text });
+  }
+
+  /**
+   * Show toast notification repeated multiple times (for longer visibility)
+   * @param text - Text to display
+   * @param repeat - Number of times to repeat (default 4)
+   * @param delayMs - Delay between repeats in ms (default 2000)
+   */
+  async toastRepeated(text: string, repeat: number = 4, delayMs: number = 2000): Promise<void> {
+    for (let i = 0; i < repeat; i++) {
+      await this.request('/api/toast', 'POST', { text });
+      if (i < repeat - 1) {
+        await new Promise(r => setTimeout(r, delayMs));
+      }
+    }
   }
 
   /**
@@ -167,59 +296,64 @@ export function getClient(ip: string, port: number = 8080): FreeKioskClient {
 
 /**
  * Send notification to a monitor when session starts
+ * Uses retry for critical operations (beep, toast, speak)
  */
 export async function notifySessionStart(ip: string, port: number, stationName: string, timerMinutes?: number): Promise<void> {
   const client = getClient(ip, port);
 
-  // Turn on screen
+  // Turn on screen (best effort, no retry)
   await client.screenOn();
-  await client.setBrightness(200);
+  await client.setBrightness(100);
 
-  // Beep and speak
-  await client.beep();
+  // Beep with retry for reliability
+  await client.beepWithRetry();
 
+  // Show toast (English) + speak (Arabic) with retry
   if (timerMinutes) {
-    await client.speak(`بدأت الجلسة على ${stationName}، الوقت ${timerMinutes} دقيقة`);
+    await client.toastWithRetry(`▶️ Session Started - ${timerMinutes} min`);
   } else {
-    await client.speak(`بدأت الجلسة على ${stationName}`);
+    await client.toastWithRetry(`▶️ Session Started`);
   }
 }
 
 /**
  * Send notification to a monitor when timer is about to expire (warning)
+ * Uses retry for critical operations
  */
 export async function notifyTimerWarning(ip: string, port: number, minutesRemaining: number): Promise<void> {
   const client = getClient(ip, port);
 
-  await client.beep();
-  await client.speak(`تنبيه: باقي ${minutesRemaining} دقيقة`);
+  await client.beepWithRetry();
+  await client.toastWithRetry(`⚠️ Warning: ${minutesRemaining} min remaining`);
 }
 
 /**
  * Send notification to a monitor when timer expires
+ * Uses retry for critical operations - multiple beeps for urgency
  */
 export async function notifyTimerExpired(ip: string, port: number, stationName: string): Promise<void> {
   const client = getClient(ip, port);
 
-  // Multiple beeps for urgency
-  await client.beep();
+  // Multiple beeps for urgency (with retry on each)
+  await client.beepWithRetry();
   await new Promise(r => setTimeout(r, 500));
-  await client.beep();
+  await client.beepWithRetry();
   await new Promise(r => setTimeout(r, 500));
-  await client.beep();
+  await client.beepWithRetry();
 
-  // Loud notification
-  await client.speak(`انتهى الوقت! انتهت الجلسة على ${stationName}`);
+  // Show toast notification with retry (English)
+  await client.toastWithRetry(`⏰ Time's Up!`);
 }
 
 /**
  * Send notification to a monitor when session ends
+ * Uses retry for critical operations
  */
 export async function notifySessionEnd(ip: string, port: number, stationName: string, turnOffScreen: boolean = true): Promise<void> {
   const client = getClient(ip, port);
 
-  await client.beep();
-  await client.speak(`انتهت الجلسة على ${stationName}`);
+  await client.beepWithRetry();
+  await client.toastWithRetry(`⏹️ Session Ended`);
 
   if (turnOffScreen) {
     // Wait a bit for TTS to finish, then turn off screen

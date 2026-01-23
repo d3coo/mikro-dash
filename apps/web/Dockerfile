@@ -31,15 +31,19 @@ FROM node:22-slim
 
 WORKDIR /app
 
-# Install runtime dependencies for better-sqlite3
+# Install runtime dependencies for better-sqlite3 and ADB for monitor control
 RUN apt-get update && apt-get install -y \
     libsqlite3-0 \
+    adb \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy built app and dependencies
 COPY --from=builder /app/build ./build
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
+
+# Copy static APK files for monitor setup
+COPY --from=builder /app/static/apk ./static/apk
 
 # Create data directory for SQLite
 RUN mkdir -p /app/data

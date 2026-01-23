@@ -8,6 +8,8 @@ services:
     volumes:
       # Persist SQLite database
       - ./apps/web/data.db:/app/data.db
+      # Persist ADB keys so we don't need to re-authorize after rebuild
+      - adb-keys:/root/.android
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -31,3 +33,6 @@ services:
     restart: unless-stopped
     profiles:
       - dev
+
+volumes:
+  adb-keys:

@@ -16,7 +16,7 @@ import {
   markTimerNotified,
   getStationEarnings
 } from '$lib/server/services/playstation';
-import * as freekiosk from '$lib/server/services/freekiosk';
+import * as monitorControl from '$lib/server/services/monitor-control';
 import { fail } from '@sveltejs/kit';
 
 export const load: PageServerLoad = async () => {
@@ -55,6 +55,7 @@ export const actions: Actions = {
     const formData = await request.formData();
     const stationId = formData.get('stationId') as string;
     const timerMinutes = formData.get('timerMinutes') as string;
+    const costLimit = formData.get('costLimit') as string;
 
     if (!stationId) {
       return fail(400, { error: 'Station ID is required' });
@@ -62,17 +63,14 @@ export const actions: Actions = {
 
     try {
       const timer = timerMinutes ? parseInt(timerMinutes, 10) : undefined;
-      startSession(stationId, 'manual', timer);
+      const costLimitPiasters = costLimit ? parseInt(costLimit, 10) * 100 : undefined; // Convert EGP to piasters
+      startSession(stationId, 'manual', timer, costLimitPiasters);
 
       // Send notification to monitor (async, don't wait)
       const station = getStationById(stationId);
       if (station?.monitorIp) {
-        freekiosk.notifySessionStart(
-          station.monitorIp,
-          station.monitorPort || 8080,
-          station.nameAr,
-          timer
-        ).catch(err => console.error('[FreeKiosk] Session start notification failed:', err));
+        monitorControl.onSessionStart(station, timer)
+          .catch(err => console.error('[MonitorControl] Session start failed:', err));
       }
 
       return { success: true };
@@ -97,12 +95,8 @@ export const actions: Actions = {
       // Send notification to monitor (async, don't wait)
       const station = getStationById(session.stationId);
       if (station?.monitorIp) {
-        freekiosk.notifySessionEnd(
-          station.monitorIp,
-          station.monitorPort || 8080,
-          station.nameAr,
-          true // turn off screen
-        ).catch(err => console.error('[FreeKiosk] Session end notification failed:', err));
+        monitorControl.onSessionEnd(station)
+          .catch(err => console.error('[MonitorControl] Session end failed:', err));
       }
 
       return { success: true, totalCost, gamingCost: session.totalCost, ordersCost };
@@ -129,12 +123,8 @@ export const actions: Actions = {
       // Send notification to monitor (async, don't wait)
       const station = getStationById(session.stationId);
       if (station?.monitorIp) {
-        freekiosk.notifySessionEnd(
-          station.monitorIp,
-          station.monitorPort || 8080,
-          station.nameAr,
-          true // turn off screen
-        ).catch(err => console.error('[FreeKiosk] Session end notification failed:', err));
+        monitorControl.onSessionEnd(station)
+          .catch(err => console.error('[MonitorControl] Session end failed:', err));
       }
 
       return { success: true, totalCost, gamingCost: session.totalCost, ordersCost };
@@ -175,6 +165,37 @@ export const actions: Actions = {
       return { success: true };
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : 'Failed to add order' });
+    }
+  },
+
+  addMultipleOrders: async ({ request }) => {
+    const formData = await request.formData();
+    const sessionId = formData.get('sessionId') as string;
+    const itemsJson = formData.get('items') as string;
+
+    if (!sessionId || !itemsJson) {
+      return fail(400, { error: 'Session ID and items are required' });
+    }
+
+    try {
+      const items = JSON.parse(itemsJson) as Array<{ menuItemId: number; quantity: number }>;
+
+      if (!Array.isArray(items) || items.length === 0) {
+        return fail(400, { error: 'At least one item is required' });
+      }
+
+      // Add all items to the session
+      for (const item of items) {
+        addOrderToSession(
+          parseInt(sessionId, 10),
+          item.menuItemId,
+          item.quantity
+        );
+      }
+
+      return { success: true, count: items.length };
+    } catch (error) {
+      return fail(400, { error: error instanceof Error ? error.message : 'Failed to add orders' });
     }
   },
 

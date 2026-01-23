@@ -34,7 +34,7 @@ export const POST: RequestHandler = async ({ request }) => {
         return json({ success: true });
 
       case 'brightness':
-        const level = params.level ?? 200;
+        const level = params.level ?? 100;
         await client.setBrightness(level);
         return json({ success: true });
 
@@ -46,7 +46,14 @@ export const POST: RequestHandler = async ({ request }) => {
         if (!params.text) {
           return json({ success: false, error: 'Text is required for speak action' }, { status: 400 });
         }
-        await client.speak(params.text, params.lang || 'ar');
+        await client.speak(params.text, params.lang);
+        return json({ success: true });
+
+      case 'toast':
+        if (!params.text) {
+          return json({ success: false, error: 'Text is required for toast action' }, { status: 400 });
+        }
+        await client.toast(params.text);
         return json({ success: true });
 
       case 'status':

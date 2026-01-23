@@ -127,12 +127,13 @@
 
   const psMetrics = $derived(unified ? [
     { label: 'جلسات', value: `${unified.segments.playstation.sessions}` },
-    { label: 'دقائق', value: `${unified.segments.playstation.minutes}` },
-    { label: 'طلبات', value: formatCurrency(unified.segments.playstation.ordersRevenue) }
+    { label: 'دقائق', value: `${unified.segments.playstation.minutes}` }
   ] : []);
 
   const fnbMetrics = $derived(unified ? [
-    { label: 'عناصر', value: `${unified.segments.fnb.itemsSold}` }
+    { label: 'عناصر', value: `${unified.segments.fnb.itemsSold}` },
+    { label: 'طلبات PS', value: formatCurrency(unified.segments.fnb.psOrdersRevenue || 0) },
+    { label: 'مبيعات مستقلة', value: formatCurrency(unified.segments.fnb.standaloneRevenue || 0) }
   ] : []);
 
   // Legacy chart data

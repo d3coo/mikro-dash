@@ -256,6 +256,62 @@ export function initializeDb() {
     // Column already exists
   }
 
+  // Migration: add monitor_type column to ps_stations if it doesn't exist
+  try {
+    sqlite.exec("ALTER TABLE ps_stations ADD COLUMN monitor_type TEXT DEFAULT 'tcl'");
+    console.log('[DB] Added monitor_type column to ps_stations table');
+  } catch {
+    // Column already exists
+  }
+
+  // Migration: add timer_end_action column to ps_stations if it doesn't exist
+  try {
+    sqlite.exec("ALTER TABLE ps_stations ADD COLUMN timer_end_action TEXT DEFAULT 'notify'");
+    console.log('[DB] Added timer_end_action column to ps_stations table');
+  } catch {
+    // Column already exists
+  }
+
+  // Migration: add hdmi_input column to ps_stations if it doesn't exist
+  try {
+    sqlite.exec('ALTER TABLE ps_stations ADD COLUMN hdmi_input INTEGER DEFAULT 2');
+    console.log('[DB] Added hdmi_input column to ps_stations table');
+  } catch {
+    // Column already exists
+  }
+
+  // Migration: add cost_limit_piasters column to ps_sessions if it doesn't exist
+  try {
+    sqlite.exec('ALTER TABLE ps_sessions ADD COLUMN cost_limit_piasters INTEGER');
+    console.log('[DB] Added cost_limit_piasters column to ps_sessions table');
+  } catch {
+    // Column already exists
+  }
+
+  // Migration: add cost_limit_notified column to ps_sessions if it doesn't exist
+  try {
+    sqlite.exec('ALTER TABLE ps_sessions ADD COLUMN cost_limit_notified INTEGER DEFAULT 0');
+    console.log('[DB] Added cost_limit_notified column to ps_sessions table');
+  } catch {
+    // Column already exists
+  }
+
+  // Migration: add paused_at column to ps_sessions if it doesn't exist
+  try {
+    sqlite.exec('ALTER TABLE ps_sessions ADD COLUMN paused_at INTEGER');
+    console.log('[DB] Added paused_at column to ps_sessions table');
+  } catch {
+    // Column already exists
+  }
+
+  // Migration: add total_paused_ms column to ps_sessions if it doesn't exist
+  try {
+    sqlite.exec('ALTER TABLE ps_sessions ADD COLUMN total_paused_ms INTEGER DEFAULT 0');
+    console.log('[DB] Added total_paused_ms column to ps_sessions table');
+  } catch {
+    // Column already exists
+  }
+
   // Insert default settings if not exist
   const insertSetting = sqlite.prepare(
     'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)'

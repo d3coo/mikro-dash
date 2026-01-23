@@ -28,12 +28,12 @@ export interface WifiSegmentSummary extends SegmentSummary {
 export interface PlayStationSegmentSummary extends SegmentSummary {
   sessions: number;
   minutes: number;
-  gamingRevenue: number;    // Piasters - gaming time only
-  ordersRevenue: number;    // Piasters - F&B during sessions
 }
 
 export interface FnbSegmentSummary extends SegmentSummary {
   itemsSold: number;
+  psOrdersRevenue: number;      // Revenue from PS session orders
+  standaloneRevenue: number;    // Revenue from standalone F&B sales
 }
 
 export interface UnifiedAnalyticsSummary {
@@ -236,7 +236,7 @@ export async function getUnifiedAnalytics(
   const wifiFixedExpenses = calculateCategoryExpenses('wifi', daysInPeriod);
   const wifiExpenses = wifiDataExpenses + wifiFixedExpenses;
 
-  // ===== PLAYSTATION SEGMENT =====
+  // ===== PLAYSTATION SEGMENT (Gaming Time Only) =====
   const psStats = db.select()
     .from(psDailyStats)
     .where(and(
@@ -256,18 +256,18 @@ export async function getUnifiedAnalytics(
     psMinutes += stat.totalMinutes;
   }
 
-  // For today, also include active sessions
+  // For today, also include active sessions (gaming cost only, not orders)
   if (period === 'today' || endDate === getTodayDate()) {
     const activeSessions = getActiveSessions();
     for (const session of activeSessions) {
       const now = Date.now();
       psGamingRevenue += calculateSessionCost(session, now);
-      psGamingRevenue += session.ordersCost || 0;
+      // Note: We NO LONGER add ordersCost here - it goes to F&B segment
       psMinutes += Math.floor((now - session.startedAt) / (1000 * 60));
     }
   }
 
-  // Get PS orders revenue (F&B during sessions)
+  // Get PS orders revenue (F&B during sessions) - this will be moved to F&B segment
   const psOrders = db.select()
     .from(psSessionOrders)
     .innerJoin(psSessions, eq(psSessionOrders.sessionId, psSessions.id))
@@ -279,23 +279,29 @@ export async function getUnifiedAnalytics(
 
   const psOrdersRevenue = psOrders.reduce((sum, row) =>
     sum + (row.ps_session_orders.priceSnapshot * row.ps_session_orders.quantity), 0);
+  const psOrdersItemCount = psOrders.reduce((sum, row) => sum + row.ps_session_orders.quantity, 0);
 
-  // PS total revenue includes gaming + orders (orders are already in totalRevenue from daily stats)
-  // But we need to separate them for reporting
-  const psTotalRevenue = psGamingRevenue; // Gaming revenue already includes orders from daily stats
+  // PS revenue is now GAMING ONLY (subtract any orders that were included in daily stats)
+  // Daily stats totalRevenue may include orders, so we need to subtract them
+  const psGamingOnlyRevenue = psGamingRevenue - psOrdersRevenue;
   const psExpenses = calculateCategoryExpenses('playstation', daysInPeriod);
 
-  // ===== F&B SEGMENT (Standalone only) =====
+  // ===== F&B SEGMENT (Combined: PS Orders + Standalone F&B) =====
   const fnbSummary = getFnbSalesSummary(startMs, endMs);
-  const fnbRevenue = fnbSummary.totalRevenue;
-  const fnbItemsSold = fnbSummary.totalItemsSold;
+  const standaloneRevenue = fnbSummary.totalRevenue;
+  const standaloneItemsSold = fnbSummary.totalItemsSold;
+
+  // Combined F&B revenue = PS session orders + standalone F&B
+  const fnbTotalRevenue = psOrdersRevenue + standaloneRevenue;
+  const fnbTotalItemsSold = psOrdersItemCount + standaloneItemsSold;
   const fnbExpenses = calculateCategoryExpenses('fnb', daysInPeriod);
 
   // ===== GENERAL EXPENSES =====
   const generalExpenses = calculateCategoryExpenses('general', daysInPeriod);
 
   // ===== CALCULATE TOTALS =====
-  const totalRevenue = wifiRevenue + psTotalRevenue + fnbRevenue;
+  // Total revenue = WiFi + PS Gaming + F&B (which includes PS orders)
+  const totalRevenue = wifiRevenue + psGamingOnlyRevenue + fnbTotalRevenue;
   const segmentExpenses = wifiExpenses + psExpenses + fnbExpenses;
   const totalExpenses = segmentExpenses + generalExpenses;
   const grossProfit = totalRevenue - segmentExpenses;
@@ -303,8 +309,8 @@ export async function getUnifiedAnalytics(
 
   // Calculate contribution percentages
   const wifiContribution = totalRevenue > 0 ? Math.round((wifiRevenue / totalRevenue) * 100) : 0;
-  const psContribution = totalRevenue > 0 ? Math.round((psTotalRevenue / totalRevenue) * 100) : 0;
-  const fnbContribution = totalRevenue > 0 ? Math.round((fnbRevenue / totalRevenue) * 100) : 0;
+  const psContribution = totalRevenue > 0 ? Math.round((psGamingOnlyRevenue / totalRevenue) * 100) : 0;
+  const fnbContribution = totalRevenue > 0 ? Math.round((fnbTotalRevenue / totalRevenue) * 100) : 0;
 
   return {
     period: {
@@ -324,21 +330,21 @@ export async function getUnifiedAnalytics(
         dataUsedGB: Math.round(wifiDataUsedGB * 100) / 100
       },
       playstation: {
-        revenue: psTotalRevenue,
+        revenue: psGamingOnlyRevenue, // Gaming time only, NO orders
         expenses: psExpenses,
-        profit: psTotalRevenue - psExpenses,
+        profit: psGamingOnlyRevenue - psExpenses,
         contribution: psContribution,
         sessions: psSessions_count,
-        minutes: psMinutes,
-        gamingRevenue: psGamingRevenue - psOrdersRevenue, // Gaming only (subtract orders)
-        ordersRevenue: psOrdersRevenue
+        minutes: psMinutes
       },
       fnb: {
-        revenue: fnbRevenue,
+        revenue: fnbTotalRevenue, // Combined: PS orders + standalone
         expenses: fnbExpenses,
-        profit: fnbRevenue - fnbExpenses,
+        profit: fnbTotalRevenue - fnbExpenses,
         contribution: fnbContribution,
-        itemsSold: fnbItemsSold
+        itemsSold: fnbTotalItemsSold,
+        psOrdersRevenue: psOrdersRevenue,      // Breakdown: PS session orders
+        standaloneRevenue: standaloneRevenue   // Breakdown: Standalone F&B
       }
     },
     totals: {
@@ -480,6 +486,7 @@ export interface UnifiedChartPoint {
 
 /**
  * Get revenue chart data by segment for a date range
+ * PS = gaming only, F&B = PS orders + standalone F&B
  */
 export async function getRevenueBySegmentChart(days: number): Promise<UnifiedChartPoint[]> {
   const data: UnifiedChartPoint[] = [];
@@ -506,16 +513,35 @@ export async function getRevenueBySegmentChart(days: number): Promise<UnifiedCha
     const wifiRevenue = dayVouchers.filter(v => v.status === 'used' || v.status === 'exhausted')
       .reduce((sum, v) => sum + v.priceLE, 0) * 100;
 
-    // PS revenue from daily stats
+    // PS revenue from daily stats (total includes orders)
     const psStats = db.select()
       .from(psDailyStats)
       .where(eq(psDailyStats.date, date))
       .get();
-    const psRevenue = psStats?.totalRevenue || 0;
+    const psTotalRevenue = psStats?.totalRevenue || 0;
 
-    // F&B revenue
+    // Get PS orders for that day to subtract from PS total
+    const psOrders = db.select()
+      .from(psSessionOrders)
+      .innerJoin(psSessions, eq(psSessionOrders.sessionId, psSessions.id))
+      .where(and(
+        gte(psSessions.startedAt, dayStart),
+        lte(psSessions.startedAt, dayEnd)
+      ))
+      .all();
+
+    const psOrdersRevenue = psOrders.reduce((sum, row) =>
+      sum + (row.ps_session_orders.priceSnapshot * row.ps_session_orders.quantity), 0);
+
+    // PS gaming only = total - orders
+    const psGamingRevenue = psTotalRevenue - psOrdersRevenue;
+
+    // Standalone F&B revenue
     const fnbSummary = getFnbSalesSummary(dayStart, dayEnd);
-    const fnbRevenue = fnbSummary.totalRevenue;
+    const standaloneRevenue = fnbSummary.totalRevenue;
+
+    // Combined F&B = PS orders + standalone
+    const fnbTotalRevenue = psOrdersRevenue + standaloneRevenue;
 
     const d = new Date(date);
     const label = `${d.getDate()}/${d.getMonth() + 1}`;
@@ -524,9 +550,9 @@ export async function getRevenueBySegmentChart(days: number): Promise<UnifiedCha
       date,
       label,
       wifi: wifiRevenue,
-      playstation: psRevenue,
-      fnb: fnbRevenue,
-      total: wifiRevenue + psRevenue + fnbRevenue
+      playstation: psGamingRevenue, // Gaming only
+      fnb: fnbTotalRevenue,          // PS orders + standalone
+      total: wifiRevenue + psGamingRevenue + fnbTotalRevenue
     });
   }
 

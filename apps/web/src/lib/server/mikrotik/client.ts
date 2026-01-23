@@ -492,4 +492,61 @@ export class MikroTikClient {
       '.id': id
     });
   }
+
+  // Firewall Filter Rules
+  async getFirewallFilterRules(): Promise<Array<{
+    '.id': string;
+    chain: string;
+    action: string;
+    'src-address'?: string;
+    'dst-address'?: string;
+    protocol?: string;
+    comment?: string;
+    disabled?: string;
+  }>> {
+    return this.request('/ip/firewall/filter');
+  }
+
+  async addFirewallFilterRule(options: {
+    chain: string;
+    action: string;
+    srcAddress?: string;
+    dstAddress?: string;
+    protocol?: string;
+    comment?: string;
+    place?: 'before' | 'after';
+    placeId?: string;
+  }): Promise<void> {
+    const body: Record<string, unknown> = {
+      chain: options.chain,
+      action: options.action
+    };
+    if (options.srcAddress) body['src-address'] = options.srcAddress;
+    if (options.dstAddress) body['dst-address'] = options.dstAddress;
+    if (options.protocol) body['protocol'] = options.protocol;
+    if (options.comment) body['comment'] = options.comment;
+    if (options.place && options.placeId) {
+      body[`place-${options.place}`] = options.placeId;
+    }
+    await this.request('/ip/firewall/filter/add', 'POST', body);
+  }
+
+  async removeFirewallFilterRule(id: string): Promise<void> {
+    await this.request('/ip/firewall/filter/remove', 'POST', {
+      '.id': id
+    });
+  }
+
+  // Add IP binding by IP address (for monitors without MAC)
+  async addIpBindingByAddress(
+    address: string,
+    type: 'bypassed' | 'blocked',
+    comment?: string
+  ): Promise<void> {
+    await this.request('/ip/hotspot/ip-binding/add', 'POST', {
+      address,
+      type,
+      comment: comment || `Added from dashboard`
+    });
+  }
 }

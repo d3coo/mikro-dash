@@ -23,6 +23,9 @@ export const actions: Actions = {
     const hourlyRate = parseInt(formData.get('hourlyRate') as string, 10);
     const monitorIp = (formData.get('monitorIp') as string)?.trim() || null;
     const monitorPort = parseInt(formData.get('monitorPort') as string, 10) || 8080;
+    const monitorType = (formData.get('monitorType') as string) || 'tcl';
+    const timerEndAction = (formData.get('timerEndAction') as string) || 'notify';
+    const hdmiInput = parseInt(formData.get('hdmiInput') as string, 10) || 2;
 
     if (!id || !name || !nameAr || !macAddress || isNaN(hourlyRate)) {
       return fail(400, { error: 'جميع الحقول مطلوبة' });
@@ -59,6 +62,9 @@ export const actions: Actions = {
         hourlyRate: hourlyRate * 100, // Store in piasters
         monitorIp,
         monitorPort,
+        monitorType,
+        timerEndAction,
+        hdmiInput,
         sortOrder: stations.length
       });
       return { success: true };
@@ -77,6 +83,9 @@ export const actions: Actions = {
     const status = formData.get('status') as string;
     const monitorIp = (formData.get('monitorIp') as string)?.trim() || null;
     const monitorPort = parseInt(formData.get('monitorPort') as string, 10) || 8080;
+    const monitorType = (formData.get('monitorType') as string) || null;
+    const timerEndAction = (formData.get('timerEndAction') as string) || null;
+    const hdmiInput = parseInt(formData.get('hdmiInput') as string, 10) || null;
 
     if (!id) {
       return fail(400, { error: 'معرف الجهاز مطلوب' });
@@ -107,6 +116,9 @@ export const actions: Actions = {
       if (status) updates.status = status;
       updates.monitorIp = monitorIp;
       updates.monitorPort = monitorPort;
+      if (monitorType) updates.monitorType = monitorType;
+      if (timerEndAction) updates.timerEndAction = timerEndAction;
+      if (hdmiInput) updates.hdmiInput = hdmiInput;
 
       updateStation(id, updates);
       return { success: true };

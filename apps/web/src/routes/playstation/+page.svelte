@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Gamepad2, Play, Square, Clock, Settings, RefreshCw, Timer, Banknote, Activity, Wifi, WifiOff, AlertTriangle, History, TrendingUp, UtensilsCrossed, Plus, Minus, X, Bell, Coffee, Radio, Power, Volume2 } from 'lucide-svelte';
+  import { Gamepad2, Play, Square, Clock, Settings, RefreshCw, Timer, Banknote, Activity, Wifi, WifiOff, AlertTriangle, History, TrendingUp, UtensilsCrossed, Plus, Minus, X, Bell, Coffee, Radio, Power, Volume2, Monitor, Tv, MonitorOff } from 'lucide-svelte';
   import { onMount, onDestroy } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { invalidateAll } from '$app/navigation';
@@ -12,6 +12,61 @@
   let audioContext: AudioContext | null = null;
   let notifiedTimerIds = $state(new Set<number>()); // Track which timers already played sound
   let soundEnabled = $state(true);
+
+  // ===== MONITOR CONTROL =====
+  let monitorControlLoading = $state<string | null>(null); // stationId being controlled
+
+  async function controlMonitor(stationId: string, action: 'screen_on' | 'screen_off' | 'hdmi_switch') {
+    monitorControlLoading = stationId;
+    try {
+      const response = await fetch('/api/playstation/monitor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, stationId })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        const actionNames: Record<string, string> = {
+          screen_on: 'Screen turned on',
+          screen_off: 'Screen turned off',
+          hdmi_switch: 'HDMI switched'
+        };
+        toast.success(actionNames[action] || 'Action completed');
+      } else {
+        toast.error(`Failed: ${result.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      toast.error('Failed to control monitor');
+    } finally {
+      monitorControlLoading = null;
+    }
+  }
+
+  // ===== ORDER REMOVAL =====
+  async function removeOrder(orderId: number) {
+    try {
+      const formData = new FormData();
+      formData.append('orderId', orderId.toString());
+
+      const response = await fetch('?/removeOrder', {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+
+      if (result.type === 'success') {
+        toast.success('تم حذف الطلب');
+        await invalidateAll();
+      } else {
+        toast.error('فشل في حذف الطلب');
+      }
+    } catch (err) {
+      toast.error('فشل في حذف الطلب');
+    }
+  }
 
   // Initialize audio context (must be after user interaction)
   function initAudioContext() {
@@ -141,9 +196,9 @@
   let activeStationForStart = $state<string | null>(null);
   let activeSessionForTimer = $state<number | null>(null);
   let activeSessionForEnd = $state<{ sessionId: number; stationName: string; calculatedCost: number; ordersTotal: number } | null>(null);
-  let selectedMenuItem = $state<number | null>(null);
-  let orderQuantity = $state(1);
+  let orderCart = $state<Map<number, number>>(new Map()); // itemId -> quantity
   let selectedDuration = $state<number | null>(null);
+  let selectedCostLimit = $state<number | null>(null); // Cost limit in EGP
   let endSessionMode = $state<'rounded' | 'zero' | 'custom'>('rounded');
   let customAmount = $state('');
 
@@ -276,7 +331,16 @@
 
     for (const status of data.stationStatuses) {
       if (status.activeSession?.timerMinutes && !status.activeSession.timerNotified) {
-        const elapsed = (currentTime - status.activeSession.startedAt) / 60000;
+        // Skip if paused - don't expire timer while paused
+        if (status.isPaused) continue;
+
+        // Calculate elapsed accounting for paused time
+        let elapsedMs = currentTime - status.activeSession.startedAt;
+        const totalPausedMs = status.activeSession.totalPausedMs || 0;
+        elapsedMs -= totalPausedMs;
+        if (elapsedMs < 0) elapsedMs = 0;
+
+        const elapsed = elapsedMs / 60000; // minutes
         const remaining = status.activeSession.timerMinutes - elapsed;
 
         // Timer just expired (within last 2 seconds to catch it)
@@ -292,16 +356,14 @@
 
             // Notify the Android monitor if configured
             if (status.station.monitorIp) {
-              fetch('/api/playstation/kiosk', {
+              fetch('/api/playstation/monitor', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   action: 'timer_expired',
-                  ip: status.station.monitorIp,
-                  port: status.station.monitorPort || 8080,
-                  stationName: status.station.nameAr
+                  stationId: status.station.id
                 })
-              }).catch(err => console.error('[FreeKiosk] Timer expired notification failed:', err));
+              }).catch(err => console.error('[MonitorControl] Timer expired notification failed:', err));
             }
           }
         }
@@ -319,9 +381,16 @@
     }
   }
 
-  // Format elapsed time
-  function formatElapsed(startedAt: number): string {
-    const elapsed = currentTime - startedAt;
+  // Format elapsed time (accounting for paused time)
+  function formatElapsed(session: { startedAt: number; pausedAt?: number | null; totalPausedMs?: number | null }): string {
+    let elapsed = currentTime - session.startedAt;
+
+    // Subtract paused time
+    const totalPausedMs = session.totalPausedMs || 0;
+    const currentlyPausedMs = session.pausedAt ? (currentTime - session.pausedAt) : 0;
+    elapsed -= (totalPausedMs + currentlyPausedMs);
+    if (elapsed < 0) elapsed = 0;
+
     const hours = Math.floor(elapsed / (1000 * 60 * 60));
     const minutes = Math.floor((elapsed % (1000 * 60 * 60)) / (1000 * 60));
     const seconds = Math.floor((elapsed % (1000 * 60)) / 1000);
@@ -332,9 +401,16 @@
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   }
 
-  // Calculate current cost in EGP
-  function calculateCost(startedAt: number, hourlyRate: number): string {
-    const elapsed = currentTime - startedAt;
+  // Calculate current cost in EGP (accounting for paused time)
+  function calculateCost(session: { startedAt: number; pausedAt?: number | null; totalPausedMs?: number | null }, hourlyRate: number): string {
+    let elapsed = currentTime - session.startedAt;
+
+    // Subtract paused time
+    const totalPausedMs = session.totalPausedMs || 0;
+    const currentlyPausedMs = session.pausedAt ? (currentTime - session.pausedAt) : 0;
+    elapsed -= (totalPausedMs + currentlyPausedMs);
+    if (elapsed < 0) elapsed = 0;
+
     const minutes = Math.ceil(elapsed / (1000 * 60));
     const cost = (hourlyRate * minutes) / 60 / 100; // Convert from piasters
     return cost.toFixed(1);
@@ -371,17 +447,27 @@
   let availableCount = $derived(data.stationStatuses.filter(s => s.station.status === 'available').length);
   let maintenanceCount = $derived(data.stationStatuses.filter(s => s.station.status === 'maintenance').length);
 
-  // Timer remaining
-  function getTimerRemaining(session: { startedAt: number; timerMinutes?: number | null }): { text: string; isExpired: boolean } | null {
+  // Timer remaining (accounting for paused time)
+  function getTimerRemaining(session: { startedAt: number; timerMinutes?: number | null; pausedAt?: number | null; totalPausedMs?: number | null }): { text: string; isExpired: boolean; isPaused: boolean } | null {
     if (!session.timerMinutes) return null;
-    const elapsed = (currentTime - session.startedAt) / 60000; // minutes
+
+    let elapsedMs = currentTime - session.startedAt;
+    // Subtract paused time
+    const totalPausedMs = session.totalPausedMs || 0;
+    const currentlyPausedMs = session.pausedAt ? (currentTime - session.pausedAt) : 0;
+    elapsedMs -= (totalPausedMs + currentlyPausedMs);
+    if (elapsedMs < 0) elapsedMs = 0;
+
+    const elapsed = elapsedMs / 60000; // minutes
     const remaining = session.timerMinutes - elapsed;
+    const isPaused = !!session.pausedAt;
+
     if (remaining <= 0) {
-      return { text: 'انتهى الوقت', isExpired: true };
+      return { text: 'انتهى الوقت', isExpired: true, isPaused };
     }
     const mins = Math.floor(remaining);
     const secs = Math.floor((remaining - mins) * 60);
-    return { text: `${mins}:${secs.toString().padStart(2, '0')}`, isExpired: false };
+    return { text: `${mins}:${secs.toString().padStart(2, '0')}`, isExpired: false, isPaused };
   }
 
   // Format time for session start/end (English format)
@@ -397,8 +483,7 @@
   // Open order modal
   function openOrderModal(stationId: string, sessionId: number) {
     activeStationForOrder = { stationId, sessionId };
-    selectedMenuItem = null;
-    orderQuantity = 1;
+    orderCart = new Map();
     showOrderModal = true;
   }
 
@@ -406,14 +491,49 @@
   function closeOrderModal() {
     showOrderModal = false;
     activeStationForOrder = null;
-    selectedMenuItem = null;
-    orderQuantity = 1;
+    orderCart = new Map();
+  }
+
+  // Add item to cart or increment quantity
+  function addToCart(itemId: number) {
+    const current = orderCart.get(itemId) || 0;
+    orderCart = new Map(orderCart).set(itemId, current + 1);
+  }
+
+  // Remove one item from cart or decrement quantity
+  function removeFromCart(itemId: number) {
+    const current = orderCart.get(itemId) || 0;
+    if (current <= 1) {
+      const newCart = new Map(orderCart);
+      newCart.delete(itemId);
+      orderCart = newCart;
+    } else {
+      orderCart = new Map(orderCart).set(itemId, current - 1);
+    }
+  }
+
+  // Get total cart value
+  function getCartTotal(): number {
+    let total = 0;
+    orderCart.forEach((qty, itemId) => {
+      const item = data.menuItems?.find(m => m.id === itemId);
+      if (item) total += item.price * qty;
+    });
+    return total;
+  }
+
+  // Get cart item count
+  function getCartCount(): number {
+    let count = 0;
+    orderCart.forEach((qty) => count += qty);
+    return count;
   }
 
   // Open duration modal for starting session
   function openDurationModal(stationId: string) {
     activeStationForStart = stationId;
     selectedDuration = null;
+    selectedCostLimit = null;
     showDurationModal = true;
   }
 
@@ -422,6 +542,7 @@
     showDurationModal = false;
     activeStationForStart = null;
     selectedDuration = null;
+    selectedCostLimit = null;
   }
 
   // Open timer modal for active session
@@ -486,14 +607,23 @@
     snacks: data.menuItems?.filter(m => m.category === 'snacks' && m.isAvailable) || []
   });
 
-  // Duration options
+  // Duration options (time limit)
   const durationOptions = [
     { value: null, label: 'مفتوح', description: 'بدون حد زمني' },
-    { value: 1, label: '1 دقيقة', description: 'للاختبار' },
     { value: 30, label: '30 دقيقة', description: 'نصف ساعة' },
     { value: 60, label: 'ساعة', description: '60 دقيقة' },
     { value: 90, label: '90 دقيقة', description: 'ساعة ونصف' },
     { value: 120, label: 'ساعتين', description: '120 دقيقة' },
+  ];
+
+  // Cost limit options (in EGP)
+  const costLimitOptions = [
+    { value: null, label: 'بدون حد', description: 'مفتوح' },
+    { value: 5, label: '5 ج.م', description: 'حد السعر' },
+    { value: 10, label: '10 ج.م', description: 'حد السعر' },
+    { value: 15, label: '15 ج.م', description: 'حد السعر' },
+    { value: 20, label: '20 ج.م', description: 'حد السعر' },
+    { value: 30, label: '30 ج.م', description: 'حد السعر' },
   ];
 </script>
 
@@ -709,6 +839,40 @@
               </div>
             </div>
 
+            <!-- Monitor Controls (if monitor configured) -->
+            {#if status.station.monitorIp}
+              <div class="monitor-controls">
+                <button
+                  class="monitor-btn monitor-btn-on"
+                  onclick={() => controlMonitor(status.station.id, 'screen_on')}
+                  disabled={monitorControlLoading === status.station.id}
+                  title="Wake screen"
+                >
+                  {#if monitorControlLoading === status.station.id}
+                    <span class="loading-spinner-sm"></span>
+                  {:else}
+                    <Monitor class="w-3.5 h-3.5" />
+                  {/if}
+                </button>
+                <button
+                  class="monitor-btn monitor-btn-off"
+                  onclick={() => controlMonitor(status.station.id, 'screen_off')}
+                  disabled={monitorControlLoading === status.station.id}
+                  title="Sleep screen"
+                >
+                  <MonitorOff class="w-3.5 h-3.5" />
+                </button>
+                <button
+                  class="monitor-btn monitor-btn-hdmi"
+                  onclick={() => controlMonitor(status.station.id, 'hdmi_switch')}
+                  disabled={monitorControlLoading === status.station.id}
+                  title="Switch HDMI to PS"
+                >
+                  <Tv class="w-3.5 h-3.5" />
+                </button>
+              </div>
+            {/if}
+
             <!-- Session Info -->
             {#if status.activeSession}
               {@const timerInfo = getTimerRemaining(status.activeSession)}
@@ -739,13 +903,13 @@
                 </button>
               </div>
 
-              {@const gamingCost = parseFloat(calculateCost(status.activeSession.startedAt, status.activeSession.hourlyRateSnapshot))}
+              {@const gamingCost = parseFloat(calculateCost(status.activeSession, status.activeSession.hourlyRateSnapshot))}
               {@const totalCost = gamingCost + (ordersTotal / 100)}
 
               <div class="session-info">
-                <div class="timer-display">
+                <div class="timer-display" class:paused={status.isPaused}>
                   <Clock class="w-5 h-5" />
-                  <span class="timer-value">{formatElapsed(status.activeSession.startedAt)}</span>
+                  <span class="timer-value">{formatElapsed(status.activeSession)}{status.isPaused ? ' ⏸' : ''}</span>
                 </div>
                 <div class="cost-display">
                   <Banknote class="w-5 h-5" />
@@ -779,7 +943,16 @@
                     {#each status.orders as order}
                       <div class="order-row">
                         <span class="order-details">{order.menuItem?.nameAr || 'عنصر محذوف'} × {order.quantity}</span>
-                        <span class="order-cost">{formatRevenue(order.priceSnapshot * order.quantity)} ج.م</span>
+                        <div class="order-row-end">
+                          <span class="order-cost">{formatRevenue(order.priceSnapshot * order.quantity)} ج.م</span>
+                          <button
+                            class="remove-order-btn"
+                            onclick={() => removeOrder(order.id)}
+                            title="حذف الطلب"
+                          >
+                            <X class="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
                     {/each}
                     <div class="orders-total-row">
@@ -842,7 +1015,7 @@
               {#if status.station.status === 'maintenance'}
                 <span class="maintenance-notice">الجهاز في الصيانة</span>
               {:else if status.activeSession}
-                {@const gamingCostForEnd = parseFloat(calculateCost(status.activeSession.startedAt, status.activeSession.hourlyRateSnapshot)) * 100}
+                {@const gamingCostForEnd = parseFloat(calculateCost(status.activeSession, status.activeSession.hourlyRateSnapshot)) * 100}
                 {@const ordersTotalForEnd = status.orders ? getOrdersTotal(status.orders) : 0}
                 <button
                   class="btn btn-danger btn-station"
@@ -884,25 +1057,50 @@
 <!-- Duration Selection Modal (for starting session) -->
 {#if showDurationModal && activeStationForStart}
   <div class="modal-overlay" onclick={closeDurationModal}>
-    <div class="modal-box modal-rtl" onclick={(e) => e.stopPropagation()}>
+    <div class="modal-box modal-lg modal-rtl" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <button class="modal-close" onclick={closeDurationModal}>
           <X class="w-5 h-5" />
         </button>
-        <h3>اختر مدة الجلسة</h3>
+        <h3>إعدادات الجلسة</h3>
       </div>
       <div class="modal-body">
-        <div class="duration-grid">
-          {#each durationOptions as option}
-            <button
-              class="duration-option"
-              class:selected={selectedDuration === option.value}
-              onclick={() => selectedDuration = option.value}
-            >
-              <span class="duration-label">{option.label}</span>
-              <span class="duration-desc">{option.description}</span>
-            </button>
-          {/each}
+        <!-- Time Limit Section -->
+        <div class="limit-section">
+          <h4 class="limit-section-title">
+            <Timer class="w-4 h-4" />
+            حد الوقت
+          </h4>
+          <div class="duration-grid">
+            {#each durationOptions as option}
+              <button
+                class="duration-option"
+                class:selected={selectedDuration === option.value}
+                onclick={() => selectedDuration = option.value}
+              >
+                <span class="duration-label">{option.label}</span>
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <!-- Cost Limit Section -->
+        <div class="limit-section">
+          <h4 class="limit-section-title">
+            <Banknote class="w-4 h-4" />
+            حد السعر
+          </h4>
+          <div class="duration-grid">
+            {#each costLimitOptions as option}
+              <button
+                class="duration-option"
+                class:selected={selectedCostLimit === option.value}
+                onclick={() => selectedCostLimit = option.value}
+              >
+                <span class="duration-label">{option.label}</span>
+              </button>
+            {/each}
+          </div>
         </div>
       </div>
       <div class="modal-footer-rtl">
@@ -923,6 +1121,7 @@
         >
           <input type="hidden" name="stationId" value={activeStationForStart} />
           <input type="hidden" name="timerMinutes" value={selectedDuration || ''} />
+          <input type="hidden" name="costLimit" value={selectedCostLimit || ''} />
           <button type="submit" class="btn btn-primary">
             <Play class="w-4 h-4" />
             بدء الجلسة
@@ -942,7 +1141,7 @@
         <button class="modal-close" onclick={closeOrderModal}>
           <X class="w-5 h-5" />
         </button>
-        <h3>إضافة طلب</h3>
+        <h3>إضافة طلبات</h3>
       </div>
       <div class="modal-body">
         <!-- Category Tabs -->
@@ -955,14 +1154,24 @@
               </h4>
               <div class="menu-grid">
                 {#each menuByCategory.drinks as item}
-                  <button
-                    class="menu-item-card"
-                    class:selected={selectedMenuItem === item.id}
-                    onclick={() => { selectedMenuItem = item.id; orderQuantity = 1; }}
-                  >
-                    <span class="item-name">{item.nameAr}</span>
-                    <span class="item-price">{formatRevenue(item.price)} ج.م</span>
-                  </button>
+                  {@const qty = orderCart.get(item.id) || 0}
+                  <div class="menu-item-card" class:in-cart={qty > 0}>
+                    <div class="item-info">
+                      <span class="item-name">{item.nameAr}</span>
+                      <span class="item-price">{formatRevenue(item.price)} ج.م</span>
+                    </div>
+                    <div class="item-controls">
+                      {#if qty > 0}
+                        <button class="qty-btn-sm" onclick={() => removeFromCart(item.id)}>
+                          <Minus class="w-4 h-4" />
+                        </button>
+                        <span class="qty-badge">{qty}</span>
+                      {/if}
+                      <button class="qty-btn-sm add" onclick={() => addToCart(item.id)}>
+                        <Plus class="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
                 {/each}
               </div>
             </div>
@@ -975,14 +1184,24 @@
               </h4>
               <div class="menu-grid">
                 {#each menuByCategory.food as item}
-                  <button
-                    class="menu-item-card"
-                    class:selected={selectedMenuItem === item.id}
-                    onclick={() => { selectedMenuItem = item.id; orderQuantity = 1; }}
-                  >
-                    <span class="item-name">{item.nameAr}</span>
-                    <span class="item-price">{formatRevenue(item.price)} ج.م</span>
-                  </button>
+                  {@const qty = orderCart.get(item.id) || 0}
+                  <div class="menu-item-card" class:in-cart={qty > 0}>
+                    <div class="item-info">
+                      <span class="item-name">{item.nameAr}</span>
+                      <span class="item-price">{formatRevenue(item.price)} ج.م</span>
+                    </div>
+                    <div class="item-controls">
+                      {#if qty > 0}
+                        <button class="qty-btn-sm" onclick={() => removeFromCart(item.id)}>
+                          <Minus class="w-4 h-4" />
+                        </button>
+                        <span class="qty-badge">{qty}</span>
+                      {/if}
+                      <button class="qty-btn-sm add" onclick={() => addToCart(item.id)}>
+                        <Plus class="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
                 {/each}
               </div>
             </div>
@@ -992,36 +1211,47 @@
               <h4 class="category-title">سناكس</h4>
               <div class="menu-grid">
                 {#each menuByCategory.snacks as item}
-                  <button
-                    class="menu-item-card"
-                    class:selected={selectedMenuItem === item.id}
-                    onclick={() => { selectedMenuItem = item.id; orderQuantity = 1; }}
-                  >
-                    <span class="item-name">{item.nameAr}</span>
-                    <span class="item-price">{formatRevenue(item.price)} ج.م</span>
-                  </button>
+                  {@const qty = orderCart.get(item.id) || 0}
+                  <div class="menu-item-card" class:in-cart={qty > 0}>
+                    <div class="item-info">
+                      <span class="item-name">{item.nameAr}</span>
+                      <span class="item-price">{formatRevenue(item.price)} ج.م</span>
+                    </div>
+                    <div class="item-controls">
+                      {#if qty > 0}
+                        <button class="qty-btn-sm" onclick={() => removeFromCart(item.id)}>
+                          <Minus class="w-4 h-4" />
+                        </button>
+                        <span class="qty-badge">{qty}</span>
+                      {/if}
+                      <button class="qty-btn-sm add" onclick={() => addToCart(item.id)}>
+                        <Plus class="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
                 {/each}
               </div>
             </div>
           {/if}
         </div>
 
-        <!-- Quantity Selector -->
-        {#if selectedMenuItem}
-          {@const selectedItem = data.menuItems?.find(m => m.id === selectedMenuItem)}
-          <div class="quantity-section">
-            <div class="selected-item-info">
-              <span class="selected-price">{formatRevenue((selectedItem?.price || 0) * orderQuantity)} ج.م</span>
-              <span class="selected-name">{selectedItem?.nameAr}</span>
+        <!-- Cart Summary -->
+        {#if orderCart.size > 0}
+          <div class="cart-summary">
+            <div class="cart-header">
+              <span class="cart-title">سلة الطلبات ({getCartCount()})</span>
+              <span class="cart-total">{formatRevenue(getCartTotal())} ج.م</span>
             </div>
-            <div class="quantity-controls">
-              <button class="qty-btn" onclick={() => orderQuantity = Math.min(10, orderQuantity + 1)} disabled={orderQuantity >= 10}>
-                <Plus class="w-5 h-5" />
-              </button>
-              <span class="qty-value">{orderQuantity}</span>
-              <button class="qty-btn" onclick={() => orderQuantity = Math.max(1, orderQuantity - 1)} disabled={orderQuantity <= 1}>
-                <Minus class="w-5 h-5" />
-              </button>
+            <div class="cart-items">
+              {#each Array.from(orderCart.entries()) as [itemId, qty]}
+                {@const item = data.menuItems?.find(m => m.id === itemId)}
+                {#if item}
+                  <div class="cart-item">
+                    <span class="cart-item-name">{item.nameAr} × {qty}</span>
+                    <span class="cart-item-price">{formatRevenue(item.price * qty)} ج.م</span>
+                  </div>
+                {/if}
+              {/each}
             </div>
           </div>
         {/if}
@@ -1029,25 +1259,24 @@
       <div class="modal-footer-rtl">
         <form
           method="POST"
-          action="?/addOrder"
+          action="?/addMultipleOrders"
           use:enhance={() => {
             return async ({ result }) => {
               if (result.type === 'success') {
-                toast.success('تمت إضافة الطلب');
+                toast.success('تمت إضافة الطلبات');
                 closeOrderModal();
                 await invalidateAll();
               } else {
-                toast.error('فشل في إضافة الطلب');
+                toast.error('فشل في إضافة الطلبات');
               }
             };
           }}
         >
           <input type="hidden" name="sessionId" value={activeStationForOrder.sessionId} />
-          <input type="hidden" name="menuItemId" value={selectedMenuItem || ''} />
-          <input type="hidden" name="quantity" value={orderQuantity} />
-          <button type="submit" class="btn btn-primary" disabled={!selectedMenuItem}>
+          <input type="hidden" name="items" value={JSON.stringify(Array.from(orderCart.entries()).map(([id, qty]) => ({ menuItemId: id, quantity: qty })))} />
+          <button type="submit" class="btn btn-primary" disabled={orderCart.size === 0}>
             <Plus class="w-4 h-4" />
-            إضافة الطلب
+            إضافة ({getCartCount()}) طلبات
           </button>
         </form>
         <button class="btn btn-ghost" onclick={closeOrderModal}>إلغاء</button>
@@ -1627,6 +1856,79 @@
     transform: translateY(-2px);
   }
 
+  /* Monitor Controls */
+  .monitor-controls {
+    display: flex;
+    gap: 6px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .monitor-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 28px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    cursor: pointer;
+    transition: all 0.2s;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--color-text-secondary);
+  }
+
+  .monitor-btn:hover:not(:disabled) {
+    transform: scale(1.05);
+  }
+
+  .monitor-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .monitor-btn-on {
+    background: rgba(34, 197, 94, 0.15);
+    border-color: rgba(34, 197, 94, 0.3);
+    color: #22c55e;
+  }
+
+  .monitor-btn-on:hover:not(:disabled) {
+    background: rgba(34, 197, 94, 0.25);
+    border-color: rgba(34, 197, 94, 0.5);
+  }
+
+  .monitor-btn-off {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+  }
+
+  .monitor-btn-off:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.25);
+    border-color: rgba(239, 68, 68, 0.5);
+  }
+
+  .monitor-btn-hdmi {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.3);
+    color: #3b82f6;
+  }
+
+  .monitor-btn-hdmi:hover:not(:disabled) {
+    background: rgba(59, 130, 246, 0.25);
+    border-color: rgba(59, 130, 246, 0.5);
+  }
+
+  .loading-spinner-sm {
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
   /* Station Status Colors */
   .station-available {
     border-color: rgba(16, 185, 129, 0.3);
@@ -1747,6 +2049,16 @@
 
   .timer-display {
     color: var(--color-primary-light);
+  }
+
+  .timer-display.paused {
+    color: #f97316; /* Orange for paused */
+    animation: pulse-pause 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse-pause {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
   }
 
   .timer-value {
@@ -2294,6 +2606,36 @@
     color: var(--color-text-secondary);
   }
 
+  .order-row-end {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .remove-order-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    background: rgba(239, 68, 68, 0.1);
+    border: none;
+    color: #f87171;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: all 0.2s;
+  }
+
+  .order-row:hover .remove-order-btn {
+    opacity: 1;
+  }
+
+  .remove-order-btn:hover {
+    background: rgba(239, 68, 68, 0.2);
+    transform: scale(1.1);
+  }
+
   .order-cost {
     color: var(--color-text-muted);
     font-family: monospace;
@@ -2500,8 +2842,26 @@
   /* Duration Grid */
   .duration-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+
+  .limit-section {
+    margin-bottom: 16px;
+  }
+
+  .limit-section:last-child {
+    margin-bottom: 0;
+  }
+
+  .limit-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-primary-light);
+    margin-bottom: 12px;
   }
 
   .duration-option {
@@ -2573,14 +2933,13 @@
 
   .menu-item-card {
     display: flex;
-    flex-direction: column;
+    justify-content: space-between;
     align-items: center;
-    gap: 4px;
-    padding: 12px 8px;
+    gap: 8px;
+    padding: 10px 12px;
     background: rgba(255, 255, 255, 0.03);
     border: 2px solid rgba(255, 255, 255, 0.1);
     border-radius: 10px;
-    cursor: pointer;
     transition: all 0.2s;
   }
 
@@ -2589,16 +2948,23 @@
     border-color: rgba(255, 255, 255, 0.2);
   }
 
-  .menu-item-card.selected {
+  .menu-item-card.in-cart {
     background: rgba(16, 185, 129, 0.1);
     border-color: rgba(16, 185, 129, 0.5);
+  }
+
+  .item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
   }
 
   .item-name {
     font-size: 14px;
     font-weight: 500;
     color: var(--color-text-primary);
-    text-align: center;
   }
 
   .item-price {
@@ -2607,8 +2973,112 @@
     font-weight: 600;
   }
 
-  .menu-item-card.selected .item-name {
+  .menu-item-card.in-cart .item-name {
     color: #34d399;
+  }
+
+  .item-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .qty-btn-sm {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+
+  .qty-btn-sm:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+
+  .qty-btn-sm.add {
+    background: rgba(16, 185, 129, 0.2);
+    border-color: rgba(16, 185, 129, 0.4);
+    color: #34d399;
+  }
+
+  .qty-btn-sm.add:hover {
+    background: rgba(16, 185, 129, 0.3);
+    border-color: rgba(16, 185, 129, 0.6);
+  }
+
+  .qty-badge {
+    min-width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(16, 185, 129, 0.3);
+    color: #34d399;
+    font-size: 13px;
+    font-weight: 700;
+    border-radius: 6px;
+    font-family: monospace;
+  }
+
+  /* Cart Summary */
+  .cart-summary {
+    margin-top: 16px;
+    padding: 16px;
+    background: rgba(16, 185, 129, 0.05);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: 12px;
+  }
+
+  .cart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .cart-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+  }
+
+  .cart-total {
+    font-size: 18px;
+    font-weight: 700;
+    color: #34d399;
+    font-family: monospace;
+  }
+
+  .cart-items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .cart-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .cart-item-name {
+    font-size: 13px;
+    color: var(--color-text-secondary);
+  }
+
+  .cart-item-price {
+    font-size: 13px;
+    color: var(--color-text-primary);
+    font-family: monospace;
   }
 
   /* Quantity Section */
@@ -2917,7 +3387,7 @@
     }
 
     .duration-grid {
-      grid-template-columns: 1fr;
+      grid-template-columns: repeat(2, 1fr);
     }
 
     .modal-box {

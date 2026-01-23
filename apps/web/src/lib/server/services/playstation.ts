@@ -130,6 +130,9 @@ export function createStation(data: {
   hourlyRate: number;
   monitorIp?: string | null;
   monitorPort?: number | null;
+  monitorType?: string | null;
+  timerEndAction?: string | null;
+  hdmiInput?: number | null;
   sortOrder?: number;
 }): PsStation {
   const now = Date.now();
@@ -142,6 +145,9 @@ export function createStation(data: {
     status: 'available',
     monitorIp: data.monitorIp ?? null,
     monitorPort: data.monitorPort ?? 8080,
+    monitorType: data.monitorType ?? 'tcl',
+    timerEndAction: data.timerEndAction ?? 'notify',
+    hdmiInput: data.hdmiInput ?? 2,
     sortOrder: data.sortOrder ?? 0,
     createdAt: now,
     updatedAt: now
@@ -159,6 +165,9 @@ export function updateStation(id: string, updates: Partial<{
   status: string;
   monitorIp: string | null;
   monitorPort: number | null;
+  monitorType: string | null;
+  timerEndAction: string | null;
+  hdmiInput: number | null;
   sortOrder: number;
 }>): void {
   const station = getStationById(id);
@@ -172,6 +181,9 @@ export function updateStation(id: string, updates: Partial<{
   if (updates.status !== undefined) updateData.status = updates.status;
   if (updates.monitorIp !== undefined) updateData.monitorIp = updates.monitorIp;
   if (updates.monitorPort !== undefined) updateData.monitorPort = updates.monitorPort;
+  if (updates.monitorType !== undefined) updateData.monitorType = updates.monitorType;
+  if (updates.timerEndAction !== undefined) updateData.timerEndAction = updates.timerEndAction;
+  if (updates.hdmiInput !== undefined) updateData.hdmiInput = updates.hdmiInput;
   if (updates.sortOrder !== undefined) updateData.sortOrder = updates.sortOrder;
 
   db.update(psStations).set(updateData).where(eq(psStations.id, id)).run();
@@ -192,7 +204,8 @@ export function deleteStation(id: string): void {
 export function startSession(
   stationId: string,
   startedBy: 'manual' | 'auto' = 'manual',
-  timerMinutes?: number
+  timerMinutes?: number,
+  costLimitPiasters?: number
 ): PsSession {
   const station = getStationById(stationId);
   if (!station) throw new Error(`Station ${stationId} not found`);
@@ -212,6 +225,8 @@ export function startSession(
     startedBy,
     timerMinutes: timerMinutes || null,
     timerNotified: 0,
+    costLimitPiasters: costLimitPiasters || null,
+    costLimitNotified: 0,
     notes: null,
     createdAt: now
   };
@@ -277,8 +292,16 @@ export function endSession(sessionId: number, notes?: string, customTotalCost?: 
 
 export function calculateSessionCost(session: PsSession, endTime?: number): number {
   const end = endTime || session.endedAt || Date.now();
-  const durationMs = end - session.startedAt;
-  const durationHours = durationMs / (1000 * 60 * 60);
+  let durationMs = end - session.startedAt;
+
+  // Subtract paused time
+  const totalPausedMs = session.totalPausedMs || 0;
+  // If currently paused, also subtract time since pausedAt
+  const currentlyPausedMs = session.pausedAt ? (Date.now() - session.pausedAt) : 0;
+  durationMs -= (totalPausedMs + currentlyPausedMs);
+
+  // Ensure duration is never negative
+  if (durationMs < 0) durationMs = 0;
 
   // Rate is in piasters (100 piasters = 1 EGP)
   // Round up to nearest minute
@@ -362,6 +385,7 @@ export interface StationStatus {
   elapsedMinutes: number;
   currentCost: number;
   isOfflineWithSession: boolean;  // Device offline but session still running - show RED card
+  isPaused: boolean;              // Session timer is paused (PS offline)
 }
 
 /**
@@ -420,6 +444,12 @@ export async function syncStationStatus(): Promise<{
       const isFirstConnect = previousState !== 'up';
       stationOnlineStates.set(normalizedMac, 'up');
 
+      // Resume paused session if exists
+      if (activeSession && activeSession.pausedAt) {
+        resumeSession(activeSession.id);
+        console.log(`[Sync] Resumed paused session for ${station.id}`);
+      }
+
       // Auto-start only on first connect (state transition) and not in cooldown
       if (!activeSession && isFirstConnect) {
         // Check cooldown
@@ -439,7 +469,12 @@ export async function syncStationStatus(): Promise<{
       // Device is offline - just update state, NEVER auto-end
       stationOnlineStates.set(normalizedMac, 'down');
       clearManualEndCooldown(station.id);
-      // Sessions are NEVER auto-ended - admin must end them manually
+
+      // Pause the session timer if PS goes offline
+      if (activeSession && !activeSession.pausedAt) {
+        pauseSession(activeSession.id);
+        console.log(`[Sync] Paused session for ${station.id} - PS went offline`);
+      }
     }
   }
 
@@ -472,7 +507,14 @@ export async function getStationStatuses(): Promise<StationStatus[]> {
     let currentCost = 0;
 
     if (activeSession) {
-      elapsedMinutes = Math.floor((now - activeSession.startedAt) / (1000 * 60));
+      // Calculate elapsed time accounting for paused time
+      let elapsedMs = now - activeSession.startedAt;
+      const totalPausedMs = activeSession.totalPausedMs || 0;
+      const currentlyPausedMs = activeSession.pausedAt ? (now - activeSession.pausedAt) : 0;
+      elapsedMs -= (totalPausedMs + currentlyPausedMs);
+      if (elapsedMs < 0) elapsedMs = 0;
+
+      elapsedMinutes = Math.floor(elapsedMs / (1000 * 60));
       currentCost = calculateSessionCost(activeSession, now);
     }
 
@@ -483,7 +525,8 @@ export async function getStationStatuses(): Promise<StationStatus[]> {
       lastSession,
       elapsedMinutes,
       currentCost,
-      isOfflineWithSession: !isOnline && !!activeSession  // RED card when offline but session running
+      isOfflineWithSession: !isOnline && !!activeSession,  // RED card when offline but session running
+      isPaused: !!activeSession?.pausedAt                   // Timer is paused
     };
   });
 }
@@ -817,6 +860,52 @@ export function setSessionTimer(sessionId: number, timerMinutes: number | null):
     timerMinutes,
     timerNotified: 0
   }).where(eq(psSessions.id, sessionId)).run();
+}
+
+/**
+ * Pause a session (when PS goes offline)
+ * Sets pausedAt to current time if not already paused
+ */
+export function pauseSession(sessionId: number): void {
+  const session = db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get();
+  if (!session) return;
+  if (session.endedAt) return; // Session already ended
+  if (session.pausedAt) return; // Already paused
+
+  db.update(psSessions).set({
+    pausedAt: Date.now()
+  }).where(eq(psSessions.id, sessionId)).run();
+
+  console.log(`[Session] Paused session ${sessionId} - PS went offline`);
+}
+
+/**
+ * Resume a session (when PS comes back online)
+ * Adds paused duration to totalPausedMs and clears pausedAt
+ */
+export function resumeSession(sessionId: number): void {
+  const session = db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get();
+  if (!session) return;
+  if (session.endedAt) return; // Session already ended
+  if (!session.pausedAt) return; // Not paused
+
+  const pausedDuration = Date.now() - session.pausedAt;
+  const newTotalPaused = (session.totalPausedMs || 0) + pausedDuration;
+
+  db.update(psSessions).set({
+    pausedAt: null,
+    totalPausedMs: newTotalPaused
+  }).where(eq(psSessions.id, sessionId)).run();
+
+  console.log(`[Session] Resumed session ${sessionId} - was paused for ${Math.round(pausedDuration / 1000)}s, total paused: ${Math.round(newTotalPaused / 1000)}s`);
+}
+
+/**
+ * Check if a session is currently paused
+ */
+export function isSessionPaused(sessionId: number): boolean {
+  const session = db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get();
+  return session?.pausedAt != null;
 }
 
 // ===== STATION EARNINGS =====
