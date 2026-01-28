@@ -45,6 +45,7 @@ export const POST: RequestHandler = async ({ request }) => {
         nameAr: params.stationName || 'Station',
         macAddress: '',
         hourlyRate: 0,
+        hourlyRateMulti: null,
         status: 'available',
         monitorIp: ip,
         monitorPort: params.port || 8080,
@@ -157,6 +158,7 @@ export const POST: RequestHandler = async ({ request }) => {
             nameAr: 'Test',
             macAddress: '',
             hourlyRate: 0,
+            hourlyRateMulti: null,
             status: 'available',
             monitorIp: targetIp,
             monitorPort: 8080,
@@ -168,7 +170,7 @@ export const POST: RequestHandler = async ({ request }) => {
             updatedAt: Date.now()
           };
         }
-        const result = await monitorControl.testConnections(station);
+        const result = await monitorControl.testConnections(station!);
         return json({
           success: result.adb.success || result.pipup.success,
           adb: result.adb,

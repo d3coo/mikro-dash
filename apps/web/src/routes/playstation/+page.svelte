@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Gamepad2, Play, Square, Clock, Settings, RefreshCw, Timer, Banknote, Activity, Wifi, WifiOff, AlertTriangle, History, TrendingUp, UtensilsCrossed, Plus, Minus, X, Bell, Coffee, Radio, Power, Volume2, Monitor, Tv, MonitorOff } from 'lucide-svelte';
+  import { Gamepad2, Play, Square, Clock, Settings, RefreshCw, Timer, Banknote, Activity, Wifi, WifiOff, AlertTriangle, History, TrendingUp, UtensilsCrossed, Plus, Minus, X, Bell, Coffee, Radio, Power, Volume2, Monitor, Tv, MonitorOff, Users, User, ArrowRightLeft, DollarSign, Pencil, Trash2, Repeat } from 'lucide-svelte';
   import { onMount, onDestroy } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { invalidateAll } from '$app/navigation';
@@ -192,15 +192,41 @@
   let showTimerModal = $state(false);
   let showEndSessionModal = $state(false);
   let showZeroConfirmModal = $state(false);
+  let showChargeModal = $state(false);
+  let showTransferModal = $state(false);
   let activeStationForOrder = $state<{ stationId: string; sessionId: number } | null>(null);
   let activeStationForStart = $state<string | null>(null);
   let activeSessionForTimer = $state<number | null>(null);
-  let activeSessionForEnd = $state<{ sessionId: number; stationName: string; calculatedCost: number; ordersTotal: number } | null>(null);
+  let activeSessionForEnd = $state<{
+    sessionId: number;
+    stationName: string;
+    calculatedCost: number;
+    ordersTotal: number;
+    extraCharges: number;
+    transferredCost: number;
+    costBreakdown: Array<{ mode: string; minutes: number; cost: number }> | null;
+  } | null>(null);
+  let activeSessionForCharge = $state<{ sessionId: number; stationName: string } | null>(null);
+  let activeSessionForTransfer = $state<{ sessionId: number; stationId: string; stationName: string; gamingCost: number; ordersCost: number } | null>(null);
   let orderCart = $state<Map<number, number>>(new Map()); // itemId -> quantity
   let selectedDuration = $state<number | null>(null);
   let selectedCostLimit = $state<number | null>(null); // Cost limit in EGP
   let endSessionMode = $state<'rounded' | 'zero' | 'custom'>('rounded');
   let customAmount = $state('');
+
+  // Charge modal state
+  let chargeAmount = $state('');
+  let chargeReason = $state('');
+  let editingChargeId = $state<number | null>(null);
+
+  // Transfer modal state
+  let transferTargetSessionId = $state<number | null>(null);
+  let transferIncludeOrders = $state(true);
+
+  // Switch station modal state
+  let showSwitchStationModal = $state(false);
+  let activeSessionForSwitch = $state<{ sessionId: number; currentStationId: string; stationName: string } | null>(null);
+  let switchTargetStationId = $state<string | null>(null);
 
   // Background sync status
   interface SyncStatus {
@@ -560,8 +586,16 @@
   }
 
   // Open end session modal
-  function openEndSessionModal(sessionId: number, stationName: string, calculatedCost: number, ordersTotal: number) {
-    activeSessionForEnd = { sessionId, stationName, calculatedCost, ordersTotal };
+  function openEndSessionModal(
+    sessionId: number,
+    stationName: string,
+    calculatedCost: number,
+    ordersTotal: number,
+    extraCharges: number = 0,
+    transferredCost: number = 0,
+    costBreakdown: Array<{ mode: string; minutes: number; cost: number }> | null = null
+  ) {
+    activeSessionForEnd = { sessionId, stationName, calculatedCost, ordersTotal, extraCharges, transferredCost, costBreakdown };
     endSessionMode = 'rounded';
     customAmount = '';
     showEndSessionModal = true;
@@ -583,7 +617,10 @@
   // Get the final cost based on mode
   function getFinalCost(): number {
     if (!activeSessionForEnd) return 0;
-    const totalCost = activeSessionForEnd.calculatedCost + activeSessionForEnd.ordersTotal;
+    const totalCost = activeSessionForEnd.calculatedCost +
+                      activeSessionForEnd.ordersTotal +
+                      activeSessionForEnd.extraCharges +
+                      activeSessionForEnd.transferredCost;
 
     if (endSessionMode === 'zero') return 0;
     if (endSessionMode === 'custom') {
@@ -607,6 +644,120 @@
     snacks: data.menuItems?.filter(m => m.category === 'snacks' && m.isAvailable) || []
   });
 
+  // Open charge modal
+  function openChargeModal(sessionId: number, stationName: string, chargeToEdit?: { id: number; amount: number; reason: string | null }) {
+    activeSessionForCharge = { sessionId, stationName };
+    if (chargeToEdit) {
+      editingChargeId = chargeToEdit.id;
+      chargeAmount = (chargeToEdit.amount / 100).toString();
+      chargeReason = chargeToEdit.reason || '';
+    } else {
+      editingChargeId = null;
+      chargeAmount = '';
+      chargeReason = '';
+    }
+    showChargeModal = true;
+  }
+
+  function closeChargeModal() {
+    showChargeModal = false;
+    activeSessionForCharge = null;
+    chargeAmount = '';
+    chargeReason = '';
+    editingChargeId = null;
+  }
+
+  // Delete charge
+  async function deleteChargeHandler(chargeId: number) {
+    try {
+      const formData = new FormData();
+      formData.append('chargeId', chargeId.toString());
+
+      const response = await fetch('?/deleteCharge', {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+
+      if (result.type === 'success') {
+        toast.success('تم حذف الرسوم');
+        await invalidateAll();
+      } else {
+        toast.error('فشل في حذف الرسوم');
+      }
+    } catch (err) {
+      toast.error('فشل في حذف الرسوم');
+    }
+  }
+
+  // Open transfer modal
+  function openTransferModal(sessionId: number, stationId: string, stationName: string, gamingCost: number, ordersCost: number) {
+    activeSessionForTransfer = { sessionId, stationId, stationName, gamingCost, ordersCost };
+    transferTargetSessionId = null;
+    transferIncludeOrders = true;
+    showTransferModal = true;
+  }
+
+  function closeTransferModal() {
+    showTransferModal = false;
+    activeSessionForTransfer = null;
+    transferTargetSessionId = null;
+    transferIncludeOrders = true;
+  }
+
+  // Get other active sessions (for transfer target selection)
+  function getOtherActiveSessions(excludeSessionId: number) {
+    return data.activeSessions?.filter(s => s.id !== excludeSessionId) || [];
+  }
+
+  // Open switch station modal
+  function openSwitchStationModal(sessionId: number, currentStationId: string, stationName: string) {
+    activeSessionForSwitch = { sessionId, currentStationId, stationName };
+    switchTargetStationId = null;
+    showSwitchStationModal = true;
+  }
+
+  function closeSwitchStationModal() {
+    showSwitchStationModal = false;
+    activeSessionForSwitch = null;
+    switchTargetStationId = null;
+  }
+
+  // Get available stations (not occupied, not maintenance, not current)
+  function getAvailableStations(excludeStationId: string) {
+    return data.stationStatuses
+      .filter(s => s.station.id !== excludeStationId &&
+                   s.station.status === 'available' &&
+                   !s.activeSession)
+      .map(s => s.station);
+  }
+
+  // Switch session mode
+  async function switchSessionMode(sessionId: number, newMode: 'single' | 'multi') {
+    try {
+      const formData = new FormData();
+      formData.append('sessionId', sessionId.toString());
+      formData.append('mode', newMode);
+
+      const response = await fetch('?/switchMode', {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+
+      if (result.type === 'success') {
+        toast.success(newMode === 'multi' ? 'تم التحويل لوضع متعدد اللاعبين' : 'تم التحويل لوضع فردي');
+        await invalidateAll();
+      } else {
+        toast.error('فشل في تغيير الوضع');
+      }
+    } catch (err) {
+      toast.error('فشل في تغيير الوضع');
+    }
+  }
+
   // Duration options (time limit)
   const durationOptions = [
     { value: null, label: 'مفتوح', description: 'بدون حد زمني' },
@@ -614,6 +765,8 @@
     { value: 60, label: 'ساعة', description: '60 دقيقة' },
     { value: 90, label: '90 دقيقة', description: 'ساعة ونصف' },
     { value: 120, label: 'ساعتين', description: '120 دقيقة' },
+    { value: 150, label: '2.5 ساعة', description: '150 دقيقة' },
+    { value: 180, label: '3 ساعات', description: '180 دقيقة' },
   ];
 
   // Cost limit options (in EGP)
@@ -815,8 +968,10 @@
       <div class="stations-grid">
         {#each data.stationStatuses as status, index}
           {@const statusColor = getStatusColor(status.station.status, status.isOnline, status.isOfflineWithSession)}
+          {@const isMultiMode = status.activeSession?.currentMode === 'multi'}
           <div
             class="station-card glass-card station-{statusColor} opacity-0 animate-fade-in"
+            class:multi-mode={isMultiMode}
             style="animation-delay: {300 + index * 50}ms"
           >
             <!-- Station Header -->
@@ -877,12 +1032,38 @@
             {#if status.activeSession}
               {@const timerInfo = getTimerRemaining(status.activeSession)}
               {@const ordersTotal = status.orders ? getOrdersTotal(status.orders) : 0}
+              {@const chargesTotal = status.activeSession.extraCharges || 0}
+              {@const transferredTotal = status.activeSession.transferredCost || 0}
+              {@const currentMode = status.activeSession.currentMode || 'single'}
+              {@const hasMultiRate = status.station.hourlyRateMulti != null}
 
               <!-- Big PS Number/Name Card -->
               <div class="ps-big-card">
                 <div class="ps-big-number">{status.station.id}</div>
                 <div class="ps-big-name">{status.station.nameAr}</div>
               </div>
+
+              <!-- Mode Toggle (only if multi rate is configured) -->
+              {#if hasMultiRate}
+                <div class="mode-toggle-row">
+                  <button
+                    class="mode-btn"
+                    class:active={currentMode === 'single'}
+                    onclick={() => switchSessionMode(status.activeSession!.id, 'single')}
+                  >
+                    <User class="w-4 h-4" />
+                    فردي
+                  </button>
+                  <button
+                    class="mode-btn"
+                    class:active={currentMode === 'multi'}
+                    onclick={() => switchSessionMode(status.activeSession!.id, 'multi')}
+                  >
+                    <Users class="w-4 h-4" />
+                    متعدد
+                  </button>
+                </div>
+              {/if}
 
               <!-- Session Start Time - BIGGER -->
               <div class="session-start-time">
@@ -903,8 +1084,8 @@
                 </button>
               </div>
 
-              {@const gamingCost = parseFloat(calculateCost(status.activeSession, status.activeSession.hourlyRateSnapshot))}
-              {@const totalCost = gamingCost + (ordersTotal / 100)}
+              {@const gamingCost = status.costBreakdown ? status.costBreakdown.total / 100 : parseFloat(calculateCost(status.activeSession, status.activeSession.hourlyRateSnapshot))}
+              {@const totalCost = gamingCost + (ordersTotal / 100) + (chargesTotal / 100) + (transferredTotal / 100)}
 
               <div class="session-info">
                 <div class="timer-display" class:paused={status.isPaused}>
@@ -915,12 +1096,6 @@
                   <Banknote class="w-5 h-5" />
                   <span class="cost-value">{gamingCost.toFixed(1)} ج.م</span>
                 </div>
-              </div>
-
-              <!-- Total Cost (Gaming + Orders) -->
-              <div class="total-cost-display">
-                <span class="total-label">الإجمالي الكلي</span>
-                <span class="total-amount">{totalCost.toFixed(1)} ج.م</span>
               </div>
 
               <!-- Orders Summary -->
@@ -963,6 +1138,85 @@
                 {:else}
                   <p class="no-orders">لا توجد طلبات</p>
                 {/if}
+
+              <!-- Extra Charges Section -->
+              <div class="charges-section">
+                <div class="orders-header-row">
+                  <span class="orders-label">
+                    <DollarSign class="w-4 h-4" />
+                    رسوم إضافية
+                    {#if status.charges && status.charges.length > 0}
+                      <span class="orders-count">({status.charges.length})</span>
+                    {/if}
+                  </span>
+                  <button class="add-order-btn" onclick={() => openChargeModal(status.activeSession!.id, status.station.nameAr)}>
+                    <Plus class="w-4 h-4" />
+                    إضافة
+                  </button>
+                </div>
+                {#if status.charges && status.charges.length > 0}
+                  <div class="orders-list-compact">
+                    {#each status.charges as charge}
+                      <div class="order-row">
+                        <span class="order-details">{charge.reason || 'رسوم إضافية'}</span>
+                        <div class="order-row-end">
+                          <span class="order-cost">{formatRevenue(charge.amount)} ج.م</span>
+                          <button
+                            class="edit-order-btn"
+                            onclick={() => openChargeModal(status.activeSession!.id, status.station.nameAr, charge)}
+                            title="تعديل"
+                          >
+                            <Pencil class="w-3 h-3" />
+                          </button>
+                          <button
+                            class="remove-order-btn"
+                            onclick={() => deleteChargeHandler(charge.id)}
+                            title="حذف"
+                          >
+                            <X class="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    {/each}
+                    <div class="orders-total-row">
+                      <span>الإجمالي</span>
+                      <span class="total-value">{formatRevenue(chargesTotal)} ج.م</span>
+                    </div>
+                  </div>
+                {:else}
+                  <p class="no-orders">لا توجد رسوم</p>
+                {/if}
+              </div>
+
+              <!-- Incoming Transfers Section -->
+              {#if status.transfers && status.transfers.length > 0}
+                <div class="transfers-section">
+                  <div class="orders-header-row">
+                    <span class="orders-label">
+                      <ArrowRightLeft class="w-4 h-4" />
+                      تحويلات واردة
+                    </span>
+                  </div>
+                  <div class="orders-list-compact">
+                    {#each status.transfers as transfer}
+                      <div class="order-row transfer-row">
+                        <span class="order-details">من {transfer.fromStationId}</span>
+                        <span class="order-cost">{formatRevenue(transfer.totalAmount)} ج.م</span>
+                      </div>
+                    {/each}
+                    <div class="orders-total-row">
+                      <span>الإجمالي</span>
+                      <span class="total-value">{formatRevenue(transferredTotal)} ج.م</span>
+                    </div>
+                  </div>
+                </div>
+              {/if}
+              </div>
+
+              <!-- Total Cost (Gaming + Orders + Charges + Transfers) - at bottom -->
+              <div class="total-cost-display total-at-bottom">
+                <span class="total-label">الإجمالي الكلي</span>
+                <span class="total-amount">{totalCost.toFixed(1)} ج.م</span>
               </div>
 
               {#if status.isOfflineWithSession}
@@ -1015,15 +1269,31 @@
               {#if status.station.status === 'maintenance'}
                 <span class="maintenance-notice">الجهاز في الصيانة</span>
               {:else if status.activeSession}
-                {@const gamingCostForEnd = parseFloat(calculateCost(status.activeSession, status.activeSession.hourlyRateSnapshot)) * 100}
+                {@const gamingCostForEnd = status.costBreakdown ? status.costBreakdown.total : parseFloat(calculateCost(status.activeSession, status.activeSession.hourlyRateSnapshot)) * 100}
                 {@const ordersTotalForEnd = status.orders ? getOrdersTotal(status.orders) : 0}
+                {@const extraChargesForEnd = status.activeSession.extraCharges || 0}
+                {@const transferredForEnd = status.activeSession.transferredCost || 0}
+                <button
+                  class="btn btn-secondary btn-station-small"
+                  onclick={() => openSwitchStationModal(
+                    status.activeSession!.id,
+                    status.station.id,
+                    status.station.nameAr
+                  )}
+                >
+                  <Repeat class="w-4 h-4" />
+                  نقل
+                </button>
                 <button
                   class="btn btn-danger btn-station"
                   onclick={() => openEndSessionModal(
                     status.activeSession!.id,
                     status.station.nameAr,
                     gamingCostForEnd,
-                    ordersTotalForEnd
+                    ordersTotalForEnd,
+                    extraChargesForEnd,
+                    transferredForEnd,
+                    status.costBreakdown?.breakdown || null
                   )}
                 >
                   <Square class="w-4 h-4" />
@@ -1340,9 +1610,10 @@
 
 <!-- End Session Modal -->
 {#if showEndSessionModal && activeSessionForEnd}
-  {@const totalCostRaw = activeSessionForEnd.calculatedCost + activeSessionForEnd.ordersTotal}
+  {@const totalCostRaw = activeSessionForEnd.calculatedCost + activeSessionForEnd.ordersTotal + activeSessionForEnd.extraCharges + activeSessionForEnd.transferredCost}
   {@const roundedCost = roundToNearest(totalCostRaw, 500)}
   {@const finalCost = getFinalCost()}
+  {@const hasOtherSessions = data.activeSessions && data.activeSessions.filter(s => s.id !== activeSessionForEnd.sessionId).length > 0}
 
   <div class="modal-overlay" onclick={closeEndSessionModal}>
     <div class="modal-box modal-lg modal-rtl" onclick={(e) => e.stopPropagation()}>
@@ -1353,16 +1624,45 @@
         <h3>إنهاء جلسة - {activeSessionForEnd.stationName}</h3>
       </div>
       <div class="modal-body">
-        <!-- Cost Summary -->
+        <!-- Cost Summary with Mode Breakdown -->
         <div class="end-session-summary">
-          <div class="cost-row">
-            <span>تكلفة اللعب:</span>
-            <span>{formatRevenue(activeSessionForEnd.calculatedCost)} ج.م</span>
-          </div>
+          {#if activeSessionForEnd.costBreakdown && activeSessionForEnd.costBreakdown.length > 1}
+            <!-- Show breakdown by mode -->
+            {#each activeSessionForEnd.costBreakdown as segment}
+              <div class="cost-row segment-row">
+                <span>
+                  {segment.mode === 'single' ? 'فردي' : 'متعدد'}
+                  ({segment.minutes} دقيقة):
+                </span>
+                <span>{formatRevenue(segment.cost)} ج.م</span>
+              </div>
+            {/each}
+            <div class="cost-row subtotal-row">
+              <span>إجمالي اللعب:</span>
+              <span>{formatRevenue(activeSessionForEnd.calculatedCost)} ج.م</span>
+            </div>
+          {:else}
+            <div class="cost-row">
+              <span>تكلفة اللعب:</span>
+              <span>{formatRevenue(activeSessionForEnd.calculatedCost)} ج.م</span>
+            </div>
+          {/if}
           {#if activeSessionForEnd.ordersTotal > 0}
             <div class="cost-row">
               <span>الطلبات:</span>
               <span>{formatRevenue(activeSessionForEnd.ordersTotal)} ج.م</span>
+            </div>
+          {/if}
+          {#if activeSessionForEnd.extraCharges > 0}
+            <div class="cost-row">
+              <span>رسوم إضافية:</span>
+              <span>{formatRevenue(activeSessionForEnd.extraCharges)} ج.م</span>
+            </div>
+          {/if}
+          {#if activeSessionForEnd.transferredCost > 0}
+            <div class="cost-row transfer-row-highlight">
+              <span>تحويلات واردة:</span>
+              <span>{formatRevenue(activeSessionForEnd.transferredCost)} ج.م</span>
             </div>
           {/if}
           <div class="cost-row total-row">
@@ -1370,6 +1670,30 @@
             <span>{formatRevenue(totalCostRaw)} ج.م</span>
           </div>
         </div>
+
+        <!-- Transfer Option -->
+        {#if hasOtherSessions}
+          <div class="transfer-option-section">
+            <button
+              class="transfer-option-btn"
+              onclick={() => {
+                // Capture values before closing modal
+                const sessionId = activeSessionForEnd!.sessionId;
+                const stationName = activeSessionForEnd!.stationName;
+                const gamingCost = activeSessionForEnd!.calculatedCost;
+                const ordersCost = activeSessionForEnd!.ordersTotal;
+                closeEndSessionModal();
+                openTransferModal(sessionId, '', stationName, gamingCost, ordersCost);
+              }}
+            >
+              <ArrowRightLeft class="w-5 h-5" />
+              <div class="transfer-option-text">
+                <span class="transfer-option-title">تحويل لجهاز آخر</span>
+                <span class="transfer-option-desc">نقل التكلفة إلى جلسة أخرى نشطة</span>
+              </div>
+            </button>
+          </div>
+        {/if}
 
         <!-- Cost Options -->
         <div class="cost-options">
@@ -1521,6 +1845,233 @@
           </button>
         </form>
         <button class="btn btn-ghost" onclick={() => showZeroConfirmModal = false}>إلغاء</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Add/Edit Charge Modal -->
+{#if showChargeModal && activeSessionForCharge}
+  <div class="modal-overlay" onclick={closeChargeModal}>
+    <div class="modal-box modal-rtl" onclick={(e) => e.stopPropagation()}>
+      <div class="modal-header">
+        <button class="modal-close" onclick={closeChargeModal}>
+          <X class="w-5 h-5" />
+        </button>
+        <h3>{editingChargeId ? 'تعديل الرسوم' : 'إضافة رسوم'} - {activeSessionForCharge.stationName}</h3>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="charge-amount">المبلغ (ج.م)</label>
+          <input
+            type="number"
+            id="charge-amount"
+            class="input-modern"
+            bind:value={chargeAmount}
+            min="0.5"
+            step="0.5"
+            placeholder="0"
+            required
+          />
+        </div>
+        <div class="form-group">
+          <label for="charge-reason">السبب (اختياري)</label>
+          <input
+            type="text"
+            id="charge-reason"
+            class="input-modern"
+            bind:value={chargeReason}
+            placeholder="مثال: كونترولر إضافي"
+          />
+        </div>
+      </div>
+      <div class="modal-footer-rtl">
+        <form
+          method="POST"
+          action={editingChargeId ? "?/updateCharge" : "?/addCharge"}
+          use:enhance={() => {
+            return async ({ result }) => {
+              if (result.type === 'success') {
+                toast.success(editingChargeId ? 'تم تحديث الرسوم' : 'تم إضافة الرسوم');
+                closeChargeModal();
+                await invalidateAll();
+              } else {
+                toast.error('فشل في حفظ الرسوم');
+              }
+            };
+          }}
+        >
+          {#if editingChargeId}
+            <input type="hidden" name="chargeId" value={editingChargeId} />
+          {:else}
+            <input type="hidden" name="sessionId" value={activeSessionForCharge.sessionId} />
+          {/if}
+          <input type="hidden" name="amount" value={chargeAmount} />
+          <input type="hidden" name="reason" value={chargeReason} />
+          <button type="submit" class="btn btn-primary" disabled={!chargeAmount || parseFloat(chargeAmount) <= 0}>
+            <DollarSign class="w-4 h-4" />
+            {editingChargeId ? 'تحديث' : 'إضافة'}
+          </button>
+        </form>
+        <button class="btn btn-ghost" onclick={closeChargeModal}>إلغاء</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Transfer Session Modal -->
+{#if showTransferModal && activeSessionForTransfer}
+  {@const otherSessions = getOtherActiveSessions(activeSessionForTransfer.sessionId)}
+  {@const transferAmount = activeSessionForTransfer.gamingCost + (transferIncludeOrders ? activeSessionForTransfer.ordersCost : 0)}
+
+  <div class="modal-overlay" onclick={closeTransferModal}>
+    <div class="modal-box modal-lg modal-rtl" onclick={(e) => e.stopPropagation()}>
+      <div class="modal-header">
+        <button class="modal-close" onclick={closeTransferModal}>
+          <X class="w-5 h-5" />
+        </button>
+        <h3>تحويل جلسة - {activeSessionForTransfer.stationName}</h3>
+      </div>
+      <div class="modal-body">
+        <p class="transfer-description">
+          اختر الجهاز الذي تريد تحويل التكلفة إليه. سيتم إنهاء هذه الجلسة ونقل المبلغ للجلسة المختارة.
+        </p>
+
+        <!-- Transfer Amount Summary -->
+        <div class="transfer-summary">
+          <div class="transfer-summary-row">
+            <span>تكلفة اللعب:</span>
+            <span>{formatRevenue(activeSessionForTransfer.gamingCost)} ج.م</span>
+          </div>
+          {#if activeSessionForTransfer.ordersCost > 0}
+            <div class="transfer-summary-row" onclick={(e) => e.stopPropagation()}>
+              <label class="transfer-checkbox-label">
+                <input type="checkbox" bind:checked={transferIncludeOrders} onclick={(e) => e.stopPropagation()} />
+                <span>تضمين الطلبات ({formatRevenue(activeSessionForTransfer.ordersCost)} ج.م)</span>
+              </label>
+            </div>
+          {/if}
+          <div class="transfer-summary-row total">
+            <span>المبلغ المحول:</span>
+            <span class="transfer-amount">{formatRevenue(transferAmount)} ج.م</span>
+          </div>
+        </div>
+
+        <!-- Target Session Selection -->
+        <div class="target-session-selection">
+          <label>اختر الجهاز المستهدف:</label>
+          <div class="target-sessions-grid">
+            {#each otherSessions as session}
+              {@const station = data.stationStatuses.find(s => s.station.id === session.stationId)?.station}
+              <button
+                type="button"
+                class="target-session-option"
+                class:selected={transferTargetSessionId === session.id}
+                onclick={(e) => { e.stopPropagation(); transferTargetSessionId = session.id; }}
+              >
+                <span class="target-station-name">{station?.nameAr || session.stationId}</span>
+                <span class="target-station-id">{session.stationId}</span>
+              </button>
+            {/each}
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer-rtl">
+        <form
+          method="POST"
+          action="?/transferSession"
+          use:enhance={() => {
+            return async ({ result }) => {
+              if (result.type === 'success') {
+                toast.success('تم تحويل الجلسة بنجاح');
+                closeTransferModal();
+                await invalidateAll();
+              } else {
+                toast.error('فشل في تحويل الجلسة');
+              }
+            };
+          }}
+        >
+          <input type="hidden" name="fromSessionId" value={activeSessionForTransfer.sessionId} />
+          <input type="hidden" name="toSessionId" value={transferTargetSessionId || ''} />
+          <input type="hidden" name="includeOrders" value={transferIncludeOrders} />
+          <button type="submit" class="btn btn-primary" disabled={!transferTargetSessionId}>
+            <ArrowRightLeft class="w-4 h-4" />
+            تحويل وإنهاء
+          </button>
+        </form>
+        <button class="btn btn-ghost" onclick={closeTransferModal}>إلغاء</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Switch Station Modal -->
+{#if showSwitchStationModal && activeSessionForSwitch}
+  {@const availableStations = getAvailableStations(activeSessionForSwitch.currentStationId)}
+
+  <div class="modal-overlay" onclick={closeSwitchStationModal}>
+    <div class="modal-box modal-lg modal-rtl" onclick={(e) => e.stopPropagation()}>
+      <div class="modal-header">
+        <button class="modal-close" onclick={closeSwitchStationModal}>
+          <X class="w-5 h-5" />
+        </button>
+        <h3>نقل الجلسة - {activeSessionForSwitch.stationName}</h3>
+      </div>
+      <div class="modal-body">
+        <p class="transfer-description">
+          اختر الجهاز الذي تريد نقل الجلسة إليه. ستستمر الجلسة على الجهاز الجديد.
+        </p>
+
+        {#if availableStations.length === 0}
+          <div class="no-stations-message">
+            <AlertTriangle class="w-8 h-8" />
+            <p>لا توجد أجهزة متاحة للنقل</p>
+            <span class="hint">جميع الأجهزة الأخرى مشغولة أو في الصيانة</span>
+          </div>
+        {:else}
+          <div class="target-session-selection">
+            <label>اختر الجهاز المستهدف:</label>
+            <div class="target-sessions-grid">
+              {#each availableStations as station}
+                <button
+                  type="button"
+                  class="target-session-option"
+                  class:selected={switchTargetStationId === station.id}
+                  onclick={(e) => { e.stopPropagation(); switchTargetStationId = station.id; }}
+                >
+                  <span class="target-station-name">{station.nameAr}</span>
+                  <span class="target-station-id">{station.id}</span>
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/if}
+      </div>
+      <div class="modal-footer-rtl">
+        <form
+          method="POST"
+          action="?/switchStation"
+          use:enhance={() => {
+            return async ({ result }) => {
+              if (result.type === 'success') {
+                toast.success('تم نقل الجلسة بنجاح');
+                closeSwitchStationModal();
+                await invalidateAll();
+              } else {
+                toast.error('فشل في نقل الجلسة');
+              }
+            };
+          }}
+        >
+          <input type="hidden" name="sessionId" value={activeSessionForSwitch.sessionId} />
+          <input type="hidden" name="newStationId" value={switchTargetStationId || ''} />
+          <button type="submit" class="btn btn-primary" disabled={!switchTargetStationId || availableStations.length === 0}>
+            <Repeat class="w-4 h-4" />
+            نقل الجلسة
+          </button>
+        </form>
+        <button class="btn btn-ghost" onclick={closeSwitchStationModal}>إلغاء</button>
       </div>
     </div>
   </div>
@@ -2034,7 +2585,8 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 12px;
+    margin-top: 8px;
+    padding: 10px 12px;
     background: rgba(255, 255, 255, 0.03);
     border-radius: 10px;
     border: 1px solid rgba(255, 255, 255, 0.05);
@@ -2199,12 +2751,21 @@
   .station-actions {
     display: flex;
     justify-content: center;
+    gap: 8px;
   }
 
   .btn-station {
-    width: 100%;
+    flex: 1;
     justify-content: center;
     gap: 8px;
+  }
+
+  .btn-station-small {
+    flex: 0 0 auto;
+    justify-content: center;
+    gap: 4px;
+    padding: 8px 12px;
+    font-size: 0.85rem;
   }
 
   .maintenance-notice {
@@ -2538,6 +3099,7 @@
 
   /* Orders Section - Compact */
   .orders-section {
+    margin-top: 8px;
     background: rgba(245, 158, 11, 0.05);
     border: 1px solid rgba(245, 158, 11, 0.2);
     border-radius: 10px;
@@ -2548,7 +3110,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 12px;
+    padding: 8px 10px;
     background: rgba(245, 158, 11, 0.1);
   }
 
@@ -2586,7 +3148,7 @@
   }
 
   .orders-list-compact {
-    padding: 8px 12px;
+    padding: 6px 10px;
   }
 
   .order-row {
@@ -2658,9 +3220,11 @@
   }
 
   .no-orders {
-    padding: 12px;
+    padding: 8px 12px;
     text-align: center;
     color: var(--color-text-muted);
+    font-size: 12px;
+    margin: 0;
     font-size: 13px;
   }
 
@@ -3414,5 +3978,386 @@
     .final-value {
       font-size: 22px;
     }
+  }
+
+  /* Multi-Mode Card Styling */
+  .station-card.multi-mode {
+    border-color: rgba(168, 85, 247, 0.5) !important;
+    background: linear-gradient(135deg, rgba(168, 85, 247, 0.15) 0%, rgba(168, 85, 247, 0.05) 100%) !important;
+    box-shadow: 0 0 20px rgba(168, 85, 247, 0.2), inset 0 1px 0 rgba(168, 85, 247, 0.1) !important;
+  }
+
+  .station-card.multi-mode .ps-big-card {
+    background: linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(139, 92, 246, 0.1) 100%);
+    border-color: rgba(168, 85, 247, 0.3);
+  }
+
+  .station-card.multi-mode .ps-big-number {
+    color: #c4b5fd;
+  }
+
+  .station-card.multi-mode .total-cost-display {
+    background: linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(139, 92, 246, 0.1) 100%);
+    border-color: rgba(168, 85, 247, 0.3);
+  }
+
+  .station-card.multi-mode .total-amount {
+    color: #c4b5fd;
+  }
+
+  /* Total at bottom - more prominent */
+  .total-cost-display.total-at-bottom {
+    margin-top: 8px;
+    padding: 12px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(16, 185, 129, 0.1) 100%);
+    border: 2px solid rgba(16, 185, 129, 0.4);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15);
+  }
+
+  .total-cost-display.total-at-bottom .total-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: #34d399;
+  }
+
+  .total-cost-display.total-at-bottom .total-amount {
+    font-size: 28px;
+    font-weight: 700;
+    color: #34d399;
+  }
+
+  .station-card.multi-mode .total-cost-display.total-at-bottom {
+    background: linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(168, 85, 247, 0.1) 100%);
+    border-color: rgba(168, 85, 247, 0.4);
+    box-shadow: 0 4px 12px rgba(168, 85, 247, 0.15);
+  }
+
+  .station-card.multi-mode .total-cost-display.total-at-bottom .total-label,
+  .station-card.multi-mode .total-cost-display.total-at-bottom .total-amount {
+    color: #c4b5fd;
+  }
+
+  /* Mode Toggle */
+  .mode-toggle-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .mode-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--color-text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .mode-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .mode-btn.active {
+    background: rgba(8, 145, 178, 0.2);
+    border-color: rgba(8, 145, 178, 0.5);
+    color: var(--color-primary-light);
+  }
+
+  /* Multi mode button active state - purple */
+  .mode-btn.active:has(+ .mode-btn) {
+    /* Single mode active - keep cyan */
+  }
+
+  .mode-btn:last-child.active {
+    background: rgba(168, 85, 247, 0.2);
+    border-color: rgba(168, 85, 247, 0.5);
+    color: #c4b5fd;
+  }
+
+  /* Charges Section */
+  .charges-section {
+    margin-top: 8px;
+    background: rgba(8, 145, 178, 0.05);
+    border: 1px solid rgba(8, 145, 178, 0.2);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .charges-section .orders-header-row {
+    background: rgba(8, 145, 178, 0.1);
+  }
+
+  .charges-section .orders-label {
+    color: var(--color-primary-light);
+  }
+
+  .edit-order-btn {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    background: rgba(8, 145, 178, 0.1);
+    border: none;
+    color: var(--color-primary-light);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+
+  .edit-order-btn:hover {
+    background: rgba(8, 145, 178, 0.2);
+  }
+
+  /* Transfers Section */
+  .transfers-section {
+    margin-top: 8px;
+    background: rgba(139, 92, 246, 0.05);
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .transfers-section .orders-header-row {
+    background: rgba(139, 92, 246, 0.1);
+  }
+
+  .transfers-section .orders-label {
+    color: #a78bfa;
+  }
+
+  .transfer-row {
+    background: rgba(139, 92, 246, 0.1);
+    border-radius: 4px;
+    padding: 4px 8px !important;
+  }
+
+  .transfer-row-highlight {
+    background: rgba(139, 92, 246, 0.1);
+    border-radius: 4px;
+    padding: 8px;
+    color: #a78bfa;
+  }
+
+  /* Transfer Option in End Session Modal */
+  .transfer-option-section {
+    margin: 16px 0;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .transfer-option-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    background: rgba(139, 92, 246, 0.1);
+    color: #a78bfa;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: start;
+  }
+
+  .transfer-option-btn:hover {
+    background: rgba(139, 92, 246, 0.2);
+    border-color: rgba(139, 92, 246, 0.5);
+  }
+
+  .transfer-option-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .transfer-option-title {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .transfer-option-desc {
+    font-size: 12px;
+    opacity: 0.7;
+  }
+
+  /* Transfer Modal Styles */
+  .transfer-description {
+    color: var(--color-text-secondary);
+    font-size: 14px;
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+
+  .transfer-summary {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 16px;
+  }
+
+  .transfer-summary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    font-size: 14px;
+    color: var(--color-text-secondary);
+  }
+
+  .transfer-summary-row.total {
+    padding-top: 12px;
+    margin-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    font-weight: 600;
+    color: var(--color-text-primary);
+  }
+
+  .transfer-amount {
+    color: #a78bfa;
+    font-size: 18px;
+  }
+
+  .transfer-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+  }
+
+  .transfer-checkbox-label input {
+    width: 16px;
+    height: 16px;
+    accent-color: #a78bfa;
+  }
+
+  .target-session-selection {
+    margin-top: 16px;
+  }
+
+  .target-session-selection label {
+    display: block;
+    font-size: 14px;
+    color: var(--color-text-secondary);
+    margin-bottom: 12px;
+  }
+
+  .target-sessions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 8px;
+  }
+
+  .target-session-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.03);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .target-session-option:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .target-session-option.selected {
+    border-color: rgba(139, 92, 246, 0.5);
+    background: rgba(139, 92, 246, 0.15);
+  }
+
+  .target-station-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+  }
+
+  .target-station-id {
+    font-size: 11px;
+    color: var(--color-text-muted);
+  }
+
+  .no-stations-message {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--color-text-muted);
+    gap: 8px;
+  }
+
+  .no-stations-message p {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    margin: 0;
+  }
+
+  .no-stations-message .hint {
+    font-size: 13px;
+    opacity: 0.7;
+  }
+
+  /* Segment breakdown in end session modal */
+  .segment-row {
+    font-size: 13px;
+    padding: 4px 0;
+    opacity: 0.8;
+  }
+
+  .subtotal-row {
+    padding-top: 8px;
+    margin-top: 4px;
+    border-top: 1px dashed rgba(255, 255, 255, 0.1);
+  }
+
+  /* Form group in modals */
+  .form-group {
+    margin-bottom: 16px;
+  }
+
+  .form-group label {
+    display: block;
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    margin-bottom: 6px;
+  }
+
+  .input-modern {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--color-text-primary);
+    font-size: 14px;
+    transition: all 0.2s ease;
+  }
+
+  .input-modern:focus {
+    outline: none;
+    border-color: rgba(8, 145, 178, 0.5);
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .input-modern::placeholder {
+    color: var(--color-text-muted);
   }
 </style>

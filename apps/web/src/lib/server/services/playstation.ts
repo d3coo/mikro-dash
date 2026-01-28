@@ -1,6 +1,6 @@
 import { db } from '$lib/server/db';
-import { psStations, psSessions, psDailyStats, psMenuItems, psSessionOrders } from '$lib/server/db/schema';
-import type { PsStation, NewPsStation, PsSession, NewPsSession, PsDailyStat, PsMenuItem, NewPsMenuItem, PsSessionOrder, NewPsSessionOrder } from '$lib/server/db/schema';
+import { psStations, psSessions, psDailyStats, psMenuItems, psSessionOrders, psSessionCharges, psSessionTransfers, psSessionSegments } from '$lib/server/db/schema';
+import type { PsStation, NewPsStation, PsSession, NewPsSession, PsDailyStat, PsMenuItem, NewPsMenuItem, PsSessionOrder, NewPsSessionOrder, PsSessionCharge, NewPsSessionCharge, PsSessionTransfer, NewPsSessionTransfer, PsSessionSegment, NewPsSessionSegment } from '$lib/server/db/schema';
 import { eq, desc, and, isNull, gte, lte, sql } from 'drizzle-orm';
 import { getMikroTikClient } from './mikrotik';
 
@@ -128,6 +128,7 @@ export function createStation(data: {
   nameAr: string;
   macAddress: string;
   hourlyRate: number;
+  hourlyRateMulti?: number | null;
   monitorIp?: string | null;
   monitorPort?: number | null;
   monitorType?: string | null;
@@ -142,6 +143,7 @@ export function createStation(data: {
     nameAr: data.nameAr,
     macAddress: data.macAddress.toUpperCase().replace(/-/g, ':'),
     hourlyRate: data.hourlyRate,
+    hourlyRateMulti: data.hourlyRateMulti ?? null,
     status: 'available',
     monitorIp: data.monitorIp ?? null,
     monitorPort: data.monitorPort ?? 8080,
@@ -162,6 +164,7 @@ export function updateStation(id: string, updates: Partial<{
   nameAr: string;
   macAddress: string;
   hourlyRate: number;
+  hourlyRateMulti: number | null;
   status: string;
   monitorIp: string | null;
   monitorPort: number | null;
@@ -178,6 +181,7 @@ export function updateStation(id: string, updates: Partial<{
   if (updates.nameAr !== undefined) updateData.nameAr = updates.nameAr;
   if (updates.macAddress !== undefined) updateData.macAddress = updates.macAddress.toUpperCase().replace(/-/g, ':');
   if (updates.hourlyRate !== undefined) updateData.hourlyRate = updates.hourlyRate;
+  if (updates.hourlyRateMulti !== undefined) updateData.hourlyRateMulti = updates.hourlyRateMulti;
   if (updates.status !== undefined) updateData.status = updates.status;
   if (updates.monitorIp !== undefined) updateData.monitorIp = updates.monitorIp;
   if (updates.monitorPort !== undefined) updateData.monitorPort = updates.monitorPort;
@@ -222,6 +226,9 @@ export function startSession(
     hourlyRateSnapshot: station.hourlyRate,
     totalCost: null,
     ordersCost: 0,
+    extraCharges: 0,
+    transferredCost: 0,
+    currentMode: 'single',
     startedBy,
     timerMinutes: timerMinutes || null,
     timerNotified: 0,
@@ -232,6 +239,17 @@ export function startSession(
   };
 
   const result = db.insert(psSessions).values(session).run();
+  const sessionId = result.lastInsertRowid as number;
+
+  // Create initial segment for the session
+  db.insert(psSessionSegments).values({
+    sessionId,
+    mode: 'single',
+    startedAt: now,
+    endedAt: null,
+    hourlyRateSnapshot: station.hourlyRate,
+    createdAt: now
+  }).run();
 
   // Update station status
   updateStation(stationId, { status: 'occupied' });
@@ -239,7 +257,7 @@ export function startSession(
   // Clear grace period if any
   gracePeriodTracker.delete(stationId);
 
-  return db.select().from(psSessions).where(eq(psSessions.id, result.lastInsertRowid as number)).get()!;
+  return db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get()!;
 }
 
 export function endSession(sessionId: number, notes?: string, customTotalCost?: number): PsSession {
@@ -248,27 +266,46 @@ export function endSession(sessionId: number, notes?: string, customTotalCost?: 
   if (session.endedAt) throw new Error(`Session ${sessionId} already ended`);
 
   const now = Date.now();
-  const calculatedGamingCost = calculateSessionCost(session, now);
+
+  // End any active segment
+  const activeSegment = db.select()
+    .from(psSessionSegments)
+    .where(and(
+      eq(psSessionSegments.sessionId, sessionId),
+      isNull(psSessionSegments.endedAt)
+    ))
+    .get();
+
+  if (activeSegment) {
+    db.update(psSessionSegments).set({
+      endedAt: now
+    }).where(eq(psSessionSegments.id, activeSegment.id)).run();
+  }
+
+  // Calculate gaming cost using segments
+  const { total: calculatedGamingCost } = calculateSessionCostWithSegments(session, now);
   const ordersCost = session.ordersCost || 0;
+  const extraCharges = session.extraCharges || 0;
+  const transferredCost = session.transferredCost || 0;
 
   // Use custom total cost if provided, otherwise calculate normally
   let finalTotalCost: number;
   let gamingCostToStore: number;
 
   if (customTotalCost !== undefined) {
-    // Custom amount specified - this is the final total (gaming + orders)
+    // Custom amount specified - this is the final total (includes everything)
     finalTotalCost = customTotalCost;
-    // Store gaming cost as: custom total - orders cost (can be negative if custom is less than orders)
-    gamingCostToStore = Math.max(0, customTotalCost - ordersCost);
+    // Store gaming cost as: custom total minus other costs
+    gamingCostToStore = Math.max(0, customTotalCost - ordersCost - extraCharges - transferredCost);
   } else {
-    // Normal calculation
+    // Normal calculation: gaming + orders + extraCharges + transferredCost
     gamingCostToStore = calculatedGamingCost;
-    finalTotalCost = calculatedGamingCost + ordersCost;
+    finalTotalCost = calculatedGamingCost + ordersCost + extraCharges + transferredCost;
   }
 
   db.update(psSessions).set({
     endedAt: now,
-    totalCost: gamingCostToStore, // Gaming cost only (orders tracked separately)
+    totalCost: gamingCostToStore, // Gaming cost only (others tracked separately)
     notes: notes || session.notes
   }).where(eq(psSessions.id, sessionId)).run();
 
@@ -963,4 +1000,356 @@ export function getStationEarnings(): StationEarnings[] {
       totalMinutes
     };
   });
+}
+
+// ===== SWITCH STATION =====
+
+/**
+ * Switch/move an active session from one station to another
+ * The session continues on the new station with the same start time, orders, etc.
+ */
+export function switchStation(sessionId: number, newStationId: string): PsSession {
+  const session = db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get();
+  if (!session) throw new Error(`Session ${sessionId} not found`);
+  if (session.endedAt) throw new Error(`Session ${sessionId} already ended`);
+
+  const oldStationId = session.stationId;
+  if (oldStationId === newStationId) throw new Error(`Session already on station ${newStationId}`);
+
+  const newStation = getStationById(newStationId);
+  if (!newStation) throw new Error(`Station ${newStationId} not found`);
+  if (newStation.status === 'occupied') throw new Error(`Station ${newStationId} is already occupied`);
+  if (newStation.status === 'maintenance') throw new Error(`Station ${newStationId} is in maintenance`);
+
+  // Check if new station already has an active session
+  const existingSession = getActiveSessionForStation(newStationId);
+  if (existingSession) throw new Error(`Station ${newStationId} already has an active session`);
+
+  const oldStation = getStationById(oldStationId);
+  const now = Date.now();
+
+  // Update session to new station
+  const existingNotes = session.notes || '';
+  const switchNote = `Switched from ${oldStationId} at ${new Date(now).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+  const newNotes = existingNotes ? `${existingNotes}\n${switchNote}` : switchNote;
+
+  db.update(psSessions).set({
+    stationId: newStationId
+  }).where(eq(psSessions.id, sessionId)).run();
+
+  // Update old station status to available
+  if (oldStation) {
+    updateStation(oldStationId, { status: 'available' });
+  }
+
+  // Update new station status to occupied
+  updateStation(newStationId, { status: 'occupied' });
+
+  // Clear any grace periods
+  gracePeriodTracker.delete(oldStationId);
+  gracePeriodTracker.delete(newStationId);
+
+  console.log(`[Session] Switched session ${sessionId} from ${oldStationId} to ${newStationId}`);
+
+  return db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get()!;
+}
+
+// ===== SESSION CHARGES =====
+
+/**
+ * Add an extra charge to a session
+ */
+export function addCharge(sessionId: number, amount: number, reason?: string): PsSessionCharge {
+  const session = db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get();
+  if (!session) throw new Error(`Session ${sessionId} not found`);
+  if (session.endedAt) throw new Error(`Session ${sessionId} already ended`);
+
+  const now = Date.now();
+  const result = db.insert(psSessionCharges).values({
+    sessionId,
+    amount,
+    reason: reason || null,
+    createdAt: now,
+    updatedAt: now
+  }).run();
+
+  // Update session's extraCharges total
+  const currentCharges = session.extraCharges || 0;
+  db.update(psSessions).set({
+    extraCharges: currentCharges + amount
+  }).where(eq(psSessions.id, sessionId)).run();
+
+  return db.select().from(psSessionCharges).where(eq(psSessionCharges.id, result.lastInsertRowid as number)).get()!;
+}
+
+/**
+ * Update an existing charge
+ */
+export function updateCharge(chargeId: number, amount: number, reason?: string): PsSessionCharge {
+  const charge = db.select().from(psSessionCharges).where(eq(psSessionCharges.id, chargeId)).get();
+  if (!charge) throw new Error(`Charge ${chargeId} not found`);
+
+  const session = db.select().from(psSessions).where(eq(psSessions.id, charge.sessionId)).get();
+  if (!session) throw new Error(`Session not found`);
+  if (session.endedAt) throw new Error(`Cannot modify charge on ended session`);
+
+  const amountDiff = amount - charge.amount;
+  const now = Date.now();
+
+  db.update(psSessionCharges).set({
+    amount,
+    reason: reason !== undefined ? (reason || null) : charge.reason,
+    updatedAt: now
+  }).where(eq(psSessionCharges.id, chargeId)).run();
+
+  // Update session's extraCharges total
+  const currentCharges = session.extraCharges || 0;
+  db.update(psSessions).set({
+    extraCharges: currentCharges + amountDiff
+  }).where(eq(psSessions.id, charge.sessionId)).run();
+
+  return db.select().from(psSessionCharges).where(eq(psSessionCharges.id, chargeId)).get()!;
+}
+
+/**
+ * Delete a charge
+ */
+export function deleteCharge(chargeId: number): void {
+  const charge = db.select().from(psSessionCharges).where(eq(psSessionCharges.id, chargeId)).get();
+  if (!charge) throw new Error(`Charge ${chargeId} not found`);
+
+  const session = db.select().from(psSessions).where(eq(psSessions.id, charge.sessionId)).get();
+  if (!session) throw new Error(`Session not found`);
+  if (session.endedAt) throw new Error(`Cannot delete charge from ended session`);
+
+  // Remove charge
+  db.delete(psSessionCharges).where(eq(psSessionCharges.id, chargeId)).run();
+
+  // Update session's extraCharges total
+  const currentCharges = session.extraCharges || 0;
+  db.update(psSessions).set({
+    extraCharges: Math.max(0, currentCharges - charge.amount)
+  }).where(eq(psSessions.id, charge.sessionId)).run();
+}
+
+/**
+ * Get all charges for a session
+ */
+export function getSessionCharges(sessionId: number): PsSessionCharge[] {
+  return db.select()
+    .from(psSessionCharges)
+    .where(eq(psSessionCharges.sessionId, sessionId))
+    .orderBy(desc(psSessionCharges.createdAt))
+    .all();
+}
+
+// ===== SESSION TRANSFERS =====
+
+/**
+ * Transfer a session's cost to another session and end the source session
+ */
+export function transferSession(fromSessionId: number, toSessionId: number, includeOrders: boolean): PsSessionTransfer {
+  const fromSession = db.select().from(psSessions).where(eq(psSessions.id, fromSessionId)).get();
+  if (!fromSession) throw new Error(`Source session ${fromSessionId} not found`);
+  if (fromSession.endedAt) throw new Error(`Source session already ended`);
+
+  const toSession = db.select().from(psSessions).where(eq(psSessions.id, toSessionId)).get();
+  if (!toSession) throw new Error(`Target session ${toSessionId} not found`);
+  if (toSession.endedAt) throw new Error(`Target session already ended`);
+  if (fromSessionId === toSessionId) throw new Error(`Cannot transfer to same session`);
+
+  const fromStation = getStationById(fromSession.stationId);
+  if (!fromStation) throw new Error(`Station not found`);
+
+  const now = Date.now();
+
+  // Calculate costs using segments if available, otherwise simple calculation
+  const gamingAmount = calculateSessionCost(fromSession, now);
+  const ordersAmount = includeOrders ? (fromSession.ordersCost || 0) : 0;
+  const totalAmount = gamingAmount + ordersAmount + (fromSession.extraCharges || 0);
+
+  // Create transfer record
+  const result = db.insert(psSessionTransfers).values({
+    fromSessionId,
+    toSessionId,
+    fromStationId: fromSession.stationId,
+    gamingAmount,
+    ordersAmount,
+    totalAmount,
+    createdAt: now
+  }).run();
+
+  // Update target session's transferred cost
+  const currentTransferred = toSession.transferredCost || 0;
+  db.update(psSessions).set({
+    transferredCost: currentTransferred + totalAmount
+  }).where(eq(psSessions.id, toSessionId)).run();
+
+  // End source session with 0 cost (or only the orders cost if not transferred)
+  const remainingOrdersCost = includeOrders ? 0 : (fromSession.ordersCost || 0);
+  db.update(psSessions).set({
+    endedAt: now,
+    totalCost: 0, // Gaming cost transferred
+    notes: `Transferred to ${toSession.stationId}${includeOrders ? ' (with orders)' : ''}`
+  }).where(eq(psSessions.id, fromSessionId)).run();
+
+  // Update source station status
+  updateStation(fromSession.stationId, { status: 'available' });
+
+  // Clear grace period and set cooldown
+  setManualEndCooldown(fromSession.stationId);
+
+  return db.select().from(psSessionTransfers).where(eq(psSessionTransfers.id, result.lastInsertRowid as number)).get()!;
+}
+
+/**
+ * Get transfers TO a session (incoming transfers)
+ */
+export function getSessionTransfers(sessionId: number): PsSessionTransfer[] {
+  return db.select()
+    .from(psSessionTransfers)
+    .where(eq(psSessionTransfers.toSessionId, sessionId))
+    .orderBy(desc(psSessionTransfers.createdAt))
+    .all();
+}
+
+// ===== SESSION SEGMENTS (Single/Multi Player Mode) =====
+
+/**
+ * Create initial segment when session starts
+ */
+export function createInitialSegment(sessionId: number, hourlyRate: number): PsSessionSegment {
+  const now = Date.now();
+  const result = db.insert(psSessionSegments).values({
+    sessionId,
+    mode: 'single',
+    startedAt: now,
+    endedAt: null,
+    hourlyRateSnapshot: hourlyRate,
+    createdAt: now
+  }).run();
+
+  return db.select().from(psSessionSegments).where(eq(psSessionSegments.id, result.lastInsertRowid as number)).get()!;
+}
+
+/**
+ * Switch session between single/multi player mode
+ */
+export function switchMode(sessionId: number, newMode: 'single' | 'multi'): void {
+  const session = db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get();
+  if (!session) throw new Error(`Session ${sessionId} not found`);
+  if (session.endedAt) throw new Error(`Session ${sessionId} already ended`);
+
+  // Don't switch if already in that mode
+  if (session.currentMode === newMode) return;
+
+  const station = getStationById(session.stationId);
+  if (!station) throw new Error(`Station not found`);
+
+  const now = Date.now();
+
+  // End current segment
+  const currentSegment = db.select()
+    .from(psSessionSegments)
+    .where(and(
+      eq(psSessionSegments.sessionId, sessionId),
+      isNull(psSessionSegments.endedAt)
+    ))
+    .get();
+
+  if (currentSegment) {
+    db.update(psSessionSegments).set({
+      endedAt: now
+    }).where(eq(psSessionSegments.id, currentSegment.id)).run();
+  }
+
+  // Get the appropriate rate for the new mode
+  const newRate = newMode === 'multi'
+    ? (station.hourlyRateMulti || station.hourlyRate)
+    : station.hourlyRate;
+
+  // Create new segment
+  db.insert(psSessionSegments).values({
+    sessionId,
+    mode: newMode,
+    startedAt: now,
+    endedAt: null,
+    hourlyRateSnapshot: newRate,
+    createdAt: now
+  }).run();
+
+  // Update session's current mode
+  db.update(psSessions).set({
+    currentMode: newMode
+  }).where(eq(psSessions.id, sessionId)).run();
+
+  console.log(`[Session] Switched session ${sessionId} to ${newMode} mode (rate: ${newRate} piasters/hr)`);
+}
+
+/**
+ * Get all segments for a session
+ */
+export function getSessionSegments(sessionId: number): PsSessionSegment[] {
+  return db.select()
+    .from(psSessionSegments)
+    .where(eq(psSessionSegments.sessionId, sessionId))
+    .orderBy(psSessionSegments.startedAt)
+    .all();
+}
+
+/**
+ * Calculate session cost using segments (if available) or simple calculation
+ * This replaces/enhances the existing calculateSessionCost for segment-aware billing
+ */
+export function calculateSessionCostWithSegments(session: PsSession, endTime?: number): { total: number; breakdown: Array<{ mode: string; minutes: number; cost: number }> } {
+  const end = endTime || session.endedAt || Date.now();
+  const segments = getSessionSegments(session.id);
+
+  // If no segments, use simple calculation (backward compatibility)
+  if (segments.length === 0) {
+    const cost = calculateSessionCost(session, end);
+    const durationMs = end - session.startedAt - (session.totalPausedMs || 0);
+    const minutes = Math.ceil(durationMs / (1000 * 60));
+    return {
+      total: cost,
+      breakdown: [{ mode: session.currentMode || 'single', minutes, cost }]
+    };
+  }
+
+  // Calculate cost per segment
+  const breakdown: Array<{ mode: string; minutes: number; cost: number }> = [];
+  let totalCost = 0;
+  const totalPausedMs = session.totalPausedMs || 0;
+
+  // Calculate total active time to distribute paused time proportionally
+  let totalActiveMs = 0;
+  for (const segment of segments) {
+    const segmentEnd = segment.endedAt || end;
+    totalActiveMs += segmentEnd - segment.startedAt;
+  }
+
+  for (const segment of segments) {
+    const segmentEnd = segment.endedAt || end;
+    let segmentDurationMs = segmentEnd - segment.startedAt;
+
+    // Distribute paused time proportionally across segments
+    if (totalActiveMs > 0 && totalPausedMs > 0) {
+      const pausedProportion = segmentDurationMs / totalActiveMs;
+      segmentDurationMs -= Math.round(totalPausedMs * pausedProportion);
+    }
+
+    if (segmentDurationMs < 0) segmentDurationMs = 0;
+
+    const minutes = Math.ceil(segmentDurationMs / (1000 * 60));
+    const cost = Math.round((segment.hourlyRateSnapshot * minutes) / 60);
+
+    breakdown.push({
+      mode: segment.mode,
+      minutes,
+      cost
+    });
+    totalCost += cost;
+  }
+
+  return { total: totalCost, breakdown };
 }

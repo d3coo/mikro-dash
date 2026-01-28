@@ -14,7 +14,18 @@ import {
   setSessionTimer,
   getTimerAlerts,
   markTimerNotified,
-  getStationEarnings
+  getStationEarnings,
+  addCharge,
+  updateCharge,
+  deleteCharge,
+  getSessionCharges,
+  transferSession,
+  getSessionTransfers,
+  switchMode,
+  getSessionSegments,
+  getActiveSessions,
+  calculateSessionCostWithSegments,
+  switchStation
 } from '$lib/server/services/playstation';
 import * as monitorControl from '$lib/server/services/monitor-control';
 import { fail } from '@sveltejs/kit';
@@ -26,27 +37,69 @@ export const load: PageServerLoad = async () => {
   const menuItems = getMenuItems();
   const timerAlerts = getTimerAlerts();
   const stationEarnings = getStationEarnings();
+  const activeSessions = getActiveSessions();
 
-  // Get orders for active session or last session
-  const sessionsWithOrders = stationStatuses.map(status => {
+  // Get orders, charges, transfers, and segments for active session or last session
+  const sessionsWithExtras = stationStatuses.map(status => {
     if (status.activeSession) {
       const orders = getSessionOrders(status.activeSession.id);
-      return { ...status, orders, lastSessionOrders: [] };
+      const charges = getSessionCharges(status.activeSession.id);
+      const transfers = getSessionTransfers(status.activeSession.id);
+      const segments = getSessionSegments(status.activeSession.id);
+      const costBreakdown = calculateSessionCostWithSegments(status.activeSession);
+      return {
+        ...status,
+        orders,
+        charges,
+        transfers,
+        segments,
+        costBreakdown,
+        lastSessionOrders: [],
+        lastSessionCharges: [],
+        lastSessionTransfers: [],
+        lastSessionSegments: []
+      };
     }
     if (status.lastSession) {
       const lastSessionOrders = getSessionOrders(status.lastSession.id);
-      return { ...status, orders: [], lastSessionOrders };
+      const lastSessionCharges = getSessionCharges(status.lastSession.id);
+      const lastSessionTransfers = getSessionTransfers(status.lastSession.id);
+      const lastSessionSegments = getSessionSegments(status.lastSession.id);
+      return {
+        ...status,
+        orders: [],
+        charges: [],
+        transfers: [],
+        segments: [],
+        costBreakdown: null,
+        lastSessionOrders,
+        lastSessionCharges,
+        lastSessionTransfers,
+        lastSessionSegments
+      };
     }
-    return { ...status, orders: [], lastSessionOrders: [] };
+    return {
+      ...status,
+      orders: [],
+      charges: [],
+      transfers: [],
+      segments: [],
+      costBreakdown: null,
+      lastSessionOrders: [],
+      lastSessionCharges: [],
+      lastSessionTransfers: [],
+      lastSessionSegments: []
+    };
   });
 
   return {
-    stationStatuses: sessionsWithOrders,
+    stationStatuses: sessionsWithExtras,
     analytics,
     stationCount: stations.length,
     menuItems,
     timerAlerts,
-    stationEarnings
+    stationEarnings,
+    activeSessions
   };
 };
 
@@ -246,6 +299,128 @@ export const actions: Actions = {
       return { success: true };
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : 'Failed to dismiss alert' });
+    }
+  },
+
+  // ===== CHARGES =====
+
+  addCharge: async ({ request }) => {
+    const formData = await request.formData();
+    const sessionId = formData.get('sessionId') as string;
+    const amount = formData.get('amount') as string;
+    const reason = formData.get('reason') as string;
+
+    if (!sessionId || !amount) {
+      return fail(400, { error: 'Session ID and amount are required' });
+    }
+
+    try {
+      const amountPiasters = Math.round(parseFloat(amount) * 100); // Convert EGP to piasters
+      addCharge(parseInt(sessionId, 10), amountPiasters, reason || undefined);
+      return { success: true };
+    } catch (error) {
+      return fail(400, { error: error instanceof Error ? error.message : 'Failed to add charge' });
+    }
+  },
+
+  updateCharge: async ({ request }) => {
+    const formData = await request.formData();
+    const chargeId = formData.get('chargeId') as string;
+    const amount = formData.get('amount') as string;
+    const reason = formData.get('reason') as string;
+
+    if (!chargeId || !amount) {
+      return fail(400, { error: 'Charge ID and amount are required' });
+    }
+
+    try {
+      const amountPiasters = Math.round(parseFloat(amount) * 100);
+      updateCharge(parseInt(chargeId, 10), amountPiasters, reason);
+      return { success: true };
+    } catch (error) {
+      return fail(400, { error: error instanceof Error ? error.message : 'Failed to update charge' });
+    }
+  },
+
+  deleteCharge: async ({ request }) => {
+    const formData = await request.formData();
+    const chargeId = formData.get('chargeId') as string;
+
+    if (!chargeId) {
+      return fail(400, { error: 'Charge ID is required' });
+    }
+
+    try {
+      deleteCharge(parseInt(chargeId, 10));
+      return { success: true };
+    } catch (error) {
+      return fail(400, { error: error instanceof Error ? error.message : 'Failed to delete charge' });
+    }
+  },
+
+  // ===== TRANSFERS =====
+
+  transferSession: async ({ request }) => {
+    const formData = await request.formData();
+    const fromSessionId = formData.get('fromSessionId') as string;
+    const toSessionId = formData.get('toSessionId') as string;
+    const includeOrders = formData.get('includeOrders') === 'true';
+
+    if (!fromSessionId || !toSessionId) {
+      return fail(400, { error: 'Source and target session IDs are required' });
+    }
+
+    try {
+      const transfer = transferSession(
+        parseInt(fromSessionId, 10),
+        parseInt(toSessionId, 10),
+        includeOrders
+      );
+      return { success: true, transfer };
+    } catch (error) {
+      return fail(400, { error: error instanceof Error ? error.message : 'Failed to transfer session' });
+    }
+  },
+
+  // ===== MODE SWITCHING =====
+
+  switchMode: async ({ request }) => {
+    const formData = await request.formData();
+    const sessionId = formData.get('sessionId') as string;
+    const mode = formData.get('mode') as 'single' | 'multi';
+
+    if (!sessionId || !mode) {
+      return fail(400, { error: 'Session ID and mode are required' });
+    }
+
+    if (mode !== 'single' && mode !== 'multi') {
+      return fail(400, { error: 'Mode must be single or multi' });
+    }
+
+    try {
+      switchMode(parseInt(sessionId, 10), mode);
+      return { success: true };
+    } catch (error) {
+      return fail(400, { error: error instanceof Error ? error.message : 'Failed to switch mode' });
+    }
+  },
+
+  // ===== SWITCH STATION =====
+
+  switchStation: async ({ request }) => {
+    const formData = await request.formData();
+    const sessionId = formData.get('sessionId') as string;
+    const newStationId = formData.get('newStationId') as string;
+
+    if (!sessionId || !newStationId) {
+      return fail(400, { error: 'Session ID and new station ID are required' });
+    }
+
+    try {
+      switchStation(parseInt(sessionId, 10), newStationId);
+      return { success: true };
+    } catch (error) {
+      return fail(400, { error: error instanceof Error ? error.message : 'Failed to switch station' });
     }
   }
 };

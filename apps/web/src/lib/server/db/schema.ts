@@ -71,7 +71,8 @@ export const psStations = sqliteTable('ps_stations', {
   name: text('name').notNull(),                   // "Station 1"
   nameAr: text('name_ar').notNull(),              // "جهاز ١"
   macAddress: text('mac_address').notNull(),      // PlayStation MAC
-  hourlyRate: integer('hourly_rate').notNull(),   // Piasters (2000 = 20 EGP/hr)
+  hourlyRate: integer('hourly_rate').notNull(),   // Piasters (2000 = 20 EGP/hr) - single player rate
+  hourlyRateMulti: integer('hourly_rate_multi'),  // Piasters - multi player rate (null = same as single)
   status: text('status').notNull().default('available'), // available|occupied|maintenance
   monitorIp: text('monitor_ip'),                  // Android monitor IP (e.g., "10.10.10.188")
   monitorPort: integer('monitor_port').default(8080), // FreeKiosk API port (default 8080)
@@ -89,9 +90,12 @@ export const psSessions = sqliteTable('ps_sessions', {
   stationId: text('station_id').notNull(),
   startedAt: integer('started_at').notNull(),
   endedAt: integer('ended_at'),                   // NULL = active
-  hourlyRateSnapshot: integer('hourly_rate_snapshot').notNull(), // Rate at start
-  totalCost: integer('total_cost'),               // Calculated on end (piasters)
+  hourlyRateSnapshot: integer('hourly_rate_snapshot').notNull(), // Rate at start (single player)
+  totalCost: integer('total_cost'),               // Calculated on end (piasters) - gaming cost only
   ordersCost: integer('orders_cost').default(0),  // Total food/drinks cost (piasters)
+  extraCharges: integer('extra_charges').default(0), // Additional charges (piasters)
+  transferredCost: integer('transferred_cost').default(0), // Cost transferred from other sessions (piasters)
+  currentMode: text('current_mode').default('single'), // 'single' | 'multi' - current player mode
   startedBy: text('started_by').notNull().default('manual'), // manual|auto
   timerMinutes: integer('timer_minutes'),         // Optional timer (30, 60, etc.) - NULL = no timer
   timerNotified: integer('timer_notified').default(0), // 1 = notification sent
@@ -148,6 +152,39 @@ export const fnbSales = sqliteTable('fnb_sales', {
   createdAt: integer('created_at').notNull()
 });
 
+// PlayStation session extra charges (free-form charges)
+export const psSessionCharges = sqliteTable('ps_session_charges', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  sessionId: integer('session_id').notNull(),
+  amount: integer('amount').notNull(),           // Amount in piasters
+  reason: text('reason'),                        // Optional reason
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull()
+});
+
+// PlayStation session transfers (cost transferred from another session)
+export const psSessionTransfers = sqliteTable('ps_session_transfers', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  fromSessionId: integer('from_session_id').notNull(),
+  toSessionId: integer('to_session_id').notNull(),
+  fromStationId: text('from_station_id').notNull(), // For display purposes
+  gamingAmount: integer('gaming_amount').notNull(),  // Gaming cost in piasters
+  ordersAmount: integer('orders_amount').notNull(),  // Orders cost in piasters (0 if not included)
+  totalAmount: integer('total_amount').notNull(),    // Gaming + orders
+  createdAt: integer('created_at').notNull()
+});
+
+// PlayStation session segments (for single/multi player mode tracking)
+export const psSessionSegments = sqliteTable('ps_session_segments', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  sessionId: integer('session_id').notNull(),
+  mode: text('mode').notNull(),                  // 'single' | 'multi'
+  startedAt: integer('started_at').notNull(),
+  endedAt: integer('ended_at'),                  // NULL = current segment
+  hourlyRateSnapshot: integer('hourly_rate_snapshot').notNull(),
+  createdAt: integer('created_at').notNull()
+});
+
 // Unified daily stats - aggregated statistics across all business segments
 export const unifiedDailyStats = sqliteTable('unified_daily_stats', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -197,3 +234,9 @@ export type FnbSale = typeof fnbSales.$inferSelect;
 export type NewFnbSale = typeof fnbSales.$inferInsert;
 export type UnifiedDailyStat = typeof unifiedDailyStats.$inferSelect;
 export type NewUnifiedDailyStat = typeof unifiedDailyStats.$inferInsert;
+export type PsSessionCharge = typeof psSessionCharges.$inferSelect;
+export type NewPsSessionCharge = typeof psSessionCharges.$inferInsert;
+export type PsSessionTransfer = typeof psSessionTransfers.$inferSelect;
+export type NewPsSessionTransfer = typeof psSessionTransfers.$inferInsert;
+export type PsSessionSegment = typeof psSessionSegments.$inferSelect;
+export type NewPsSessionSegment = typeof psSessionSegments.$inferInsert;

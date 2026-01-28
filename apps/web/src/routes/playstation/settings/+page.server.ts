@@ -21,6 +21,8 @@ export const actions: Actions = {
     const nameAr = (formData.get('nameAr') as string)?.trim();
     const macAddress = (formData.get('macAddress') as string)?.trim();
     const hourlyRate = parseInt(formData.get('hourlyRate') as string, 10);
+    const hourlyRateMultiStr = (formData.get('hourlyRateMulti') as string)?.trim();
+    const hourlyRateMulti = hourlyRateMultiStr ? parseInt(hourlyRateMultiStr, 10) : null;
     const monitorIp = (formData.get('monitorIp') as string)?.trim() || null;
     const monitorPort = parseInt(formData.get('monitorPort') as string, 10) || 8080;
     const monitorType = (formData.get('monitorType') as string) || 'tcl';
@@ -60,6 +62,7 @@ export const actions: Actions = {
         nameAr,
         macAddress,
         hourlyRate: hourlyRate * 100, // Store in piasters
+        hourlyRateMulti: hourlyRateMulti ? hourlyRateMulti * 100 : null, // Store in piasters
         monitorIp,
         monitorPort,
         monitorType,
@@ -80,6 +83,8 @@ export const actions: Actions = {
     const nameAr = (formData.get('nameAr') as string)?.trim();
     const macAddress = (formData.get('macAddress') as string)?.trim();
     const hourlyRate = parseInt(formData.get('hourlyRate') as string, 10);
+    const hourlyRateMultiStr = (formData.get('hourlyRateMulti') as string)?.trim();
+    const hourlyRateMulti = hourlyRateMultiStr ? parseInt(hourlyRateMultiStr, 10) : null;
     const status = formData.get('status') as string;
     const monitorIp = (formData.get('monitorIp') as string)?.trim() || null;
     const monitorPort = parseInt(formData.get('monitorPort') as string, 10) || 8080;
@@ -113,6 +118,7 @@ export const actions: Actions = {
       if (nameAr) updates.nameAr = nameAr;
       if (macAddress) updates.macAddress = macAddress;
       if (!isNaN(hourlyRate)) updates.hourlyRate = hourlyRate * 100; // Store in piasters
+      updates.hourlyRateMulti = hourlyRateMulti ? hourlyRateMulti * 100 : null; // Store in piasters or null
       if (status) updates.status = status;
       updates.monitorIp = monitorIp;
       updates.monitorPort = monitorPort;

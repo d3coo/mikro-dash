@@ -18,6 +18,7 @@
   let formNameAr = $state('');
   let formMacAddress = $state('');
   let formHourlyRate = $state(20);
+  let formHourlyRateMulti = $state<number | null>(null);
   let formStatus = $state('available');
   let formMonitorIp = $state('');
   let formMonitorPort = $state(8080);
@@ -60,6 +61,7 @@
     formNameAr = `جهاز ${data.stations.length + 1}`;
     formMacAddress = '';
     formHourlyRate = 20;
+    formHourlyRateMulti = null;
     formMonitorIp = '';
     formMonitorPort = 8080;
     formMonitorType = 'tcl';
@@ -75,6 +77,7 @@
     formNameAr = station.nameAr;
     formMacAddress = station.macAddress;
     formHourlyRate = station.hourlyRate / 100;
+    formHourlyRateMulti = station.hourlyRateMulti ? station.hourlyRateMulti / 100 : null;
     formStatus = station.status;
     formMonitorIp = station.monitorIp || '';
     formMonitorPort = station.monitorPort || 8080;
@@ -489,7 +492,7 @@
               />
             </div>
             <div class="form-group">
-              <label for="add-rate">السعر بالساعة (ج.م)</label>
+              <label for="add-rate">السعر/ساعة (فردي)</label>
               <input
                 type="number"
                 id="add-rate"
@@ -503,6 +506,18 @@
           </div>
 
           <div class="form-grid-2col">
+            <div class="form-group">
+              <label for="add-rate-multi">السعر/ساعة (متعدد)</label>
+              <input
+                type="number"
+                id="add-rate-multi"
+                name="hourlyRateMulti"
+                bind:value={formHourlyRateMulti}
+                class="input-modern"
+                min="1"
+                placeholder="اختياري"
+              />
+            </div>
             <div class="form-group">
               <label for="add-name">الاسم (إنجليزي)</label>
               <input
@@ -714,7 +729,7 @@
               />
             </div>
             <div class="form-group">
-              <label for="edit-rate">السعر بالساعة (ج.م)</label>
+              <label for="edit-rate">السعر/ساعة (فردي)</label>
               <input
                 type="number"
                 id="edit-rate"
@@ -727,8 +742,21 @@
             </div>
           </div>
 
-          <div class="form-group">
-            <label for="edit-status">الحالة</label>
+          <div class="form-grid-2col">
+            <div class="form-group">
+              <label for="edit-rate-multi">السعر/ساعة (متعدد)</label>
+              <input
+                type="number"
+                id="edit-rate-multi"
+                name="hourlyRateMulti"
+                bind:value={formHourlyRateMulti}
+                class="input-modern"
+                min="1"
+                placeholder="اختياري"
+              />
+            </div>
+            <div class="form-group">
+              <label for="edit-status">الحالة</label>
             <select
               id="edit-status"
               name="status"

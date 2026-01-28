@@ -172,6 +172,36 @@ export function initializeDb() {
       created_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS ps_session_charges (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id INTEGER NOT NULL,
+      amount INTEGER NOT NULL,
+      reason TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ps_session_transfers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      from_session_id INTEGER NOT NULL,
+      to_session_id INTEGER NOT NULL,
+      from_station_id TEXT NOT NULL,
+      gaming_amount INTEGER NOT NULL,
+      orders_amount INTEGER NOT NULL,
+      total_amount INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ps_session_segments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id INTEGER NOT NULL,
+      mode TEXT NOT NULL,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER,
+      hourly_rate_snapshot INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS unified_daily_stats (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       date TEXT NOT NULL UNIQUE,
@@ -308,6 +338,38 @@ export function initializeDb() {
   try {
     sqlite.exec('ALTER TABLE ps_sessions ADD COLUMN total_paused_ms INTEGER DEFAULT 0');
     console.log('[DB] Added total_paused_ms column to ps_sessions table');
+  } catch {
+    // Column already exists
+  }
+
+  // Migration: add extra_charges column to ps_sessions if it doesn't exist
+  try {
+    sqlite.exec('ALTER TABLE ps_sessions ADD COLUMN extra_charges INTEGER DEFAULT 0');
+    console.log('[DB] Added extra_charges column to ps_sessions table');
+  } catch {
+    // Column already exists
+  }
+
+  // Migration: add transferred_cost column to ps_sessions if it doesn't exist
+  try {
+    sqlite.exec('ALTER TABLE ps_sessions ADD COLUMN transferred_cost INTEGER DEFAULT 0');
+    console.log('[DB] Added transferred_cost column to ps_sessions table');
+  } catch {
+    // Column already exists
+  }
+
+  // Migration: add current_mode column to ps_sessions if it doesn't exist
+  try {
+    sqlite.exec("ALTER TABLE ps_sessions ADD COLUMN current_mode TEXT DEFAULT 'single'");
+    console.log('[DB] Added current_mode column to ps_sessions table');
+  } catch {
+    // Column already exists
+  }
+
+  // Migration: add hourly_rate_multi column to ps_stations if it doesn't exist
+  try {
+    sqlite.exec('ALTER TABLE ps_stations ADD COLUMN hourly_rate_multi INTEGER');
+    console.log('[DB] Added hourly_rate_multi column to ps_stations table');
   } catch {
     // Column already exists
   }
