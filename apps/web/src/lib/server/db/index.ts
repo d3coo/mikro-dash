@@ -30,35 +30,14 @@ if (DATABASE_MODE === 'remote' || isEdgeRuntime) {
   // Local-first mode: All reads/writes go to local SQLite (instant)
   // Import Node.js modules only in local mode
   const { resolve } = await import('path');
-  const { existsSync } = await import('fs');
 
   const dbPath = process.env.DATABASE_PATH || resolve(process.cwd(), 'data.db');
   console.log(`[DB] Local database path: ${dbPath}`);
 
-  // Check for Turso sync compatibility
-  function canUseTursoSync(): boolean {
-    if (!TURSO_DATABASE_URL || !TURSO_AUTH_TOKEN) return false;
+  // Enable Turso sync if credentials are provided
+  const hasTursoCredentials = TURSO_DATABASE_URL && TURSO_AUTH_TOKEN;
 
-    const dbExists = existsSync(dbPath);
-    if (!dbExists) return true; // Fresh start, sync will work
-
-    // Check for Turso metadata files (created when sync is initialized)
-    const metadataFiles = [
-      `${dbPath}-client_wal`,
-      `${dbPath}.turso`,
-    ];
-    const hasMetadata = metadataFiles.some(f => existsSync(f));
-
-    if (dbExists && !hasMetadata) {
-      console.warn('[DB] Local database exists without Turso sync metadata.');
-      console.warn('[DB] To enable sync: delete data.db and let it sync from cloud, or continue with local-only mode.');
-      return false;
-    }
-
-    return true;
-  }
-
-  if (canUseTursoSync()) {
+  if (hasTursoCredentials) {
     console.log('[DB] Creating embedded replica with Turso sync...');
     client = createClient({
       url: `file:${dbPath}`,
@@ -429,6 +408,16 @@ export async function initializeDb() {
   }
 
   console.log('[DB] Database initialized successfully');
+
+  // Initial sync to pull remote changes (if sync is available)
+  if (DATABASE_MODE === 'local' && TURSO_DATABASE_URL && TURSO_AUTH_TOKEN && !isEdgeRuntime) {
+    try {
+      await client.sync();
+      console.log('[DB] Initial sync from cloud completed');
+    } catch (err) {
+      console.error('[DB] Initial sync failed (continuing with local data):', err);
+    }
+  }
 }
 
 // Check if sync is available
