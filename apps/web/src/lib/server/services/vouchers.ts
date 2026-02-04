@@ -1,4 +1,5 @@
 import { getMikroTikClient } from './mikrotik';
+import { MikroTikClient } from '$lib/server/mikrotik';
 import { getPackages, getPackageById, type PackageConfig } from '$lib/server/config';
 import type { HotspotUser } from '$lib/server/mikrotik/types';
 import { getVoucherDeviceMap, recordVoucherUsage, deleteVoucherUsageHistory } from './voucher-usage';
@@ -56,7 +57,7 @@ function generateRandomCode(length: number): string {
  * Fully random - no prefix
  * The code is used as both username AND password for easy single-field login
  */
-async function generateVoucherCode(client: ReturnType<typeof getMikroTikClient>): Promise<string> {
+async function generateVoucherCode(client: MikroTikClient): Promise<string> {
   const users = await client.getHotspotUsers();
   const existingNames = new Set(users.map(u => u.name.toUpperCase())); // Case-insensitive check
 
@@ -358,7 +359,7 @@ export async function getVoucherByName(name: string): Promise<Voucher | undefine
  * Username and password are the SAME code for easy single-field login
  */
 export async function createVouchers(packageId: string, quantity: number): Promise<{ created: number }> {
-  const pkg = getPackageById(packageId);
+  const pkg = await getPackageById(packageId);
   if (!pkg) {
     throw new Error(`Invalid package: ${packageId}`);
   }
