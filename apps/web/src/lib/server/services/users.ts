@@ -90,7 +90,7 @@ function formatSecondsToArabic(totalSeconds: number): string {
  * - WiFi-only clients: devices connected but NOT authenticated
  */
 export async function getUsersPageData(): Promise<UsersPageData> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
 
   // Fetch all data in parallel from MikroTik
   const [registrations, activeSessions, hotspotUsers, dhcpLeases, wirelessInterfaces, hotspotProfiles] = await Promise.all([
@@ -103,7 +103,7 @@ export async function getUsersPageData(): Promise<UsersPageData> {
   ]);
 
   // Get local package metadata
-  const packages = getPackages();
+  const packages = await getPackages();
 
   // Build profile lookup map for session timeout
   const profileByName = new Map(
@@ -141,8 +141,8 @@ export async function getUsersPageData(): Promise<UsersPageData> {
       // This device has an active hotspot session - it's a voucher user
       const user = usersByName.get(session.user);
       // Match package: first try comment (new format), then prefix (legacy)
-      const pkg = getPackageFromComment(user?.comment || '', user?.profile)
-        || getPackageByCodePrefix(session.user);
+      const pkg = await getPackageFromComment(user?.comment || '', user?.profile)
+        || await getPackageByCodePrefix(session.user);
 
       // Get byte limit from hotspot user record
       const bytesLimit = Number(user?.['limit-bytes-total']) || 0;
@@ -230,7 +230,7 @@ export async function getUsersPageData(): Promise<UsersPageData> {
  * Disconnect a wireless client from the registration table
  */
 export async function disconnectWirelessClient(registrationId: string): Promise<void> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
   await client.disconnectWirelessClient(registrationId);
 }
 
@@ -238,7 +238,7 @@ export async function disconnectWirelessClient(registrationId: string): Promise<
  * Block a MAC address via wireless access list
  */
 export async function blockMacAddress(macAddress: string, deviceName?: string): Promise<void> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
   const comment = deviceName ? `${deviceName} - Blocked from dashboard` : 'Blocked from dashboard';
   await client.addToWirelessAccessList(macAddress, comment);
 }

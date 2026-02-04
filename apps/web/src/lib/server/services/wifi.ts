@@ -53,7 +53,7 @@ export interface SecurityProfileInfo {
  * Get all wireless access points with client counts
  */
 export async function getAccessPoints(): Promise<AccessPoint[]> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
 
   const [interfaces, registrations] = await Promise.all([
     client.getWirelessInterfaces(),
@@ -134,7 +134,7 @@ export async function getNetworkGroups(): Promise<NetworkGroup[]> {
  * Get all connected wireless clients with device info
  */
 export async function getWirelessClients(): Promise<WirelessClient[]> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
 
   const [registrations, dhcpLeases, activeSessions, interfaces] = await Promise.all([
     client.getWirelessRegistrations(),
@@ -180,7 +180,7 @@ export async function getWirelessClients(): Promise<WirelessClient[]> {
  * Get security profiles
  */
 export async function getSecurityProfiles(): Promise<SecurityProfileInfo[]> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
   const profiles = await client.getSecurityProfiles();
 
   return profiles.map(p => ({
@@ -195,7 +195,7 @@ export async function getSecurityProfiles(): Promise<SecurityProfileInfo[]> {
  * Toggle wireless interface enabled/disabled
  */
 export async function toggleAccessPoint(id: string, disabled: boolean): Promise<void> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
   await client.toggleWirelessInterface(id, disabled);
 }
 
@@ -203,7 +203,7 @@ export async function toggleAccessPoint(id: string, disabled: boolean): Promise<
  * Update wireless interface SSID
  */
 export async function updateAccessPointSSID(id: string, ssid: string): Promise<void> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
   await client.updateWirelessSSID(id, ssid);
 }
 
@@ -211,7 +211,7 @@ export async function updateAccessPointSSID(id: string, ssid: string): Promise<v
  * Update SSID for all interfaces in a group
  */
 export async function updateNetworkGroupSSID(ids: string[], ssid: string): Promise<void> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
   for (const id of ids) {
     await client.updateWirelessSSID(id, ssid);
   }
@@ -221,7 +221,7 @@ export async function updateNetworkGroupSSID(ids: string[], ssid: string): Promi
  * Update security profile password
  */
 export async function updateWiFiPassword(id: string, password: string): Promise<void> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
   await client.updateSecurityPassword(id, password);
 }
 
@@ -234,7 +234,7 @@ export async function createVirtualAP(
   securityProfile: string,
   name?: string
 ): Promise<void> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
   await client.createVirtualAP(masterInterface, ssid, securityProfile, name);
 }
 
@@ -242,6 +242,6 @@ export async function createVirtualAP(
  * Delete a Virtual AP
  */
 export async function deleteVirtualAP(id: string): Promise<void> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
   await client.deleteWirelessInterface(id);
 }

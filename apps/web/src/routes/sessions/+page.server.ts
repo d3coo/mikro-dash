@@ -16,7 +16,7 @@ export const load: PageServerLoad = async ({ url }) => {
   let servers: string[] = [];
 
   try {
-    const client = getMikroTikClient();
+    const client = await getMikroTikClient();
     await client.getSystemResources();
     routerConnected = true;
 

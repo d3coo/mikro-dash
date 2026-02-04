@@ -1,8 +1,8 @@
 import { MikroTikClient } from '$lib/server/mikrotik';
 import { getSettings } from '$lib/server/config';
 
-export function getMikroTikClient(): MikroTikClient {
-  const settings = getSettings();
+export async function getMikroTikClient(): Promise<MikroTikClient> {
+  const settings = await getSettings();
   return new MikroTikClient({
     host: settings.mikrotik.host,
     username: settings.mikrotik.user,
@@ -12,7 +12,7 @@ export function getMikroTikClient(): MikroTikClient {
 
 export async function testRouterConnection(): Promise<{ success: boolean; message: string }> {
   try {
-    const client = getMikroTikClient();
+    const client = await getMikroTikClient();
     const connected = await client.testConnection();
 
     if (connected) {

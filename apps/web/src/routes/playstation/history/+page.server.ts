@@ -28,7 +28,7 @@ export const load: PageServerLoad = async ({ url }) => {
       break;
   }
 
-  const sessions = getSessionHistory({
+  const sessions = await getSessionHistory({
     stationId,
     startDate,
     endDate,
@@ -36,13 +36,13 @@ export const load: PageServerLoad = async ({ url }) => {
   });
 
   // Get orders for each session
-  const sessionsWithOrders = sessions.map(session => ({
+  const sessionsWithOrders = await Promise.all(sessions.map(async (session) => ({
     ...session,
-    orders: getSessionOrders(session.id)
-  }));
+    orders: await getSessionOrders(session.id)
+  })));
 
-  const stations = getStations();
-  const analytics = getPsAnalytics(period === 'today' ? 'today' : period === 'week' ? 'week' : 'month');
+  const stations = await getStations();
+  const analytics = await getPsAnalytics(period === 'today' ? 'today' : period === 'week' ? 'week' : 'month');
 
   return {
     sessions: sessionsWithOrders,

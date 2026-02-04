@@ -15,11 +15,11 @@ export const GET: RequestHandler = async ({ url }) => {
   const ids = idsParam.split(',').filter(Boolean);
   const status = url.searchParams.get('status');
 
-  const settings = getSettings();
+  const settings = await getSettings();
   let vouchers: VoucherForExport[] = [];
 
   try {
-    const client = getMikroTikClient();
+    const client = await getMikroTikClient();
     const allUsers = await client.getHotspotUsers();
     const activeSessions = await client.getActiveSessions();
     const activeUsernames = new Set(activeSessions.map((a: any) => a.user));
@@ -42,10 +42,10 @@ export const GET: RequestHandler = async ({ url }) => {
       return 'available';
     };
 
-    // Helper to convert user to export format
-    const toExportVoucher = (user: any): VoucherForExport => {
-      const pkg = getPackageFromComment(user.comment || '', user.profile)
-        || getPackageByCodePrefix(user.name);
+    // Helper to convert user to export format (async)
+    const toExportVoucher = async (user: any): Promise<VoucherForExport> => {
+      const pkg = await getPackageFromComment(user.comment || '', user.profile)
+        || await getPackageByCodePrefix(user.name);
 
       return {
         id: user['.id'],
@@ -57,21 +57,17 @@ export const GET: RequestHandler = async ({ url }) => {
 
     if (status === 'available') {
       // Get all available vouchers (excluding system users)
-      vouchers = allUsers
-        .filter((user: any) =>
-          getVoucherStatus(user) === 'available' &&
-          !systemUsers.includes(user.name?.toLowerCase())
-        )
-        .map(toExportVoucher);
+      const filteredUsers = allUsers.filter((user: any) =>
+        getVoucherStatus(user) === 'available' &&
+        !systemUsers.includes(user.name?.toLowerCase())
+      );
+      vouchers = await Promise.all(filteredUsers.map(toExportVoucher));
     } else if (ids.length > 0) {
       // Get specific vouchers by ID
-      vouchers = ids
-        .map(id => {
-          const user = allUsers.find((u: any) => u['.id'] === id);
-          if (!user) return null;
-          return toExportVoucher(user);
-        })
-        .filter((v): v is VoucherForExport => v !== null);
+      const usersToConvert = ids
+        .map(id => allUsers.find((u: any) => u['.id'] === id))
+        .filter((u): u is any => u !== undefined);
+      vouchers = await Promise.all(usersToConvert.map(toExportVoucher));
     }
   } catch (error) {
     console.error('Failed to fetch vouchers:', error);

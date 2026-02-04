@@ -49,11 +49,11 @@ export const load: PageServerLoad = async ({ url }) => {
     const analyticsData = await getAnalyticsData(legacyPeriod);
 
     // Get expenses (optionally filtered by category)
-    const expensesList = getExpenses();
+    const expensesList = await getExpenses();
     const filteredExpenses = categoryFilter
       ? expensesList.filter(e => e.category === categoryFilter)
       : expensesList;
-    const packages = getPackages();
+    const packages = await getPackages();
 
     return {
       period,
@@ -71,8 +71,8 @@ export const load: PageServerLoad = async ({ url }) => {
       ...analyticsData,
       expenses: filteredExpenses,
       allExpenses: expensesList,
-      costPerGb: getCostPerGb(),
-      monthlyFixed: getMonthlyFixedCosts(),
+      costPerGb: await getCostPerGb(),
+      monthlyFixed: await getMonthlyFixedCosts(),
       packages
     };
   } catch (error) {
@@ -138,7 +138,7 @@ export const actions: Actions = {
 
     try {
       // Convert EGP to piasters (multiply by 100)
-      createExpense({
+      await createExpense({
         type,
         category: category || undefined,
         name,
@@ -178,7 +178,7 @@ export const actions: Actions = {
       }
       updates.isActive = isActive ? 1 : 0;
 
-      updateExpense(id, updates);
+      await updateExpense(id, updates);
       return { success: true, message: 'تم تحديث المصروف بنجاح' };
     } catch (error) {
       console.error('Update expense error:', error);
@@ -195,7 +195,7 @@ export const actions: Actions = {
     }
 
     try {
-      deleteExpense(id);
+      await deleteExpense(id);
       return { success: true, message: 'تم حذف المصروف بنجاح' };
     } catch (error) {
       console.error('Delete expense error:', error);

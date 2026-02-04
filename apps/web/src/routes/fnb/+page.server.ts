@@ -5,9 +5,10 @@ import { getMenuItems } from '$lib/server/services/playstation';
 
 export const load: PageServerLoad = async () => {
   try {
-    const sales = getTodayFnbSales();
-    const revenue = getTodayFnbRevenue();
-    const menuItems = getMenuItems().filter(item => item.isAvailable);
+    const sales = await getTodayFnbSales();
+    const revenue = await getTodayFnbRevenue();
+    const allMenuItems = await getMenuItems();
+    const menuItems = allMenuItems.filter(item => item.isAvailable);
 
     // Group sales by menu item for summary
     const salesByItem = new Map<number, { name: string; quantity: number; total: number }>();
@@ -61,7 +62,7 @@ export const actions: Actions = {
     }
 
     try {
-      recordFnbSale(menuItemId, quantity);
+      await recordFnbSale(menuItemId, quantity);
       return { success: true, message: 'تم تسجيل البيع بنجاح' };
     } catch (error) {
       console.error('Record sale error:', error);
@@ -78,7 +79,7 @@ export const actions: Actions = {
     }
 
     try {
-      deleteFnbSale(id);
+      await deleteFnbSale(id);
       return { success: true, message: 'تم حذف البيع بنجاح' };
     } catch (error) {
       console.error('Delete sale error:', error);

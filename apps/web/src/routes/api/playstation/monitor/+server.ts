@@ -288,7 +288,7 @@ export const POST: RequestHandler = async ({ request }) => {
       // Setup network: Add IP binding (bypass hotspot) + firewall rule (block internet)
       case 'setup_network': {
         try {
-          const client = getMikroTikClient();
+          const client = await getMikroTikClient();
           const comment = `Monitor ${targetIp}`;
 
           // Step 1: Add IP binding to bypass hotspot
@@ -340,7 +340,7 @@ export const POST: RequestHandler = async ({ request }) => {
       // Check network setup status
       case 'check_network': {
         try {
-          const client = getMikroTikClient();
+          const client = await getMikroTikClient();
 
           const bindings = await client.getIpBindings();
           const hasBinding = bindings.some(b => b.address === targetIp && b.type === 'bypassed');
@@ -367,7 +367,7 @@ export const POST: RequestHandler = async ({ request }) => {
       // Remove network setup (cleanup)
       case 'remove_network': {
         try {
-          const client = getMikroTikClient();
+          const client = await getMikroTikClient();
 
           // Remove IP binding
           const bindings = await client.getIpBindings();

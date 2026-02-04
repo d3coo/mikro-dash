@@ -12,14 +12,14 @@ import {
 import { getMikroTikClient, testRouterConnection } from '$lib/server/services/mikrotik';
 
 export const load: PageServerLoad = async () => {
-  const settings = getSettings();
-  const packages = getPackages();
+  const settings = await getSettings();
+  const packages = await getPackages();
 
   let profiles: { id: string; name: string; rateLimit?: string; sessionTimeout?: string; sharedUsers?: string; macCookieTimeout?: string }[] = [];
   let hotspotServers: { id: string; name: string }[] = [];
 
   try {
-    const client = getMikroTikClient();
+    const client = await getMikroTikClient();
     const mikrotikProfiles = await client.getHotspotUserProfiles();
     profiles = mikrotikProfiles.map(p => ({
       id: p['.id'],
@@ -47,7 +47,7 @@ export const actions: Actions = {
     const formData = await request.formData();
 
     try {
-      updateSettings({
+      await updateSettings({
         mikrotik: {
           host: formData.get('mikrotik_host') as string,
           user: formData.get('mikrotik_user') as string,
@@ -87,7 +87,7 @@ export const actions: Actions = {
     }
 
     try {
-      createPackage({ id, name, nameAr, priceLE, bytesLimit, profile, server, codePrefix: '', sortOrder });
+      await createPackage({ id, name, nameAr, priceLE, bytesLimit, profile, server, codePrefix: '', sortOrder });
       return { packageSuccess: true };
     } catch (error) {
       console.error('Create package error:', error);
@@ -112,7 +112,7 @@ export const actions: Actions = {
     }
 
     try {
-      updatePackage(id, { name, nameAr, priceLE, bytesLimit, profile, server, sortOrder });
+      await updatePackage(id, { name, nameAr, priceLE, bytesLimit, profile, server, sortOrder });
       return { packageSuccess: true };
     } catch (error) {
       console.error('Update package error:', error);
@@ -129,7 +129,7 @@ export const actions: Actions = {
     }
 
     try {
-      deletePackage(id);
+      await deletePackage(id);
       return { packageSuccess: true, deleted: true };
     } catch (error) {
       console.error('Delete package error:', error);
@@ -150,7 +150,7 @@ export const actions: Actions = {
     }
 
     try {
-      const client = getMikroTikClient();
+      const client = await getMikroTikClient();
       await client.createHotspotUserProfile(name, { rateLimit, sessionTimeout, sharedUsers });
       return { profileSuccess: true };
     } catch (error) {
@@ -173,7 +173,7 @@ export const actions: Actions = {
     }
 
     try {
-      const client = getMikroTikClient();
+      const client = await getMikroTikClient();
       await client.updateHotspotUserProfile(id, { name, rateLimit, sessionTimeout, sharedUsers, macCookieTimeout });
       return { profileSuccess: true };
     } catch (error) {
@@ -191,7 +191,7 @@ export const actions: Actions = {
     }
 
     try {
-      const client = getMikroTikClient();
+      const client = await getMikroTikClient();
       await client.deleteHotspotUserProfile(id);
       return { profileSuccess: true, deleted: true };
     } catch (error) {

@@ -91,11 +91,10 @@ function parseCreatedAt(comment: string): number | null {
 /**
  * Get expenses grouped by category
  */
-export function getExpensesByCategory(): Record<BusinessSegment, Expense[]> {
-  const allExpenses = db.select()
+export async function getExpensesByCategory(): Promise<Record<BusinessSegment, Expense[]>> {
+  const allExpenses = await db.select()
     .from(expenses)
-    .where(eq(expenses.isActive, 1))
-    .all();
+    .where(eq(expenses.isActive, 1));
 
   const result: Record<BusinessSegment, Expense[]> = {
     wifi: [],
@@ -119,17 +118,16 @@ export function getExpensesByCategory(): Record<BusinessSegment, Expense[]> {
 /**
  * Calculate total expenses for a category over a period
  */
-export function calculateCategoryExpenses(
+export async function calculateCategoryExpenses(
   category: BusinessSegment,
   daysInPeriod: number
-): number {
-  const categoryExpenses = db.select()
+): Promise<number> {
+  const categoryExpenses = await db.select()
     .from(expenses)
     .where(and(
       eq(expenses.isActive, 1),
       eq(expenses.category, category)
-    ))
-    .all();
+    ));
 
   let total = 0;
   for (const expense of categoryExpenses) {
@@ -151,17 +149,16 @@ export function calculateCategoryExpenses(
 /**
  * Get cost per GB for WiFi (in piasters)
  */
-function getWifiCostPerGbPiasters(): number {
-  const perGbExpense = db.select()
+async function getWifiCostPerGbPiasters(): Promise<number> {
+  const perGbExpenses = await db.select()
     .from(expenses)
     .where(and(
       eq(expenses.type, 'per_gb'),
       eq(expenses.isActive, 1),
       eq(expenses.category, 'wifi')
-    ))
-    .get();
+    ));
 
-  return perGbExpense?.amount || 0;
+  return perGbExpenses[0]?.amount || 0;
 }
 
 // ===== MAIN ANALYTICS FUNCTION =====
@@ -203,7 +200,7 @@ export async function getUnifiedAnalytics(
 
   // ===== WIFI SEGMENT =====
   const vouchers = await getVouchers();
-  const packages = getPackages();
+  const packages = await getPackages();
 
   // Filter vouchers: either created in this period OR sold (used/exhausted) without timestamp
   // For vouchers with created: timestamp, filter by date
@@ -231,19 +228,18 @@ export async function getUnifiedAnalytics(
   const wifiDataUsedGB = wifiDataUsedBytes / (1024 * 1024 * 1024);
 
   // WiFi expenses: per_gb cost based on data sold + fixed expenses
-  const costPerGbPiasters = getWifiCostPerGbPiasters();
+  const costPerGbPiasters = await getWifiCostPerGbPiasters();
   const wifiDataExpenses = Math.round(wifiDataSoldGB * costPerGbPiasters);
-  const wifiFixedExpenses = calculateCategoryExpenses('wifi', daysInPeriod);
+  const wifiFixedExpenses = await calculateCategoryExpenses('wifi', daysInPeriod);
   const wifiExpenses = wifiDataExpenses + wifiFixedExpenses;
 
   // ===== PLAYSTATION SEGMENT (Gaming Time Only) =====
-  const psStats = db.select()
+  const psStats = await db.select()
     .from(psDailyStats)
     .where(and(
       gte(psDailyStats.date, startDate),
       lte(psDailyStats.date, endDate)
-    ))
-    .all();
+    ));
 
   // Sum up PS stats from daily records
   let psGamingRevenue = 0;
@@ -258,7 +254,7 @@ export async function getUnifiedAnalytics(
 
   // For today, also include active sessions (gaming cost only, not orders)
   if (period === 'today' || endDate === getTodayDate()) {
-    const activeSessions = getActiveSessions();
+    const activeSessions = await getActiveSessions();
     for (const session of activeSessions) {
       const now = Date.now();
       psGamingRevenue += calculateSessionCost(session, now);
@@ -268,14 +264,13 @@ export async function getUnifiedAnalytics(
   }
 
   // Get PS orders revenue (F&B during sessions) - this will be moved to F&B segment
-  const psOrders = db.select()
+  const psOrders = await db.select()
     .from(psSessionOrders)
     .innerJoin(psSessions, eq(psSessionOrders.sessionId, psSessions.id))
     .where(and(
       gte(psSessions.startedAt, startMs),
       lte(psSessions.startedAt, endMs)
-    ))
-    .all();
+    ));
 
   const psOrdersRevenue = psOrders.reduce((sum, row) =>
     sum + (row.ps_session_orders.priceSnapshot * row.ps_session_orders.quantity), 0);
@@ -284,20 +279,20 @@ export async function getUnifiedAnalytics(
   // PS revenue is now GAMING ONLY (subtract any orders that were included in daily stats)
   // Daily stats totalRevenue may include orders, so we need to subtract them
   const psGamingOnlyRevenue = psGamingRevenue - psOrdersRevenue;
-  const psExpenses = calculateCategoryExpenses('playstation', daysInPeriod);
+  const psExpenses = await calculateCategoryExpenses('playstation', daysInPeriod);
 
   // ===== F&B SEGMENT (Combined: PS Orders + Standalone F&B) =====
-  const fnbSummary = getFnbSalesSummary(startMs, endMs);
+  const fnbSummary = await getFnbSalesSummary(startMs, endMs);
   const standaloneRevenue = fnbSummary.totalRevenue;
   const standaloneItemsSold = fnbSummary.totalItemsSold;
 
   // Combined F&B revenue = PS session orders + standalone F&B
   const fnbTotalRevenue = psOrdersRevenue + standaloneRevenue;
   const fnbTotalItemsSold = psOrdersItemCount + standaloneItemsSold;
-  const fnbExpenses = calculateCategoryExpenses('fnb', daysInPeriod);
+  const fnbExpenses = await calculateCategoryExpenses('fnb', daysInPeriod);
 
   // ===== GENERAL EXPENSES =====
-  const generalExpenses = calculateCategoryExpenses('general', daysInPeriod);
+  const generalExpenses = await calculateCategoryExpenses('general', daysInPeriod);
 
   // ===== CALCULATE TOTALS =====
   // Total revenue = WiFi + PS Gaming + F&B (which includes PS orders)
@@ -395,30 +390,29 @@ export async function aggregateUnifiedDailyStats(date: string): Promise<UnifiedD
   const wifiDataUsed = dayVouchers.reduce((sum, v) => sum + v.bytesTotal, 0);
 
   // PlayStation data from daily stats
-  const psStats = db.select()
+  const psStatsResults = await db.select()
     .from(psDailyStats)
-    .where(eq(psDailyStats.date, date))
-    .get();
+    .where(eq(psDailyStats.date, date));
+  const psStats = psStatsResults[0];
 
   const psGamingRevenue = psStats?.totalRevenue || 0;
   const psSessions_count = psStats?.totalSessions || 0;
   const psMinutes_count = psStats?.totalMinutes || 0;
 
   // PS orders for that day
-  const psOrders = db.select()
+  const psOrders = await db.select()
     .from(psSessionOrders)
     .innerJoin(psSessions, eq(psSessionOrders.sessionId, psSessions.id))
     .where(and(
       gte(psSessions.startedAt, startMs),
       lte(psSessions.startedAt, endMs)
-    ))
-    .all();
+    ));
 
   const psOrdersRevenue = psOrders.reduce((sum, row) =>
     sum + (row.ps_session_orders.priceSnapshot * row.ps_session_orders.quantity), 0);
 
   // F&B standalone sales
-  const fnbSummary = getFnbSalesSummary(startMs, endMs);
+  const fnbSummary = await getFnbSalesSummary(startMs, endMs);
 
   const now = Date.now();
   const statsData = {
@@ -438,39 +432,36 @@ export async function aggregateUnifiedDailyStats(date: string): Promise<UnifiedD
   };
 
   // Upsert
-  const existing = db.select()
+  const existingResults = await db.select()
     .from(unifiedDailyStats)
-    .where(eq(unifiedDailyStats.date, date))
-    .get();
+    .where(eq(unifiedDailyStats.date, date));
+  const existing = existingResults[0];
 
   if (existing) {
-    const result = db.update(unifiedDailyStats)
+    const result = await db.update(unifiedDailyStats)
       .set({ ...statsData, updatedAt: now })
       .where(eq(unifiedDailyStats.date, date))
-      .returning()
-      .get();
-    return result!;
+      .returning();
+    return result[0]!;
   } else {
-    const result = db.insert(unifiedDailyStats)
+    const result = await db.insert(unifiedDailyStats)
       .values(statsData)
-      .returning()
-      .get();
-    return result;
+      .returning();
+    return result[0];
   }
 }
 
 /**
  * Get historical unified daily stats for a date range
  */
-export function getUnifiedDailyStatsRange(startDate: string, endDate: string): UnifiedDailyStat[] {
-  return db.select()
+export async function getUnifiedDailyStatsRange(startDate: string, endDate: string): Promise<UnifiedDailyStat[]> {
+  return await db.select()
     .from(unifiedDailyStats)
     .where(and(
       gte(unifiedDailyStats.date, startDate),
       lte(unifiedDailyStats.date, endDate)
     ))
-    .orderBy(unifiedDailyStats.date)
-    .all();
+    .orderBy(unifiedDailyStats.date);
 }
 
 // ===== CHART DATA =====
@@ -514,21 +505,20 @@ export async function getRevenueBySegmentChart(days: number): Promise<UnifiedCha
       .reduce((sum, v) => sum + v.priceLE, 0) * 100;
 
     // PS revenue from daily stats (total includes orders)
-    const psStats = db.select()
+    const psStatsResults = await db.select()
       .from(psDailyStats)
-      .where(eq(psDailyStats.date, date))
-      .get();
+      .where(eq(psDailyStats.date, date));
+    const psStats = psStatsResults[0];
     const psTotalRevenue = psStats?.totalRevenue || 0;
 
     // Get PS orders for that day to subtract from PS total
-    const psOrders = db.select()
+    const psOrders = await db.select()
       .from(psSessionOrders)
       .innerJoin(psSessions, eq(psSessionOrders.sessionId, psSessions.id))
       .where(and(
         gte(psSessions.startedAt, dayStart),
         lte(psSessions.startedAt, dayEnd)
-      ))
-      .all();
+      ));
 
     const psOrdersRevenue = psOrders.reduce((sum, row) =>
       sum + (row.ps_session_orders.priceSnapshot * row.ps_session_orders.quantity), 0);
@@ -537,7 +527,7 @@ export async function getRevenueBySegmentChart(days: number): Promise<UnifiedCha
     const psGamingRevenue = psTotalRevenue - psOrdersRevenue;
 
     // Standalone F&B revenue
-    const fnbSummary = getFnbSalesSummary(dayStart, dayEnd);
+    const fnbSummary = await getFnbSalesSummary(dayStart, dayEnd);
     const standaloneRevenue = fnbSummary.totalRevenue;
 
     // Combined F&B = PS orders + standalone
@@ -564,7 +554,7 @@ export async function getRevenueBySegmentChart(days: number): Promise<UnifiedCha
  */
 export async function getProfitBySegmentChart(days: number): Promise<UnifiedChartPoint[]> {
   const revenueData = await getRevenueBySegmentChart(days);
-  const costPerGbPiasters = getWifiCostPerGbPiasters();
+  const costPerGbPiasters = await getWifiCostPerGbPiasters();
   const vouchers = await getVouchers();
   const today = getTodayDate();
 
@@ -617,8 +607,8 @@ export async function backfillUnifiedDailyStats(days: number = 90): Promise<{
   let processed = 0;
 
   // Get all unique dates from both tables
-  const wifiStats = db.select().from(dailyStats).all();
-  const psStatsList = db.select().from(psDailyStats).all();
+  const wifiStats = await db.select().from(dailyStats);
+  const psStatsList = await db.select().from(psDailyStats);
 
   const allDates = new Set<string>();
   for (const stat of wifiStats) {

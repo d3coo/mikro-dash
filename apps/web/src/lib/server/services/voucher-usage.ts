@@ -129,7 +129,7 @@ export async function getVoucherDeviceMap(): Promise<Map<string, { macAddress: s
  * Call this periodically or on page load to keep history updated
  */
 export async function syncActiveSessionsToHistory(): Promise<{ synced: number }> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
 
   const [activeSessions, dhcpLeases] = await Promise.all([
     client.getActiveSessions(),

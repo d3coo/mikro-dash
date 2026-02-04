@@ -35,7 +35,7 @@ export interface ActiveSession {
  * Get active sessions from router
  */
 export async function getActiveSessions(): Promise<ActiveSession[]> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
   const sessions = await client.getActiveSessions();
 
   return sessions.map(s => ({
@@ -57,7 +57,7 @@ export async function getDetailedSessions(): Promise<{
   profiles: string[];
   servers: string[];
 }> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
 
   // Fetch all data in parallel
   const [hotspotUsers, activeSessions, cookies, dhcpLeases, hotspotServers] = await Promise.all([
@@ -137,7 +137,7 @@ export async function getDetailedSessions(): Promise<{
  * Kick an active session
  */
 export async function kickSession(sessionId: string): Promise<void> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
   await client.kickSession(sessionId);
 }
 
@@ -145,6 +145,6 @@ export async function kickSession(sessionId: string): Promise<void> {
  * Delete a hotspot user
  */
 export async function deleteUser(userId: string): Promise<void> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
   await client.deleteHotspotUser(userId);
 }

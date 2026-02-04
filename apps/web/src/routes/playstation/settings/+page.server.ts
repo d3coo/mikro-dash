@@ -9,7 +9,7 @@ import {
 import { fail } from '@sveltejs/kit';
 
 export const load: PageServerLoad = async () => {
-  const stations = getStations();
+  const stations = await getStations();
   return { stations };
 };
 
@@ -34,7 +34,7 @@ export const actions: Actions = {
     }
 
     // Check for duplicate ID
-    const existing = getStationById(id);
+    const existing = await getStationById(id);
     if (existing) {
       return fail(400, { error: 'معرف الجهاز موجود بالفعل' });
     }
@@ -55,8 +55,8 @@ export const actions: Actions = {
 
     try {
       // Convert rate from EGP to piasters (multiply by 100)
-      const stations = getStations();
-      createStation({
+      const stations = await getStations();
+      await createStation({
         id,
         name,
         nameAr,
@@ -126,7 +126,7 @@ export const actions: Actions = {
       if (timerEndAction) updates.timerEndAction = timerEndAction;
       if (hdmiInput) updates.hdmiInput = hdmiInput;
 
-      updateStation(id, updates);
+      await updateStation(id, updates);
       return { success: true };
     } catch (error) {
       return fail(500, { error: error instanceof Error ? error.message : 'حدث خطأ' });
@@ -142,7 +142,7 @@ export const actions: Actions = {
     }
 
     try {
-      deleteStation(id);
+      await deleteStation(id);
       return { success: true };
     } catch (error) {
       return fail(500, { error: error instanceof Error ? error.message : 'حدث خطأ' });

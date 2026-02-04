@@ -11,7 +11,7 @@ export const GET: RequestHandler = async () => {
     let stats = { total: 0, available: 0, used: 0, exhausted: 0, revenue: 0 };
 
     try {
-      const client = getMikroTikClient();
+      const client = await getMikroTikClient();
       await client.getSystemResources();
       routerConnected = true;
 

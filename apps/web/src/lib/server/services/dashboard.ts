@@ -47,7 +47,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   let routerHealth: RouterHealth | null = null;
 
   try {
-    const client = getMikroTikClient();
+    const client = await getMikroTikClient();
     const resources = await client.getSystemResources();
     routerConnected = true;
 

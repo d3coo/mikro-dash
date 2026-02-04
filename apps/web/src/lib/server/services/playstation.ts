@@ -58,6 +58,11 @@ const stationOnlineStates = new Map<string, 'up' | 'down'>();
 const manualEndCooldown = new Map<string, number>();
 const MANUAL_END_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes cooldown after manual end
 
+// Cache for online status (updated by background sync, used by page loads)
+let cachedOnlineMap: Map<string, boolean> = new Map();
+let cachedOnlineMapTime = 0;
+const ONLINE_CACHE_TTL_MS = 10000; // Use cached data for 10 seconds
+
 /**
  * Get the last known online state of a station by MAC address
  */
@@ -123,7 +128,7 @@ export async function getStationById(id: string): Promise<PsStation | undefined>
   return results[0];
 }
 
-export function createStation(data: {
+export async function createStation(data: {
   id: string;
   name: string;
   nameAr: string;
@@ -136,7 +141,7 @@ export function createStation(data: {
   timerEndAction?: string | null;
   hdmiInput?: number | null;
   sortOrder?: number;
-}): PsStation {
+}): Promise<PsStation> {
   const now = Date.now();
   const station: NewPsStation = {
     id: data.id,
@@ -156,11 +161,12 @@ export function createStation(data: {
     updatedAt: now
   };
 
-  db.insert(psStations).values(station).run();
-  return getStationById(data.id)!;
+  await db.insert(psStations).values(station);
+  const result = await getStationById(data.id);
+  return result!;
 }
 
-export function updateStation(id: string, updates: Partial<{
+export async function updateStation(id: string, updates: Partial<{
   name: string;
   nameAr: string;
   macAddress: string;
@@ -173,8 +179,8 @@ export function updateStation(id: string, updates: Partial<{
   timerEndAction: string | null;
   hdmiInput: number | null;
   sortOrder: number;
-}>): void {
-  const station = getStationById(id);
+}>): Promise<void> {
+  const station = await getStationById(id);
   if (!station) throw new Error(`Station ${id} not found`);
 
   const updateData: Partial<PsStation> = { updatedAt: Date.now() };
@@ -191,32 +197,32 @@ export function updateStation(id: string, updates: Partial<{
   if (updates.hdmiInput !== undefined) updateData.hdmiInput = updates.hdmiInput;
   if (updates.sortOrder !== undefined) updateData.sortOrder = updates.sortOrder;
 
-  db.update(psStations).set(updateData).where(eq(psStations.id, id)).run();
+  await db.update(psStations).set(updateData).where(eq(psStations.id, id));
 }
 
-export function deleteStation(id: string): void {
+export async function deleteStation(id: string): Promise<void> {
   // End any active session first
-  const activeSession = getActiveSessionForStation(id);
+  const activeSession = await getActiveSessionForStation(id);
   if (activeSession) {
-    endSession(activeSession.id);
+    await endSession(activeSession.id);
   }
 
-  db.delete(psStations).where(eq(psStations.id, id)).run();
+  await db.delete(psStations).where(eq(psStations.id, id));
 }
 
 // ===== SESSION MANAGEMENT =====
 
-export function startSession(
+export async function startSession(
   stationId: string,
   startedBy: 'manual' | 'auto' = 'manual',
   timerMinutes?: number,
   costLimitPiasters?: number
-): PsSession {
-  const station = getStationById(stationId);
+): Promise<PsSession> {
+  const station = await getStationById(stationId);
   if (!station) throw new Error(`Station ${stationId} not found`);
 
   // Check if already has active session
-  const existing = getActiveSessionForStation(stationId);
+  const existing = await getActiveSessionForStation(stationId);
   if (existing) throw new Error(`Station ${stationId} already has an active session`);
 
   const now = Date.now();
@@ -239,52 +245,54 @@ export function startSession(
     createdAt: now
   };
 
-  const result = db.insert(psSessions).values(session).run();
-  const sessionId = result.lastInsertRowid as number;
+  const result = await db.insert(psSessions).values(session).returning({ id: psSessions.id });
+  const sessionId = result[0].id;
 
   // Create initial segment for the session
-  db.insert(psSessionSegments).values({
+  await db.insert(psSessionSegments).values({
     sessionId,
     mode: 'single',
     startedAt: now,
     endedAt: null,
     hourlyRateSnapshot: station.hourlyRate,
     createdAt: now
-  }).run();
+  });
 
   // Update station status
-  updateStation(stationId, { status: 'occupied' });
+  await updateStation(stationId, { status: 'occupied' });
 
   // Clear grace period if any
   gracePeriodTracker.delete(stationId);
 
-  return db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get()!;
+  const sessions = await db.select().from(psSessions).where(eq(psSessions.id, sessionId));
+  return sessions[0]!;
 }
 
-export function endSession(sessionId: number, notes?: string, customTotalCost?: number): PsSession {
-  const session = db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get();
+export async function endSession(sessionId: number, notes?: string, customTotalCost?: number): Promise<PsSession> {
+  const sessions = await db.select().from(psSessions).where(eq(psSessions.id, sessionId));
+  const session = sessions[0];
   if (!session) throw new Error(`Session ${sessionId} not found`);
   if (session.endedAt) throw new Error(`Session ${sessionId} already ended`);
 
   const now = Date.now();
 
   // End any active segment
-  const activeSegment = db.select()
+  const activeSegments = await db.select()
     .from(psSessionSegments)
     .where(and(
       eq(psSessionSegments.sessionId, sessionId),
       isNull(psSessionSegments.endedAt)
-    ))
-    .get();
+    ));
+  const activeSegment = activeSegments[0];
 
   if (activeSegment) {
-    db.update(psSessionSegments).set({
+    await db.update(psSessionSegments).set({
       endedAt: now
-    }).where(eq(psSessionSegments.id, activeSegment.id)).run();
+    }).where(eq(psSessionSegments.id, activeSegment.id));
   }
 
   // Calculate gaming cost using segments
-  const { total: calculatedGamingCost } = calculateSessionCostWithSegments(session, now);
+  const { total: calculatedGamingCost } = await calculateSessionCostWithSegments(session, now);
   const ordersCost = session.ordersCost || 0;
   const extraCharges = session.extraCharges || 0;
   const transferredCost = session.transferredCost || 0;
@@ -304,17 +312,17 @@ export function endSession(sessionId: number, notes?: string, customTotalCost?: 
     finalTotalCost = calculatedGamingCost + ordersCost + extraCharges + transferredCost;
   }
 
-  db.update(psSessions).set({
+  await db.update(psSessions).set({
     endedAt: now,
     totalCost: gamingCostToStore, // Gaming cost only (others tracked separately)
     notes: notes || session.notes
-  }).where(eq(psSessions.id, sessionId)).run();
+  }).where(eq(psSessions.id, sessionId));
 
   // Update station status
-  updateStation(session.stationId, { status: 'available' });
+  await updateStation(session.stationId, { status: 'available' });
 
   // Update daily stats with the final total cost
-  updateDailyStats(session.stationId, session.startedAt, now, finalTotalCost);
+  await updateDailyStats(session.stationId, session.startedAt, now, finalTotalCost);
 
   // Clear grace period
   gracePeriodTracker.delete(session.stationId);
@@ -325,7 +333,8 @@ export function endSession(sessionId: number, notes?: string, customTotalCost?: 
     setManualEndCooldown(session.stationId);
   }
 
-  return db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get()!;
+  const updatedSessions = await db.select().from(psSessions).where(eq(psSessions.id, sessionId));
+  return updatedSessions[0]!;
 }
 
 export function calculateSessionCost(session: PsSession, endTime?: number): number {
@@ -349,30 +358,29 @@ export function calculateSessionCost(session: PsSession, endTime?: number): numb
   return cost;
 }
 
-export function getActiveSessionForStation(stationId: string): PsSession | undefined {
-  return db.select()
+export async function getActiveSessionForStation(stationId: string): Promise<PsSession | undefined> {
+  const sessions = await db.select()
     .from(psSessions)
     .where(and(
       eq(psSessions.stationId, stationId),
       isNull(psSessions.endedAt)
-    ))
-    .get();
+    ));
+  return sessions[0];
 }
 
 /**
  * Get the most recently ended session for a station (for showing final cost)
  */
-export function getLastSessionForStation(stationId: string): PsSession | null {
-  const session = db.select()
+export async function getLastSessionForStation(stationId: string): Promise<PsSession | null> {
+  const sessions = await db.select()
     .from(psSessions)
     .where(and(
       eq(psSessions.stationId, stationId),
       sql`${psSessions.endedAt} IS NOT NULL`
     ))
     .orderBy(desc(psSessions.endedAt))
-    .limit(1)
-    .get();
-  return session || null;
+    .limit(1);
+  return sessions[0] || null;
 }
 
 export async function getActiveSessions(): Promise<PsSession[]> {
@@ -381,14 +389,12 @@ export async function getActiveSessions(): Promise<PsSession[]> {
     .where(isNull(psSessions.endedAt));
 }
 
-export function getSessionHistory(options?: {
+export async function getSessionHistory(options?: {
   stationId?: string;
   startDate?: number;
   endDate?: number;
   limit?: number;
-}): PsSession[] {
-  let query = db.select().from(psSessions);
-
+}): Promise<PsSession[]> {
   const conditions = [];
   if (options?.stationId) {
     conditions.push(eq(psSessions.stationId, options.stationId));
@@ -400,11 +406,12 @@ export function getSessionHistory(options?: {
     conditions.push(lte(psSessions.startedAt, options.endDate));
   }
 
+  let query = db.select().from(psSessions);
   if (conditions.length > 0) {
     query = query.where(and(...conditions)) as typeof query;
   }
 
-  const sessions = query.orderBy(desc(psSessions.startedAt)).all();
+  const sessions = await query.orderBy(desc(psSessions.startedAt));
 
   if (options?.limit) {
     return sessions.slice(0, options.limit);
@@ -427,37 +434,60 @@ export interface StationStatus {
 
 /**
  * Detect online stations by querying MikroTik wireless registration table
+ * Uses cache to avoid hitting router on every page load
  */
-export async function detectOnlineStations(): Promise<Map<string, boolean>> {
-  const client = getMikroTikClient();
-  const registrations = await client.getWirelessRegistrations();
+export async function detectOnlineStations(forceRefresh = false): Promise<Map<string, boolean>> {
+  const now = Date.now();
 
-  // Get all stations
-  const stations = getStations();
-
-  // Create MAC to online map
-  const onlineMap = new Map<string, boolean>();
-  const connectedMacs = new Set(
-    registrations.map(r => r['mac-address'].toUpperCase().replace(/-/g, ':'))
-  );
-
-  for (const station of stations) {
-    const normalizedMac = station.macAddress.toUpperCase().replace(/-/g, ':');
-    onlineMap.set(station.id, connectedMacs.has(normalizedMac));
+  // Return cached data if still fresh (unless force refresh)
+  if (!forceRefresh && cachedOnlineMapTime > 0 && (now - cachedOnlineMapTime) < ONLINE_CACHE_TTL_MS) {
+    return cachedOnlineMap;
   }
 
-  return onlineMap;
+  try {
+    const client = await getMikroTikClient();
+    const registrations = await client.getWirelessRegistrations();
+
+    // Get all stations
+    const stations = await getStations();
+
+    // Create MAC to online map
+    const onlineMap = new Map<string, boolean>();
+    const connectedMacs = new Set(
+      registrations.map(r => r['mac-address'].toUpperCase().replace(/-/g, ':'))
+    );
+
+    for (const station of stations) {
+      const normalizedMac = station.macAddress.toUpperCase().replace(/-/g, ':');
+      onlineMap.set(station.id, connectedMacs.has(normalizedMac));
+    }
+
+    // Update cache
+    cachedOnlineMap = onlineMap;
+    cachedOnlineMapTime = now;
+
+    return onlineMap;
+  } catch (e) {
+    // On error, return cached data if available, otherwise empty map
+    if (cachedOnlineMap.size > 0) {
+      console.warn('[PS] Router query failed, using cached online status');
+      return cachedOnlineMap;
+    }
+    throw e;
+  }
 }
 
 /**
  * Sync station status with router and auto-start/end sessions
+ * This is called by the background sync service every 5 seconds
  */
 export async function syncStationStatus(): Promise<{
   started: string[];
   ended: string[];
 }> {
-  const onlineMap = await detectOnlineStations();
-  const stations = getStations();
+  // Force refresh from router (this is the background sync)
+  const onlineMap = await detectOnlineStations(true);
+  const stations = await getStations();
   const now = Date.now();
 
   const started: string[] = [];
@@ -468,7 +498,7 @@ export async function syncStationStatus(): Promise<{
     if (station.status === 'maintenance') continue;
 
     const isOnline = onlineMap.get(station.id) ?? false;
-    const activeSession = getActiveSessionForStation(station.id);
+    const activeSession = await getActiveSessionForStation(station.id);
 
     const normalizedMac = station.macAddress.toUpperCase().replace(/-/g, ':');
     const previousState = stationOnlineStates.get(normalizedMac);
@@ -483,7 +513,7 @@ export async function syncStationStatus(): Promise<{
 
       // Resume paused session if exists
       if (activeSession && activeSession.pausedAt) {
-        resumeSession(activeSession.id);
+        await resumeSession(activeSession.id);
         console.log(`[Sync] Resumed paused session for ${station.id}`);
       }
 
@@ -494,7 +524,7 @@ export async function syncStationStatus(): Promise<{
           console.log(`[Sync] Station ${station.id} in cooldown - not auto-starting`);
         } else {
           try {
-            startSession(station.id, 'auto');
+            await startSession(station.id, 'auto');
             started.push(station.id);
             console.log(`[Sync] Auto-started session for ${station.id} - first connect`);
           } catch (e) {
@@ -509,7 +539,7 @@ export async function syncStationStatus(): Promise<{
 
       // Pause the session timer if PS goes offline
       if (activeSession && !activeSession.pausedAt) {
-        pauseSession(activeSession.id);
+        await pauseSession(activeSession.id);
         console.log(`[Sync] Paused session for ${station.id} - PS went offline`);
       }
     }
@@ -520,25 +550,48 @@ export async function syncStationStatus(): Promise<{
 
 /**
  * Get full station status with session info
+ * Optimized: batch queries instead of N+1
  */
 export async function getStationStatuses(): Promise<StationStatus[]> {
-  const stations = getStations();
-  let onlineMap: Map<string, boolean>;
-
-  try {
-    onlineMap = await detectOnlineStations();
-  } catch (e) {
-    console.error('Failed to detect online stations:', e);
-    onlineMap = new Map();
-  }
-
+  const stations = await getStations();
   const now = Date.now();
 
-  return stations.map(station => {
-    const activeSession = getActiveSessionForStation(station.id);
-    const lastSession = !activeSession ? getLastSessionForStation(station.id) : null;
-    const isOnline = onlineMap.get(station.id) ?? false;
-    const graceStart = gracePeriodTracker.get(station.id);
+  // Batch query: get ALL active sessions (no endedAt)
+  const allActiveSessions = await db.select()
+    .from(psSessions)
+    .where(isNull(psSessions.endedAt));
+
+  // Batch query: get recent sessions for stations without active sessions
+  // Get last 30 days of sessions ordered by startedAt desc
+  const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
+  const recentSessions = await db.select()
+    .from(psSessions)
+    .where(gte(psSessions.startedAt, thirtyDaysAgo))
+    .orderBy(desc(psSessions.startedAt));
+
+  // Create maps for quick lookup
+  const activeSessionMap = new Map<string, PsSession>();
+  for (const session of allActiveSessions) {
+    activeSessionMap.set(session.stationId, session);
+  }
+
+  const lastSessionMap = new Map<string, PsSession>();
+  for (const session of recentSessions) {
+    // Only store the first (most recent) completed session per station
+    if (session.endedAt && !lastSessionMap.has(session.stationId)) {
+      lastSessionMap.set(session.stationId, session);
+    }
+  }
+
+  const statuses: StationStatus[] = [];
+  for (const station of stations) {
+    const activeSession = activeSessionMap.get(station.id) || null;
+    const lastSession = !activeSession ? (lastSessionMap.get(station.id) || null) : null;
+
+    // Use the stored online state from webhook instead of polling router
+    const normalizedMac = station.macAddress.toUpperCase().replace(/-/g, ':');
+    const storedState = stationOnlineStates.get(normalizedMac);
+    const isOnline = storedState === 'up';
 
     let elapsedMinutes = 0;
     let currentCost = 0;
@@ -555,7 +608,7 @@ export async function getStationStatuses(): Promise<StationStatus[]> {
       currentCost = calculateSessionCost(activeSession, now);
     }
 
-    return {
+    statuses.push({
       station,
       isOnline,
       activeSession,
@@ -564,8 +617,10 @@ export async function getStationStatuses(): Promise<StationStatus[]> {
       currentCost,
       isOfflineWithSession: !isOnline && !!activeSession,  // RED card when offline but session running
       isPaused: !!activeSession?.pausedAt                   // Timer is paused
-    };
-  });
+    });
+  }
+
+  return statuses;
 }
 
 // ===== DAILY STATS =====
@@ -574,15 +629,16 @@ function getToday(): string {
   return new Date().toISOString().split('T')[0];
 }
 
-function updateDailyStats(stationId: string, startedAt: number, endedAt: number, cost: number): void {
+async function updateDailyStats(stationId: string, startedAt: number, endedAt: number, cost: number): Promise<void> {
   const date = new Date(endedAt).toISOString().split('T')[0];
   const durationMinutes = Math.floor((endedAt - startedAt) / (1000 * 60));
 
-  let stats = db.select().from(psDailyStats).where(eq(psDailyStats.date, date)).get();
+  const statsResults = await db.select().from(psDailyStats).where(eq(psDailyStats.date, date));
+  const stats = statsResults[0];
 
   if (!stats) {
     const now = Date.now();
-    db.insert(psDailyStats).values({
+    await db.insert(psDailyStats).values({
       date,
       totalSessions: 1,
       totalMinutes: durationMinutes,
@@ -590,18 +646,18 @@ function updateDailyStats(stationId: string, startedAt: number, endedAt: number,
       sessionsByStation: JSON.stringify({ [stationId]: 1 }),
       createdAt: now,
       updatedAt: now
-    }).run();
+    });
   } else {
     const sessionsByStation = JSON.parse(stats.sessionsByStation) as Record<string, number>;
     sessionsByStation[stationId] = (sessionsByStation[stationId] || 0) + 1;
 
-    db.update(psDailyStats).set({
+    await db.update(psDailyStats).set({
       totalSessions: stats.totalSessions + 1,
       totalMinutes: stats.totalMinutes + durationMinutes,
       totalRevenue: stats.totalRevenue + cost,
       sessionsByStation: JSON.stringify(sessionsByStation),
       updatedAt: Date.now()
-    }).where(eq(psDailyStats.id, stats.id)).run();
+    }).where(eq(psDailyStats.id, stats.id));
   }
 }
 
@@ -615,7 +671,7 @@ export interface PsAnalyticsSummary {
   dailyStats: PsDailyStat[];
 }
 
-export function getPsAnalytics(period: 'today' | 'week' | 'month'): PsAnalyticsSummary {
+export async function getPsAnalytics(period: 'today' | 'week' | 'month'): Promise<PsAnalyticsSummary> {
   const now = new Date();
   let startDate: string;
 
@@ -633,11 +689,10 @@ export function getPsAnalytics(period: 'today' | 'week' | 'month'): PsAnalyticsS
       break;
   }
 
-  const stats = db.select()
+  const stats = await db.select()
     .from(psDailyStats)
     .where(gte(psDailyStats.date, startDate))
-    .orderBy(desc(psDailyStats.date))
-    .all();
+    .orderBy(desc(psDailyStats.date));
 
   let totalSessions = 0;
   let totalMinutes = 0;
@@ -685,33 +740,33 @@ export async function getTodayPsRevenue(): Promise<number> {
 
 // ===== MENU ITEMS =====
 
-export function getMenuItems(): PsMenuItem[] {
-  return db.select().from(psMenuItems).orderBy(psMenuItems.sortOrder).all();
+export async function getMenuItems(): Promise<PsMenuItem[]> {
+  return await db.select().from(psMenuItems).orderBy(psMenuItems.sortOrder);
 }
 
-export function getMenuItemById(id: number): PsMenuItem | undefined {
-  return db.select().from(psMenuItems).where(eq(psMenuItems.id, id)).get();
+export async function getMenuItemById(id: number): Promise<PsMenuItem | undefined> {
+  const results = await db.select().from(psMenuItems).where(eq(psMenuItems.id, id));
+  return results[0];
 }
 
-export function getMenuItemsByCategory(category: string): PsMenuItem[] {
-  return db.select()
+export async function getMenuItemsByCategory(category: string): Promise<PsMenuItem[]> {
+  return await db.select()
     .from(psMenuItems)
     .where(eq(psMenuItems.category, category))
-    .orderBy(psMenuItems.sortOrder)
-    .all();
+    .orderBy(psMenuItems.sortOrder);
 }
 
-export function createMenuItem(data: {
+export async function createMenuItem(data: {
   name: string;
   nameAr: string;
   category: string;
   price: number;
   sortOrder?: number;
-}): PsMenuItem {
+}): Promise<PsMenuItem> {
   const now = Date.now();
-  const items = getMenuItems();
+  const items = await getMenuItems();
 
-  const result = db.insert(psMenuItems).values({
+  const result = await db.insert(psMenuItems).values({
     name: data.name,
     nameAr: data.nameAr,
     category: data.category,
@@ -720,20 +775,21 @@ export function createMenuItem(data: {
     sortOrder: data.sortOrder ?? items.length,
     createdAt: now,
     updatedAt: now
-  }).run();
+  }).returning({ id: psMenuItems.id });
 
-  return getMenuItemById(result.lastInsertRowid as number)!;
+  const menuItem = await getMenuItemById(result[0].id);
+  return menuItem!;
 }
 
-export function updateMenuItem(id: number, updates: Partial<{
+export async function updateMenuItem(id: number, updates: Partial<{
   name: string;
   nameAr: string;
   category: string;
   price: number;
   isAvailable: number;
   sortOrder: number;
-}>): void {
-  const item = getMenuItemById(id);
+}>): Promise<void> {
+  const item = await getMenuItemById(id);
   if (!item) throw new Error(`Menu item ${id} not found`);
 
   const updateData: Record<string, unknown> = { updatedAt: Date.now() };
@@ -744,11 +800,11 @@ export function updateMenuItem(id: number, updates: Partial<{
   if (updates.isAvailable !== undefined) updateData.isAvailable = updates.isAvailable;
   if (updates.sortOrder !== undefined) updateData.sortOrder = updates.sortOrder;
 
-  db.update(psMenuItems).set(updateData).where(eq(psMenuItems.id, id)).run();
+  await db.update(psMenuItems).set(updateData).where(eq(psMenuItems.id, id));
 }
 
-export function deleteMenuItem(id: number): void {
-  db.delete(psMenuItems).where(eq(psMenuItems.id, id)).run();
+export async function deleteMenuItem(id: number): Promise<void> {
+  await db.delete(psMenuItems).where(eq(psMenuItems.id, id));
 }
 
 // ===== SESSION ORDERS =====
@@ -757,92 +813,102 @@ export interface SessionOrderWithItem extends PsSessionOrder {
   menuItem: PsMenuItem | null;
 }
 
-export function getSessionOrders(sessionId: number): SessionOrderWithItem[] {
-  const orders = db.select()
+export async function getSessionOrders(sessionId: number): Promise<SessionOrderWithItem[]> {
+  const orders = await db.select()
     .from(psSessionOrders)
     .where(eq(psSessionOrders.sessionId, sessionId))
-    .orderBy(desc(psSessionOrders.createdAt))
-    .all();
+    .orderBy(desc(psSessionOrders.createdAt));
 
-  return orders.map(order => ({
-    ...order,
-    menuItem: getMenuItemById(order.menuItemId) || null
-  }));
+  const ordersWithItems: SessionOrderWithItem[] = [];
+  for (const order of orders) {
+    const menuItem = await getMenuItemById(order.menuItemId);
+    ordersWithItems.push({
+      ...order,
+      menuItem: menuItem || null
+    });
+  }
+
+  return ordersWithItems;
 }
 
-export function addOrderToSession(sessionId: number, menuItemId: number, quantity: number = 1): PsSessionOrder {
-  const session = db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get();
+export async function addOrderToSession(sessionId: number, menuItemId: number, quantity: number = 1): Promise<PsSessionOrder> {
+  const sessions = await db.select().from(psSessions).where(eq(psSessions.id, sessionId));
+  const session = sessions[0];
   if (!session) throw new Error(`Session ${sessionId} not found`);
   if (session.endedAt) throw new Error(`Session ${sessionId} already ended`);
 
-  const menuItem = getMenuItemById(menuItemId);
+  const menuItem = await getMenuItemById(menuItemId);
   if (!menuItem) throw new Error(`Menu item ${menuItemId} not found`);
   if (!menuItem.isAvailable) throw new Error(`Menu item ${menuItem.nameAr} is not available`);
 
   const orderCost = menuItem.price * quantity;
 
   // Check if this item already exists in the session's orders
-  const existingOrder = db.select()
+  const existingOrders = await db.select()
     .from(psSessionOrders)
     .where(and(
       eq(psSessionOrders.sessionId, sessionId),
       eq(psSessionOrders.menuItemId, menuItemId)
-    ))
-    .get();
+    ));
+  const existingOrder = existingOrders[0];
 
   if (existingOrder) {
     // Update existing order quantity
     const newQuantity = existingOrder.quantity + quantity;
-    db.update(psSessionOrders).set({
+    await db.update(psSessionOrders).set({
       quantity: newQuantity
-    }).where(eq(psSessionOrders.id, existingOrder.id)).run();
+    }).where(eq(psSessionOrders.id, existingOrder.id));
 
     // Update session's orders cost
     const currentOrdersCost = session.ordersCost || 0;
-    db.update(psSessions).set({
+    await db.update(psSessions).set({
       ordersCost: currentOrdersCost + orderCost
-    }).where(eq(psSessions.id, sessionId)).run();
+    }).where(eq(psSessions.id, sessionId));
 
-    return db.select().from(psSessionOrders).where(eq(psSessionOrders.id, existingOrder.id)).get()!;
+    const updated = await db.select().from(psSessionOrders).where(eq(psSessionOrders.id, existingOrder.id));
+    return updated[0]!;
   }
 
   // Insert new order
   const now = Date.now();
-  const result = db.insert(psSessionOrders).values({
+  const result = await db.insert(psSessionOrders).values({
     sessionId,
     menuItemId,
     quantity,
     priceSnapshot: menuItem.price,
     createdAt: now
-  }).run();
+  }).returning({ id: psSessionOrders.id });
 
   // Update session's orders cost
   const currentOrdersCost = session.ordersCost || 0;
-  db.update(psSessions).set({
+  await db.update(psSessions).set({
     ordersCost: currentOrdersCost + orderCost
-  }).where(eq(psSessions.id, sessionId)).run();
+  }).where(eq(psSessions.id, sessionId));
 
-  return db.select().from(psSessionOrders).where(eq(psSessionOrders.id, result.lastInsertRowid as number)).get()!;
+  const newOrder = await db.select().from(psSessionOrders).where(eq(psSessionOrders.id, result[0].id));
+  return newOrder[0]!;
 }
 
-export function removeOrderFromSession(orderId: number): void {
-  const order = db.select().from(psSessionOrders).where(eq(psSessionOrders.id, orderId)).get();
+export async function removeOrderFromSession(orderId: number): Promise<void> {
+  const orders = await db.select().from(psSessionOrders).where(eq(psSessionOrders.id, orderId));
+  const order = orders[0];
   if (!order) throw new Error(`Order ${orderId} not found`);
 
-  const session = db.select().from(psSessions).where(eq(psSessions.id, order.sessionId)).get();
+  const sessions = await db.select().from(psSessions).where(eq(psSessions.id, order.sessionId));
+  const session = sessions[0];
   if (!session) throw new Error(`Session not found`);
   if (session.endedAt) throw new Error(`Cannot modify ended session`);
 
   const orderCost = order.priceSnapshot * order.quantity;
 
   // Remove order
-  db.delete(psSessionOrders).where(eq(psSessionOrders.id, orderId)).run();
+  await db.delete(psSessionOrders).where(eq(psSessionOrders.id, orderId));
 
   // Update session's orders cost
   const currentOrdersCost = session.ordersCost || 0;
-  db.update(psSessions).set({
+  await db.update(psSessions).set({
     ordersCost: Math.max(0, currentOrdersCost - orderCost)
-  }).where(eq(psSessions.id, order.sessionId)).run();
+  }).where(eq(psSessions.id, order.sessionId));
 }
 
 // ===== TIMER ALERTS =====
@@ -856,8 +922,8 @@ export interface TimerAlert {
   isExpired: boolean;
 }
 
-export function getTimerAlerts(): TimerAlert[] {
-  const activeSessions = getActiveSessions();
+export async function getTimerAlerts(): Promise<TimerAlert[]> {
+  const activeSessions = await getActiveSessions();
   const alerts: TimerAlert[] = [];
   const now = Date.now();
 
@@ -867,7 +933,7 @@ export function getTimerAlerts(): TimerAlert[] {
       const isExpired = elapsedMinutes >= session.timerMinutes;
 
       if (isExpired) {
-        const station = getStationById(session.stationId);
+        const station = await getStationById(session.stationId);
         alerts.push({
           sessionId: session.id,
           stationId: session.stationId,
@@ -883,36 +949,38 @@ export function getTimerAlerts(): TimerAlert[] {
   return alerts;
 }
 
-export function markTimerNotified(sessionId: number): void {
-  db.update(psSessions).set({
+export async function markTimerNotified(sessionId: number): Promise<void> {
+  await db.update(psSessions).set({
     timerNotified: 1
-  }).where(eq(psSessions.id, sessionId)).run();
+  }).where(eq(psSessions.id, sessionId));
 }
 
-export function setSessionTimer(sessionId: number, timerMinutes: number | null): void {
-  const session = db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get();
+export async function setSessionTimer(sessionId: number, timerMinutes: number | null): Promise<void> {
+  const sessions = await db.select().from(psSessions).where(eq(psSessions.id, sessionId));
+  const session = sessions[0];
   if (!session) throw new Error(`Session ${sessionId} not found`);
   if (session.endedAt) throw new Error(`Session ${sessionId} already ended`);
 
-  db.update(psSessions).set({
+  await db.update(psSessions).set({
     timerMinutes,
     timerNotified: 0
-  }).where(eq(psSessions.id, sessionId)).run();
+  }).where(eq(psSessions.id, sessionId));
 }
 
 /**
  * Pause a session (when PS goes offline)
  * Sets pausedAt to current time if not already paused
  */
-export function pauseSession(sessionId: number): void {
-  const session = db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get();
+export async function pauseSession(sessionId: number): Promise<void> {
+  const sessions = await db.select().from(psSessions).where(eq(psSessions.id, sessionId));
+  const session = sessions[0];
   if (!session) return;
   if (session.endedAt) return; // Session already ended
   if (session.pausedAt) return; // Already paused
 
-  db.update(psSessions).set({
+  await db.update(psSessions).set({
     pausedAt: Date.now()
-  }).where(eq(psSessions.id, sessionId)).run();
+  }).where(eq(psSessions.id, sessionId));
 
   console.log(`[Session] Paused session ${sessionId} - PS went offline`);
 }
@@ -921,8 +989,9 @@ export function pauseSession(sessionId: number): void {
  * Resume a session (when PS comes back online)
  * Adds paused duration to totalPausedMs and clears pausedAt
  */
-export function resumeSession(sessionId: number): void {
-  const session = db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get();
+export async function resumeSession(sessionId: number): Promise<void> {
+  const sessions = await db.select().from(psSessions).where(eq(psSessions.id, sessionId));
+  const session = sessions[0];
   if (!session) return;
   if (session.endedAt) return; // Session already ended
   if (!session.pausedAt) return; // Not paused
@@ -930,10 +999,10 @@ export function resumeSession(sessionId: number): void {
   const pausedDuration = Date.now() - session.pausedAt;
   const newTotalPaused = (session.totalPausedMs || 0) + pausedDuration;
 
-  db.update(psSessions).set({
+  await db.update(psSessions).set({
     pausedAt: null,
     totalPausedMs: newTotalPaused
-  }).where(eq(psSessions.id, sessionId)).run();
+  }).where(eq(psSessions.id, sessionId));
 
   console.log(`[Session] Resumed session ${sessionId} - was paused for ${Math.round(pausedDuration / 1000)}s, total paused: ${Math.round(newTotalPaused / 1000)}s`);
 }
@@ -941,8 +1010,9 @@ export function resumeSession(sessionId: number): void {
 /**
  * Check if a session is currently paused
  */
-export function isSessionPaused(sessionId: number): boolean {
-  const session = db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get();
+export async function isSessionPaused(sessionId: number): Promise<boolean> {
+  const sessions = await db.select().from(psSessions).where(eq(psSessions.id, sessionId));
+  const session = sessions[0];
   return session?.pausedAt != null;
 }
 
@@ -956,29 +1026,35 @@ export interface StationEarnings {
   totalMinutes: number;
 }
 
-export function getStationEarnings(): StationEarnings[] {
-  const stations = getStations();
+export async function getStationEarnings(): Promise<StationEarnings[]> {
+  const stations = await getStations();
   const today = getToday();
-  const stats = db.select().from(psDailyStats).where(eq(psDailyStats.date, today)).get();
+  const statsResults = await db.select().from(psDailyStats).where(eq(psDailyStats.date, today));
+  const stats = statsResults[0];
 
   const sessionsByStation = stats
     ? JSON.parse(stats.sessionsByStation) as Record<string, number>
     : {};
 
-  // Get today's sessions for each station
+  // Batch query: Get ALL today's sessions in one query
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
-  return stations.map(station => {
-    // Get today's completed sessions for this station
-    const sessions = db.select()
-      .from(psSessions)
-      .where(and(
-        eq(psSessions.stationId, station.id),
-        gte(psSessions.startedAt, todayStart.getTime())
-      ))
-      .all();
+  const allTodaySessions = await db.select()
+    .from(psSessions)
+    .where(gte(psSessions.startedAt, todayStart.getTime()));
 
+  // Group sessions by station
+  const sessionsByStationId = new Map<string, PsSession[]>();
+  for (const session of allTodaySessions) {
+    const existing = sessionsByStationId.get(session.stationId) || [];
+    existing.push(session);
+    sessionsByStationId.set(session.stationId, existing);
+  }
+
+  const earnings: StationEarnings[] = [];
+  for (const station of stations) {
+    const sessions = sessionsByStationId.get(station.id) || [];
     let todayEarnings = 0;
     let totalMinutes = 0;
 
@@ -993,14 +1069,16 @@ export function getStationEarnings(): StationEarnings[] {
       }
     }
 
-    return {
+    earnings.push({
       stationId: station.id,
       stationName: station.nameAr,
       todayEarnings,
       totalSessions: sessionsByStation[station.id] || 0,
       totalMinutes
-    };
-  });
+    });
+  }
+
+  return earnings;
 }
 
 // ===== SWITCH STATION =====
@@ -1009,24 +1087,25 @@ export function getStationEarnings(): StationEarnings[] {
  * Switch/move an active session from one station to another
  * The session continues on the new station with the same start time, orders, etc.
  */
-export function switchStation(sessionId: number, newStationId: string): PsSession {
-  const session = db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get();
+export async function switchStation(sessionId: number, newStationId: string): Promise<PsSession> {
+  const sessions = await db.select().from(psSessions).where(eq(psSessions.id, sessionId));
+  const session = sessions[0];
   if (!session) throw new Error(`Session ${sessionId} not found`);
   if (session.endedAt) throw new Error(`Session ${sessionId} already ended`);
 
   const oldStationId = session.stationId;
   if (oldStationId === newStationId) throw new Error(`Session already on station ${newStationId}`);
 
-  const newStation = getStationById(newStationId);
+  const newStation = await getStationById(newStationId);
   if (!newStation) throw new Error(`Station ${newStationId} not found`);
   if (newStation.status === 'occupied') throw new Error(`Station ${newStationId} is already occupied`);
   if (newStation.status === 'maintenance') throw new Error(`Station ${newStationId} is in maintenance`);
 
   // Check if new station already has an active session
-  const existingSession = getActiveSessionForStation(newStationId);
+  const existingSession = await getActiveSessionForStation(newStationId);
   if (existingSession) throw new Error(`Station ${newStationId} already has an active session`);
 
-  const oldStation = getStationById(oldStationId);
+  const oldStation = await getStationById(oldStationId);
   const now = Date.now();
 
   // Update session to new station
@@ -1034,17 +1113,17 @@ export function switchStation(sessionId: number, newStationId: string): PsSessio
   const switchNote = `Switched from ${oldStationId} at ${new Date(now).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
   const newNotes = existingNotes ? `${existingNotes}\n${switchNote}` : switchNote;
 
-  db.update(psSessions).set({
+  await db.update(psSessions).set({
     stationId: newStationId
-  }).where(eq(psSessions.id, sessionId)).run();
+  }).where(eq(psSessions.id, sessionId));
 
   // Update old station status to available
   if (oldStation) {
-    updateStation(oldStationId, { status: 'available' });
+    await updateStation(oldStationId, { status: 'available' });
   }
 
   // Update new station status to occupied
-  updateStation(newStationId, { status: 'occupied' });
+  await updateStation(newStationId, { status: 'occupied' });
 
   // Clear any grace periods
   gracePeriodTracker.delete(oldStationId);
@@ -1052,7 +1131,8 @@ export function switchStation(sessionId: number, newStationId: string): PsSessio
 
   console.log(`[Session] Switched session ${sessionId} from ${oldStationId} to ${newStationId}`);
 
-  return db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get()!;
+  const updated = await db.select().from(psSessions).where(eq(psSessions.id, sessionId));
+  return updated[0]!;
 }
 
 // ===== SESSION CHARGES =====
@@ -1060,88 +1140,94 @@ export function switchStation(sessionId: number, newStationId: string): PsSessio
 /**
  * Add an extra charge to a session
  */
-export function addCharge(sessionId: number, amount: number, reason?: string): PsSessionCharge {
-  const session = db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get();
+export async function addCharge(sessionId: number, amount: number, reason?: string): Promise<PsSessionCharge> {
+  const sessions = await db.select().from(psSessions).where(eq(psSessions.id, sessionId));
+  const session = sessions[0];
   if (!session) throw new Error(`Session ${sessionId} not found`);
   if (session.endedAt) throw new Error(`Session ${sessionId} already ended`);
 
   const now = Date.now();
-  const result = db.insert(psSessionCharges).values({
+  const result = await db.insert(psSessionCharges).values({
     sessionId,
     amount,
     reason: reason || null,
     createdAt: now,
     updatedAt: now
-  }).run();
+  }).returning({ id: psSessionCharges.id });
 
   // Update session's extraCharges total
   const currentCharges = session.extraCharges || 0;
-  db.update(psSessions).set({
+  await db.update(psSessions).set({
     extraCharges: currentCharges + amount
-  }).where(eq(psSessions.id, sessionId)).run();
+  }).where(eq(psSessions.id, sessionId));
 
-  return db.select().from(psSessionCharges).where(eq(psSessionCharges.id, result.lastInsertRowid as number)).get()!;
+  const charges = await db.select().from(psSessionCharges).where(eq(psSessionCharges.id, result[0].id));
+  return charges[0]!;
 }
 
 /**
  * Update an existing charge
  */
-export function updateCharge(chargeId: number, amount: number, reason?: string): PsSessionCharge {
-  const charge = db.select().from(psSessionCharges).where(eq(psSessionCharges.id, chargeId)).get();
+export async function updateCharge(chargeId: number, amount: number, reason?: string): Promise<PsSessionCharge> {
+  const charges = await db.select().from(psSessionCharges).where(eq(psSessionCharges.id, chargeId));
+  const charge = charges[0];
   if (!charge) throw new Error(`Charge ${chargeId} not found`);
 
-  const session = db.select().from(psSessions).where(eq(psSessions.id, charge.sessionId)).get();
+  const sessions = await db.select().from(psSessions).where(eq(psSessions.id, charge.sessionId));
+  const session = sessions[0];
   if (!session) throw new Error(`Session not found`);
   if (session.endedAt) throw new Error(`Cannot modify charge on ended session`);
 
   const amountDiff = amount - charge.amount;
   const now = Date.now();
 
-  db.update(psSessionCharges).set({
+  await db.update(psSessionCharges).set({
     amount,
     reason: reason !== undefined ? (reason || null) : charge.reason,
     updatedAt: now
-  }).where(eq(psSessionCharges.id, chargeId)).run();
+  }).where(eq(psSessionCharges.id, chargeId));
 
   // Update session's extraCharges total
   const currentCharges = session.extraCharges || 0;
-  db.update(psSessions).set({
+  await db.update(psSessions).set({
     extraCharges: currentCharges + amountDiff
-  }).where(eq(psSessions.id, charge.sessionId)).run();
+  }).where(eq(psSessions.id, charge.sessionId));
 
-  return db.select().from(psSessionCharges).where(eq(psSessionCharges.id, chargeId)).get()!;
+  const updated = await db.select().from(psSessionCharges).where(eq(psSessionCharges.id, chargeId));
+  return updated[0]!;
 }
 
 /**
  * Delete a charge
  */
-export function deleteCharge(chargeId: number): void {
-  const charge = db.select().from(psSessionCharges).where(eq(psSessionCharges.id, chargeId)).get();
+export async function deleteCharge(chargeId: number): Promise<void> {
+  const charges = await db.select().from(psSessionCharges).where(eq(psSessionCharges.id, chargeId));
+  const charge = charges[0];
   if (!charge) throw new Error(`Charge ${chargeId} not found`);
 
-  const session = db.select().from(psSessions).where(eq(psSessions.id, charge.sessionId)).get();
+  const sessions = await db.select().from(psSessions).where(eq(psSessions.id, charge.sessionId));
+  const session = sessions[0];
   if (!session) throw new Error(`Session not found`);
   if (session.endedAt) throw new Error(`Cannot delete charge from ended session`);
 
   // Remove charge
-  db.delete(psSessionCharges).where(eq(psSessionCharges.id, chargeId)).run();
+  await db.delete(psSessionCharges).where(eq(psSessionCharges.id, chargeId));
 
   // Update session's extraCharges total
   const currentCharges = session.extraCharges || 0;
-  db.update(psSessions).set({
+  await db.update(psSessions).set({
     extraCharges: Math.max(0, currentCharges - charge.amount)
-  }).where(eq(psSessions.id, charge.sessionId)).run();
+  }).where(eq(psSessions.id, charge.sessionId));
 }
 
 /**
  * Get all charges for a session
  */
-export function getSessionCharges(sessionId: number): PsSessionCharge[] {
-  return db.select()
+export async function getSessionCharges(sessionId: number): Promise<PsSessionCharge[]> {
+  return await db.select()
     .from(psSessionCharges)
     .where(eq(psSessionCharges.sessionId, sessionId))
-    .orderBy(desc(psSessionCharges.createdAt))
-    .all();
+    .orderBy(desc(psSessionCharges.createdAt));
 }
 
 // ===== SESSION TRANSFERS =====
@@ -1149,17 +1235,19 @@ export function getSessionCharges(sessionId: number): PsSessionCharge[] {
 /**
  * Transfer a session's cost to another session and end the source session
  */
-export function transferSession(fromSessionId: number, toSessionId: number, includeOrders: boolean): PsSessionTransfer {
-  const fromSession = db.select().from(psSessions).where(eq(psSessions.id, fromSessionId)).get();
+export async function transferSession(fromSessionId: number, toSessionId: number, includeOrders: boolean): Promise<PsSessionTransfer> {
+  const fromSessions = await db.select().from(psSessions).where(eq(psSessions.id, fromSessionId));
+  const fromSession = fromSessions[0];
   if (!fromSession) throw new Error(`Source session ${fromSessionId} not found`);
   if (fromSession.endedAt) throw new Error(`Source session already ended`);
 
-  const toSession = db.select().from(psSessions).where(eq(psSessions.id, toSessionId)).get();
+  const toSessions = await db.select().from(psSessions).where(eq(psSessions.id, toSessionId));
+  const toSession = toSessions[0];
   if (!toSession) throw new Error(`Target session ${toSessionId} not found`);
   if (toSession.endedAt) throw new Error(`Target session already ended`);
   if (fromSessionId === toSessionId) throw new Error(`Cannot transfer to same session`);
 
-  const fromStation = getStationById(fromSession.stationId);
+  const fromStation = await getStationById(fromSession.stationId);
   if (!fromStation) throw new Error(`Station not found`);
 
   const now = Date.now();
@@ -1170,7 +1258,7 @@ export function transferSession(fromSessionId: number, toSessionId: number, incl
   const totalAmount = gamingAmount + ordersAmount + (fromSession.extraCharges || 0);
 
   // Create transfer record
-  const result = db.insert(psSessionTransfers).values({
+  const result = await db.insert(psSessionTransfers).values({
     fromSessionId,
     toSessionId,
     fromStationId: fromSession.stationId,
@@ -1178,40 +1266,40 @@ export function transferSession(fromSessionId: number, toSessionId: number, incl
     ordersAmount,
     totalAmount,
     createdAt: now
-  }).run();
+  }).returning({ id: psSessionTransfers.id });
 
   // Update target session's transferred cost
   const currentTransferred = toSession.transferredCost || 0;
-  db.update(psSessions).set({
+  await db.update(psSessions).set({
     transferredCost: currentTransferred + totalAmount
-  }).where(eq(psSessions.id, toSessionId)).run();
+  }).where(eq(psSessions.id, toSessionId));
 
   // End source session with 0 cost (or only the orders cost if not transferred)
   const remainingOrdersCost = includeOrders ? 0 : (fromSession.ordersCost || 0);
-  db.update(psSessions).set({
+  await db.update(psSessions).set({
     endedAt: now,
     totalCost: 0, // Gaming cost transferred
     notes: `Transferred to ${toSession.stationId}${includeOrders ? ' (with orders)' : ''}`
-  }).where(eq(psSessions.id, fromSessionId)).run();
+  }).where(eq(psSessions.id, fromSessionId));
 
   // Update source station status
-  updateStation(fromSession.stationId, { status: 'available' });
+  await updateStation(fromSession.stationId, { status: 'available' });
 
   // Clear grace period and set cooldown
   setManualEndCooldown(fromSession.stationId);
 
-  return db.select().from(psSessionTransfers).where(eq(psSessionTransfers.id, result.lastInsertRowid as number)).get()!;
+  const transfers = await db.select().from(psSessionTransfers).where(eq(psSessionTransfers.id, result[0].id));
+  return transfers[0]!;
 }
 
 /**
  * Get transfers TO a session (incoming transfers)
  */
-export function getSessionTransfers(sessionId: number): PsSessionTransfer[] {
-  return db.select()
+export async function getSessionTransfers(sessionId: number): Promise<PsSessionTransfer[]> {
+  return await db.select()
     .from(psSessionTransfers)
     .where(eq(psSessionTransfers.toSessionId, sessionId))
-    .orderBy(desc(psSessionTransfers.createdAt))
-    .all();
+    .orderBy(desc(psSessionTransfers.createdAt));
 }
 
 // ===== SESSION SEGMENTS (Single/Multi Player Mode) =====
@@ -1219,49 +1307,51 @@ export function getSessionTransfers(sessionId: number): PsSessionTransfer[] {
 /**
  * Create initial segment when session starts
  */
-export function createInitialSegment(sessionId: number, hourlyRate: number): PsSessionSegment {
+export async function createInitialSegment(sessionId: number, hourlyRate: number): Promise<PsSessionSegment> {
   const now = Date.now();
-  const result = db.insert(psSessionSegments).values({
+  const result = await db.insert(psSessionSegments).values({
     sessionId,
     mode: 'single',
     startedAt: now,
     endedAt: null,
     hourlyRateSnapshot: hourlyRate,
     createdAt: now
-  }).run();
+  }).returning({ id: psSessionSegments.id });
 
-  return db.select().from(psSessionSegments).where(eq(psSessionSegments.id, result.lastInsertRowid as number)).get()!;
+  const segments = await db.select().from(psSessionSegments).where(eq(psSessionSegments.id, result[0].id));
+  return segments[0]!;
 }
 
 /**
  * Switch session between single/multi player mode
  */
-export function switchMode(sessionId: number, newMode: 'single' | 'multi'): void {
-  const session = db.select().from(psSessions).where(eq(psSessions.id, sessionId)).get();
+export async function switchMode(sessionId: number, newMode: 'single' | 'multi'): Promise<void> {
+  const sessions = await db.select().from(psSessions).where(eq(psSessions.id, sessionId));
+  const session = sessions[0];
   if (!session) throw new Error(`Session ${sessionId} not found`);
   if (session.endedAt) throw new Error(`Session ${sessionId} already ended`);
 
   // Don't switch if already in that mode
   if (session.currentMode === newMode) return;
 
-  const station = getStationById(session.stationId);
+  const station = await getStationById(session.stationId);
   if (!station) throw new Error(`Station not found`);
 
   const now = Date.now();
 
   // End current segment
-  const currentSegment = db.select()
+  const currentSegments = await db.select()
     .from(psSessionSegments)
     .where(and(
       eq(psSessionSegments.sessionId, sessionId),
       isNull(psSessionSegments.endedAt)
-    ))
-    .get();
+    ));
+  const currentSegment = currentSegments[0];
 
   if (currentSegment) {
-    db.update(psSessionSegments).set({
+    await db.update(psSessionSegments).set({
       endedAt: now
-    }).where(eq(psSessionSegments.id, currentSegment.id)).run();
+    }).where(eq(psSessionSegments.id, currentSegment.id));
   }
 
   // Get the appropriate rate for the new mode
@@ -1270,19 +1360,19 @@ export function switchMode(sessionId: number, newMode: 'single' | 'multi'): void
     : station.hourlyRate;
 
   // Create new segment
-  db.insert(psSessionSegments).values({
+  await db.insert(psSessionSegments).values({
     sessionId,
     mode: newMode,
     startedAt: now,
     endedAt: null,
     hourlyRateSnapshot: newRate,
     createdAt: now
-  }).run();
+  });
 
   // Update session's current mode
-  db.update(psSessions).set({
+  await db.update(psSessions).set({
     currentMode: newMode
-  }).where(eq(psSessions.id, sessionId)).run();
+  }).where(eq(psSessions.id, sessionId));
 
   console.log(`[Session] Switched session ${sessionId} to ${newMode} mode (rate: ${newRate} piasters/hr)`);
 }
@@ -1290,21 +1380,20 @@ export function switchMode(sessionId: number, newMode: 'single' | 'multi'): void
 /**
  * Get all segments for a session
  */
-export function getSessionSegments(sessionId: number): PsSessionSegment[] {
-  return db.select()
+export async function getSessionSegments(sessionId: number): Promise<PsSessionSegment[]> {
+  return await db.select()
     .from(psSessionSegments)
     .where(eq(psSessionSegments.sessionId, sessionId))
-    .orderBy(psSessionSegments.startedAt)
-    .all();
+    .orderBy(psSessionSegments.startedAt);
 }
 
 /**
  * Calculate session cost using segments (if available) or simple calculation
  * This replaces/enhances the existing calculateSessionCost for segment-aware billing
  */
-export function calculateSessionCostWithSegments(session: PsSession, endTime?: number): { total: number; breakdown: Array<{ mode: string; minutes: number; cost: number }> } {
+export async function calculateSessionCostWithSegments(session: PsSession, endTime?: number): Promise<{ total: number; breakdown: Array<{ mode: string; minutes: number; cost: number }> }> {
   const end = endTime || session.endedAt || Date.now();
-  const segments = getSessionSegments(session.id);
+  const segments = await getSessionSegments(session.id);
 
   // If no segments, use simple calculation (backward compatibility)
   if (segments.length === 0) {

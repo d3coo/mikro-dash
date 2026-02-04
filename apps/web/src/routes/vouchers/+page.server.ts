@@ -21,10 +21,10 @@ export const load: PageServerLoad = async ({ url }) => {
   let allVouchers: Voucher[] = [];
   let routerConnected = false;
   let profiles: string[] = [];
-  const packages = getPackages();
+  const packages = await getPackages();
 
   try {
-    const client = getMikroTikClient();
+    const client = await getMikroTikClient();
     await client.getSystemResources(); // Test connection
     routerConnected = true;
 
@@ -38,7 +38,7 @@ export const load: PageServerLoad = async ({ url }) => {
   }
 
   // Get printed voucher codes
-  const printedCodes = getAllPrintedVoucherCodes();
+  const printedCodes = await getAllPrintedVoucherCodes();
 
   // Add print status to vouchers
   const vouchersWithPrint: VoucherWithPrint[] = allVouchers.map(v => ({
@@ -95,7 +95,7 @@ export const load: PageServerLoad = async ({ url }) => {
     v => v.status === 'available' && !v.isPrinted
   ).length;
 
-  const settings = getSettings();
+  const settings = await getSettings();
 
   return {
     vouchers: paginatedVouchers,
@@ -160,7 +160,7 @@ export const actions: Actions = {
         .map(v => ({ id: v.id, name: v.name }));
 
       // Remove print tracking for deleted vouchers
-      removePrintTracking(vouchersToDelete.map(v => v.name));
+      await removePrintTracking(vouchersToDelete.map(v => v.name));
 
       const result = await deleteVouchers(vouchersToDelete);
       return { success: true, deleted: result.deleted };
@@ -183,7 +183,7 @@ export const actions: Actions = {
       }
 
       // Remove print tracking for exhausted vouchers
-      removePrintTracking(exhaustedVouchers.map(v => v.name));
+      await removePrintTracking(exhaustedVouchers.map(v => v.name));
 
       const result = await deleteVouchers(exhaustedVouchers);
 

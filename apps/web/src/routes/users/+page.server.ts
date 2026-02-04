@@ -16,7 +16,7 @@ export const load: PageServerLoad = async ({ url }) => {
   let routerConnected = false;
 
   try {
-    const client = getMikroTikClient();
+    const client = await getMikroTikClient();
     await client.getSystemResources(); // Test connection
     routerConnected = true;
 
@@ -46,7 +46,7 @@ export const load: PageServerLoad = async ({ url }) => {
     wifiCurrentPage * PAGE_SIZE
   );
 
-  const settings = getSettings();
+  const settings = await getSettings();
 
   return {
     voucherUsers: paginatedVoucherUsers,

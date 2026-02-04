@@ -9,36 +9,36 @@ import { getPackages } from '$lib/server/config';
 /**
  * Get all expenses
  */
-export function getExpenses(): Expense[] {
-  return db.select().from(expenses).orderBy(expenses.type, expenses.name).all();
+export async function getExpenses(): Promise<Expense[]> {
+  return await db.select().from(expenses).orderBy(expenses.type, expenses.name);
 }
 
 /**
  * Get active expenses only
  */
-export function getActiveExpenses(): Expense[] {
-  return db.select().from(expenses).where(eq(expenses.isActive, 1)).all();
+export async function getActiveExpenses(): Promise<Expense[]> {
+  return await db.select().from(expenses).where(eq(expenses.isActive, 1));
 }
 
 /**
  * Get expenses filtered by category
  */
-export function getExpensesByCategory(category?: ExpenseCategory): Expense[] {
+export async function getExpensesByCategory(category?: ExpenseCategory): Promise<Expense[]> {
   if (category) {
-    return db.select()
+    return await db.select()
       .from(expenses)
       .where(eq(expenses.category, category))
-      .orderBy(expenses.type, expenses.name)
-      .all();
+      .orderBy(expenses.type, expenses.name);
   }
-  return getExpenses();
+  return await getExpenses();
 }
 
 /**
  * Get expense by ID
  */
-export function getExpenseById(id: number): Expense | undefined {
-  return db.select().from(expenses).where(eq(expenses.id, id)).get();
+export async function getExpenseById(id: number): Promise<Expense | undefined> {
+  const results = await db.select().from(expenses).where(eq(expenses.id, id));
+  return results[0];
 }
 
 export type ExpenseCategory = 'wifi' | 'playstation' | 'fnb' | 'general';
@@ -46,18 +46,18 @@ export type ExpenseCategory = 'wifi' | 'playstation' | 'fnb' | 'general';
 /**
  * Create new expense
  */
-export function createExpense(expense: {
+export async function createExpense(expense: {
   type: 'per_gb' | 'fixed_monthly';
   category?: ExpenseCategory;
   name: string;
   nameAr: string;
   amount: number;
-}): Expense {
+}): Promise<Expense> {
   const now = Date.now();
   // Default category based on type
   const category = expense.category || (expense.type === 'per_gb' ? 'wifi' : 'general');
 
-  const result = db.insert(expenses).values({
+  const results = await db.insert(expenses).values({
     type: expense.type,
     category,
     name: expense.name,
@@ -66,45 +66,44 @@ export function createExpense(expense: {
     isActive: 1,
     createdAt: now,
     updatedAt: now
-  }).returning().get();
-  return result;
+  }).returning();
+  return results[0];
 }
 
 /**
  * Update expense
  */
-export function updateExpense(id: number, updates: Partial<{
+export async function updateExpense(id: number, updates: Partial<{
   name: string;
   nameAr: string;
   amount: number;
   category: ExpenseCategory;
   isActive: number;
-}>): Expense | undefined {
+}>): Promise<Expense | undefined> {
   const now = Date.now();
-  const result = db.update(expenses)
+  const results = await db.update(expenses)
     .set({ ...updates, updatedAt: now })
     .where(eq(expenses.id, id))
-    .returning()
-    .get();
-  return result;
+    .returning();
+  return results[0];
 }
 
 /**
  * Delete expense
  */
-export function deleteExpense(id: number): void {
-  db.delete(expenses).where(eq(expenses.id, id)).run();
+export async function deleteExpense(id: number): Promise<void> {
+  await db.delete(expenses).where(eq(expenses.id, id));
 }
 
 /**
  * Get cost per GB (in EGP)
  * Returns the per_gb expense amount converted from piasters to EGP
  */
-export function getCostPerGb(): number {
-  const perGbExpense = db.select()
+export async function getCostPerGb(): Promise<number> {
+  const results = await db.select()
     .from(expenses)
-    .where(and(eq(expenses.type, 'per_gb'), eq(expenses.isActive, 1)))
-    .get();
+    .where(and(eq(expenses.type, 'per_gb'), eq(expenses.isActive, 1)));
+  const perGbExpense = results[0];
 
   // Amount is in piasters, convert to EGP
   return perGbExpense ? perGbExpense.amount / 100 : 0;
@@ -113,11 +112,10 @@ export function getCostPerGb(): number {
 /**
  * Get total monthly fixed costs (in EGP)
  */
-export function getMonthlyFixedCosts(): number {
-  const fixedExpenses = db.select()
+export async function getMonthlyFixedCosts(): Promise<number> {
+  const fixedExpenses = await db.select()
     .from(expenses)
-    .where(and(eq(expenses.type, 'fixed_monthly'), eq(expenses.isActive, 1)))
-    .all();
+    .where(and(eq(expenses.type, 'fixed_monthly'), eq(expenses.isActive, 1)));
 
   // Sum amounts (in piasters) and convert to EGP
   const totalPiasters = fixedExpenses.reduce((sum, e) => sum + e.amount, 0);
@@ -154,22 +152,22 @@ function parseCreatedAt(comment: string): number | null {
 /**
  * Get daily stats for a specific date
  */
-export function getDailyStats(date: string): DailyStat | undefined {
-  return db.select().from(dailyStats).where(eq(dailyStats.date, date)).get();
+export async function getDailyStats(date: string): Promise<DailyStat | undefined> {
+  const results = await db.select().from(dailyStats).where(eq(dailyStats.date, date));
+  return results[0];
 }
 
 /**
  * Get stats for a date range
  */
-export function getStatsRange(startDate: string, endDate: string): DailyStat[] {
-  return db.select()
+export async function getStatsRange(startDate: string, endDate: string): Promise<DailyStat[]> {
+  return await db.select()
     .from(dailyStats)
     .where(and(
       gte(dailyStats.date, startDate),
       lte(dailyStats.date, endDate)
     ))
-    .orderBy(dailyStats.date)
-    .all();
+    .orderBy(dailyStats.date);
 }
 
 /**
@@ -182,7 +180,7 @@ export async function aggregateTodayStats(): Promise<DailyStat> {
   const todayEnd = todayStart + 24 * 60 * 60 * 1000;
 
   const vouchers = await getVouchers();
-  const packages = getPackages();
+  const packages = await getPackages();
 
   // Find vouchers created today
   const todayVouchers = vouchers.filter(v => {
@@ -223,17 +221,16 @@ export async function aggregateTodayStats(): Promise<DailyStat> {
   };
 
   // Upsert: update if exists, insert if not
-  const existing = getDailyStats(today);
+  const existing = await getDailyStats(today);
   if (existing) {
-    const result = db.update(dailyStats)
+    const results = await db.update(dailyStats)
       .set({ ...statsData, updatedAt: now })
       .where(eq(dailyStats.date, today))
-      .returning()
-      .get();
-    return result!;
+      .returning();
+    return results[0]!;
   } else {
-    const result = db.insert(dailyStats).values(statsData).returning().get();
-    return result;
+    const results = await db.insert(dailyStats).values(statsData).returning();
+    return results[0];
   }
 }
 
@@ -281,8 +278,8 @@ async function calculateSummary(
   const dataUsedGB = dataUsedBytes / (1024 * 1024 * 1024);
 
   // Get costs
-  const costPerGb = getCostPerGb();
-  const monthlyFixedCosts = getMonthlyFixedCosts();
+  const costPerGb = await getCostPerGb();
+  const monthlyFixedCosts = await getMonthlyFixedCosts();
 
   // Calculate profit based on data SOLD (not data used)
   // This reflects the actual cost of the vouchers sold
@@ -395,8 +392,8 @@ export async function getRevenueChartData(days: number): Promise<ChartDataPoint[
  */
 export async function getProfitChartData(days: number): Promise<ChartDataPoint[]> {
   const vouchers = await getVouchers();
-  const costPerGb = getCostPerGb();
-  const monthlyFixed = getMonthlyFixedCosts();
+  const costPerGb = await getCostPerGb();
+  const monthlyFixed = await getMonthlyFixedCosts();
   const dailyFixed = monthlyFixed / 30;
   const data: ChartDataPoint[] = [];
 
@@ -430,7 +427,7 @@ export async function getProfitChartData(days: number): Promise<ChartDataPoint[]
  */
 export async function getSalesByPackageData(days: number): Promise<PackageSalesData[]> {
   const vouchers = await getVouchers();
-  const packages = getPackages();
+  const packages = await getPackages();
   const startDate = getDateDaysAgo(days - 1);
   const startMs = new Date(startDate).getTime();
 

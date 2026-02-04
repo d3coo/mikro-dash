@@ -5,47 +5,44 @@ import { eq, inArray } from 'drizzle-orm';
 /**
  * Mark vouchers as printed
  */
-export function markVouchersAsPrinted(voucherCodes: string[]): void {
+export async function markVouchersAsPrinted(voucherCodes: string[]): Promise<void> {
   if (voucherCodes.length === 0) return;
 
   const now = Date.now();
   for (const code of voucherCodes) {
-    db.insert(printedVouchers)
+    await db.insert(printedVouchers)
       .values({ voucherCode: code, printedAt: now })
       .onConflictDoUpdate({
         target: printedVouchers.voucherCode,
         set: { printedAt: now }
-      })
-      .run();
+      });
   }
 }
 
 /**
  * Check if a voucher has been printed
  */
-export function isVoucherPrinted(voucherCode: string): boolean {
-  const result = db
+export async function isVoucherPrinted(voucherCode: string): Promise<boolean> {
+  const results = await db
     .select()
     .from(printedVouchers)
-    .where(eq(printedVouchers.voucherCode, voucherCode))
-    .get();
-  return !!result;
+    .where(eq(printedVouchers.voucherCode, voucherCode));
+  return results.length > 0;
 }
 
 /**
  * Get print status for multiple vouchers
  * Returns a Map of voucherCode -> printedAt timestamp (or undefined if not printed)
  */
-export function getVouchersPrintStatus(voucherCodes: string[]): Map<string, number | undefined> {
+export async function getVouchersPrintStatus(voucherCodes: string[]): Promise<Map<string, number | undefined>> {
   const result = new Map<string, number | undefined>();
 
   if (voucherCodes.length === 0) return result;
 
-  const printed = db
+  const printed = await db
     .select()
     .from(printedVouchers)
-    .where(inArray(printedVouchers.voucherCode, voucherCodes))
-    .all();
+    .where(inArray(printedVouchers.voucherCode, voucherCodes));
 
   // Initialize all as not printed
   for (const code of voucherCodes) {
@@ -63,29 +60,28 @@ export function getVouchersPrintStatus(voucherCodes: string[]): Map<string, numb
 /**
  * Get all printed voucher codes
  */
-export function getAllPrintedVoucherCodes(): Set<string> {
-  const printed = db.select().from(printedVouchers).all();
+export async function getAllPrintedVoucherCodes(): Promise<Set<string>> {
+  const printed = await db.select().from(printedVouchers);
   return new Set(printed.map(p => p.voucherCode));
 }
 
 /**
  * Remove print tracking for deleted vouchers
  */
-export function removePrintTracking(voucherCodes: string[]): void {
+export async function removePrintTracking(voucherCodes: string[]): Promise<void> {
   if (voucherCodes.length === 0) return;
 
   for (const code of voucherCodes) {
-    db.delete(printedVouchers)
-      .where(eq(printedVouchers.voucherCode, code))
-      .run();
+    await db.delete(printedVouchers)
+      .where(eq(printedVouchers.voucherCode, code));
   }
 }
 
 /**
  * Get count of printed and unprinted vouchers
  */
-export function getPrintedCounts(allVoucherCodes: string[]): { printed: number; unprinted: number } {
-  const printedSet = getAllPrintedVoucherCodes();
+export async function getPrintedCounts(allVoucherCodes: string[]): Promise<{ printed: number; unprinted: number }> {
+  const printedSet = await getAllPrintedVoucherCodes();
   let printed = 0;
   let unprinted = 0;
 

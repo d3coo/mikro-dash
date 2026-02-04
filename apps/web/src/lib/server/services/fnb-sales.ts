@@ -14,31 +14,32 @@ export interface FnbSaleWithItem extends FnbSale {
 /**
  * Record a standalone F&B sale (not tied to PlayStation session)
  */
-export function recordFnbSale(menuItemId: number, quantity: number = 1): FnbSale {
-  const menuItem = db.select().from(psMenuItems).where(eq(psMenuItems.id, menuItemId)).get();
+export async function recordFnbSale(menuItemId: number, quantity: number = 1): Promise<FnbSale> {
+  const menuItemResults = await db.select().from(psMenuItems).where(eq(psMenuItems.id, menuItemId));
+  const menuItem = menuItemResults[0];
   if (!menuItem) throw new Error(`Menu item ${menuItemId} not found`);
   if (!menuItem.isAvailable) throw new Error(`Menu item ${menuItem.nameAr} is not available`);
 
   const now = Date.now();
-  const result = db.insert(fnbSales).values({
+  const result = await db.insert(fnbSales).values({
     menuItemId,
     quantity,
     priceSnapshot: menuItem.price,
     soldAt: now,
     createdAt: now
-  }).returning().get();
+  }).returning();
 
-  return result;
+  return result[0];
 }
 
 /**
  * Get F&B sales with optional date range filter
  */
-export function getFnbSales(options?: {
+export async function getFnbSales(options?: {
   startDate?: number;
   endDate?: number;
   limit?: number;
-}): FnbSaleWithItem[] {
+}): Promise<FnbSaleWithItem[]> {
   const conditions = [];
 
   if (options?.startDate) {
@@ -54,51 +55,59 @@ export function getFnbSales(options?: {
     query = query.where(and(...conditions)) as typeof query;
   }
 
-  const sales = query.orderBy(desc(fnbSales.soldAt)).all();
+  const sales = await query.orderBy(desc(fnbSales.soldAt));
 
   // Apply limit after fetching (drizzle quirk)
   const limitedSales = options?.limit ? sales.slice(0, options.limit) : sales;
 
   // Join with menu items
-  return limitedSales.map(sale => ({
-    ...sale,
-    menuItem: db.select().from(psMenuItems).where(eq(psMenuItems.id, sale.menuItemId)).get() || null
-  }));
+  const salesWithItems: FnbSaleWithItem[] = [];
+  for (const sale of limitedSales) {
+    const menuItemResults = await db.select().from(psMenuItems).where(eq(psMenuItems.id, sale.menuItemId));
+    salesWithItems.push({
+      ...sale,
+      menuItem: menuItemResults[0] || null
+    });
+  }
+
+  return salesWithItems;
 }
 
 /**
  * Get today's F&B sales
  */
-export function getTodayFnbSales(): FnbSaleWithItem[] {
+export async function getTodayFnbSales(): Promise<FnbSaleWithItem[]> {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
-  return getFnbSales({ startDate: todayStart.getTime() });
+  return await getFnbSales({ startDate: todayStart.getTime() });
 }
 
 /**
  * Get today's F&B revenue in piasters
  */
-export function getTodayFnbRevenue(): number {
-  const sales = getTodayFnbSales();
+export async function getTodayFnbRevenue(): Promise<number> {
+  const sales = await getTodayFnbSales();
   return sales.reduce((sum, sale) => sum + (sale.priceSnapshot * sale.quantity), 0);
 }
 
 /**
  * Delete a F&B sale (for correcting mistakes)
  */
-export function deleteFnbSale(id: number): void {
-  const sale = db.select().from(fnbSales).where(eq(fnbSales.id, id)).get();
+export async function deleteFnbSale(id: number): Promise<void> {
+  const saleResults = await db.select().from(fnbSales).where(eq(fnbSales.id, id));
+  const sale = saleResults[0];
   if (!sale) throw new Error(`F&B sale ${id} not found`);
 
-  db.delete(fnbSales).where(eq(fnbSales.id, id)).run();
+  await db.delete(fnbSales).where(eq(fnbSales.id, id));
 }
 
 /**
  * Get F&B sale by ID
  */
-export function getFnbSaleById(id: number): FnbSale | undefined {
-  return db.select().from(fnbSales).where(eq(fnbSales.id, id)).get();
+export async function getFnbSaleById(id: number): Promise<FnbSale | undefined> {
+  const results = await db.select().from(fnbSales).where(eq(fnbSales.id, id));
+  return results[0];
 }
 
 // ===== ANALYTICS =====
@@ -106,12 +115,12 @@ export function getFnbSaleById(id: number): FnbSale | undefined {
 /**
  * Get F&B sales summary for a date range
  */
-export function getFnbSalesSummary(startDate: number, endDate: number): {
+export async function getFnbSalesSummary(startDate: number, endDate: number): Promise<{
   totalRevenue: number;
   totalItemsSold: number;
   salesByCategory: Record<string, { count: number; revenue: number }>;
-} {
-  const sales = getFnbSales({ startDate, endDate });
+}> {
+  const sales = await getFnbSales({ startDate, endDate });
 
   let totalRevenue = 0;
   let totalItemsSold = 0;

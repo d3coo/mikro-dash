@@ -143,7 +143,7 @@ function transformToVoucher(
  * Get all vouchers from router
  */
 export async function getVouchers(): Promise<Voucher[]> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
   const [hotspotUsers, activeSessions, cookies, dhcpLeases] = await Promise.all([
     client.getHotspotUsers(),
     client.getActiveSessions(),
@@ -251,7 +251,7 @@ export async function createVouchers(packageId: string, quantity: number): Promi
     throw new Error(`Invalid package: ${packageId}`);
   }
 
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
   let created = 0;
 
   for (let i = 0; i < quantity; i++) {
@@ -277,7 +277,7 @@ export async function createVouchers(packageId: string, quantity: number): Promi
  * Delete voucher from MikroTik and its usage history
  */
 export async function deleteVoucher(id: string, voucherCode?: string): Promise<void> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
 
   // If we have the voucher code, delete its usage history
   if (voucherCode) {
@@ -291,7 +291,7 @@ export async function deleteVoucher(id: string, voucherCode?: string): Promise<v
  * Delete multiple vouchers and their usage history
  */
 export async function deleteVouchers(vouchers: Array<{ id: string; name: string }>): Promise<{ deleted: number }> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
   let deleted = 0;
 
   for (const voucher of vouchers) {
@@ -311,7 +311,7 @@ export async function deleteVouchers(vouchers: Array<{ id: string; name: string 
  * @param newLimitUptime - New total time limit (e.g., "3d", "4d", "72h")
  */
 export async function extendVoucherTime(id: string, newLimitUptime: string): Promise<void> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
   await client.updateHotspotUser(id, { limitUptime: newLimitUptime });
 }
 

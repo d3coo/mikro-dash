@@ -2,19 +2,43 @@ import { createClient, type Client } from '@libsql/client';
 import { drizzle, type LibSQLDatabase } from 'drizzle-orm/libsql';
 import * as schema from './schema';
 import { resolve } from 'path';
+import { existsSync } from 'fs';
 
 // Environment configuration
 const TURSO_DATABASE_URL = process.env.TURSO_DATABASE_URL;
 const TURSO_AUTH_TOKEN = process.env.TURSO_AUTH_TOKEN;
 const DATABASE_MODE = process.env.DATABASE_MODE || 'local';
 
-// Database path for local embedded replica
+// Database path for local database
 const dbPath = process.env.DATABASE_PATH || resolve(process.cwd(), 'data.db');
 
 console.log(`[DB] Database mode: ${DATABASE_MODE}`);
 console.log(`[DB] Local database path: ${dbPath}`);
-console.log(`[DB] Current working directory: ${process.cwd()}`);
-console.log(`[DB] NODE_ENV: ${process.env.NODE_ENV}`);
+
+// Check for Turso sync compatibility
+// Turso embedded replicas require metadata files alongside the db file
+// If db exists but metadata doesn't, sync will fail with a native error that can't be caught
+function canUseTursoSync(): boolean {
+  if (!TURSO_DATABASE_URL || !TURSO_AUTH_TOKEN) return false;
+
+  const dbExists = existsSync(dbPath);
+  if (!dbExists) return true; // Fresh start, sync will work
+
+  // Check for Turso metadata files (created when sync is initialized)
+  const metadataFiles = [
+    `${dbPath}-client_wal`,
+    `${dbPath}.turso`,
+  ];
+  const hasMetadata = metadataFiles.some(f => existsSync(f));
+
+  if (dbExists && !hasMetadata) {
+    console.warn('[DB] Local database exists without Turso sync metadata.');
+    console.warn('[DB] To enable sync: delete data.db and let it sync from cloud, or continue with local-only mode.');
+    return false;
+  }
+
+  return true;
+}
 
 // Create libsql client based on mode
 let client: Client;
@@ -30,18 +54,17 @@ if (DATABASE_MODE === 'remote') {
     authToken: TURSO_AUTH_TOKEN,
   });
 } else {
-  // Local mode: Embedded replica with sync to Turso cloud
-  if (TURSO_DATABASE_URL && TURSO_AUTH_TOKEN) {
+  // Local-first mode: All reads/writes go to local SQLite (instant)
+  if (canUseTursoSync()) {
     console.log('[DB] Creating embedded replica with Turso sync...');
     client = createClient({
       url: `file:${dbPath}`,
       authToken: TURSO_AUTH_TOKEN,
       syncUrl: TURSO_DATABASE_URL,
-      syncInterval: 1000, // Sync every 1 second (real-time)
+      syncInterval: 60000, // Sync every 60 seconds (background, non-blocking)
     });
   } else {
-    // Fallback: Local-only mode (no cloud sync)
-    console.log('[DB] Creating local-only database (no Turso sync)...');
+    console.log('[DB] Creating local-only database (no cloud sync)...');
     client = createClient({
       url: `file:${dbPath}`,
     });
@@ -399,16 +422,6 @@ export async function initializeDb() {
         sql: 'INSERT INTO expenses (type, name, name_ar, amount, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)',
         args: [expense.type, expense.name, expense.nameAr, expense.amount, now, now]
       });
-    }
-  }
-
-  // Sync with Turso cloud if in local mode with sync enabled
-  if (DATABASE_MODE === 'local' && TURSO_DATABASE_URL && TURSO_AUTH_TOKEN) {
-    try {
-      await client.sync();
-      console.log('[DB] Initial sync with Turso cloud completed');
-    } catch (err) {
-      console.warn('[DB] Initial sync failed (will retry automatically):', err);
     }
   }
 

@@ -25,14 +25,14 @@ let totalAutoEnds = 0;
 /**
  * Start the background sync service
  */
-export function startBackgroundSync(): void {
+export async function startBackgroundSync(): Promise<void> {
   if (isRunning) {
     console.log('[PS-Sync] Background sync already running');
     return;
   }
 
   // Check if there are any stations configured
-  const stations = getStations();
+  const stations = await getStations();
   if (stations.length === 0) {
     console.log('[PS-Sync] No stations configured, skipping background sync start');
     return;
@@ -159,7 +159,7 @@ export async function forceSync(): Promise<{ started: string[]; ended: string[] 
  * Check if the service should auto-start
  * Called during server initialization
  */
-export function shouldAutoStart(): boolean {
-  const stations = getStations();
+export async function shouldAutoStart(): Promise<boolean> {
+  const stations = await getStations();
   return stations.length > 0;
 }

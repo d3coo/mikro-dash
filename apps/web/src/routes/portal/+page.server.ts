@@ -39,7 +39,7 @@ export const load: PageServerLoad = async () => {
   let routerVersion = '';
 
   try {
-    const client = getMikroTikClient();
+    const client = await getMikroTikClient();
     const resources = await client.getSystemResources();
     routerConnected = true;
     routerVersion = resources.version;
@@ -134,7 +134,7 @@ export const load: PageServerLoad = async () => {
 export const actions: Actions = {
   backup: async () => {
     try {
-      const client = getMikroTikClient();
+      const client = await getMikroTikClient();
       const profiles = await client.getHotspotServerProfiles();
 
       if (profiles.length === 0) {
@@ -159,7 +159,7 @@ export const actions: Actions = {
 
   restore: async () => {
     try {
-      const client = getMikroTikClient();
+      const client = await getMikroTikClient();
       const profiles = await client.getHotspotServerProfiles();
 
       if (profiles.length === 0) {
@@ -177,7 +177,7 @@ export const actions: Actions = {
 
   upload: async () => {
     try {
-      const client = getMikroTikClient();
+      const client = await getMikroTikClient();
       const host = client.getHost();
       const creds = client.getCredentials();
 
@@ -224,7 +224,7 @@ ${HOTSPOT_FILES.map(f => `$ftp.UploadFile("ftp://${host}/hotspot/${f}", "${f}")`
     }
 
     try {
-      const client = getMikroTikClient();
+      const client = await getMikroTikClient();
       await client.updateHotspotServerProfile(profileId, directory);
 
       return { success: true, message: `تم تغيير المجلد إلى ${directory}` };
@@ -240,7 +240,7 @@ ${HOTSPOT_FILES.map(f => `$ftp.UploadFile("ftp://${host}/hotspot/${f}", "${f}")`
     const commonName = formData.get('commonName') as string || 'hotspot';
 
     try {
-      const client = getMikroTikClient();
+      const client = await getMikroTikClient();
       await client.createCertificate(name, commonName, 3650, 2048);
       await client.signCertificate(name);
 
@@ -262,7 +262,7 @@ ${HOTSPOT_FILES.map(f => `$ftp.UploadFile("ftp://${host}/hotspot/${f}", "${f}")`
     }
 
     try {
-      const client = getMikroTikClient();
+      const client = await getMikroTikClient();
       await client.updateHotspotProfileSSL(profileId, {
         sslCertificate: certificateName,
         loginBy: 'http-chap,https'
@@ -285,7 +285,7 @@ ${HOTSPOT_FILES.map(f => `$ftp.UploadFile("ftp://${host}/hotspot/${f}", "${f}")`
     }
 
     try {
-      const client = getMikroTikClient();
+      const client = await getMikroTikClient();
       await client.updateHotspotProfileSSL(profileId, {
         sslCertificate: '',
         loginBy: 'http-chap'
@@ -307,7 +307,7 @@ ${HOTSPOT_FILES.map(f => `$ftp.UploadFile("ftp://${host}/hotspot/${f}", "${f}")`
     }
 
     try {
-      const client = getMikroTikClient();
+      const client = await getMikroTikClient();
       await client.deleteCertificate(certId);
 
       return { success: true, message: 'تم حذف الشهادة' };

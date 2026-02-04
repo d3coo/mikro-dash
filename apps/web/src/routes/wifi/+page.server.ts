@@ -22,7 +22,7 @@ export const load: PageServerLoad = async () => {
   let routerConnected = false;
 
   try {
-    const client = getMikroTikClient();
+    const client = await getMikroTikClient();
     await client.getSystemResources();
     routerConnected = true;
 
