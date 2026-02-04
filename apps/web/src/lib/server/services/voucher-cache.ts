@@ -5,7 +5,7 @@
  * Reads are instant from SQLite, writes sync to router + cache.
  */
 
-import { db } from '$lib/server/db';
+import { db, syncAfterWrite } from '$lib/server/db';
 import { vouchersCache, sessionsCache } from '$lib/server/db/schema';
 import { eq, desc } from 'drizzle-orm';
 import type { Voucher } from './vouchers';
@@ -93,6 +93,7 @@ export async function syncVouchersToCache(vouchers: Voucher[]): Promise<void> {
   }
 
   console.log(`[VoucherCache] Synced ${vouchers.length} vouchers to cache`);
+  syncAfterWrite();
 }
 
 /**
@@ -129,6 +130,7 @@ export async function syncSessionsToCache(sessions: Array<{
   await db.insert(sessionsCache).values(cacheRows);
 
   console.log(`[VoucherCache] Synced ${sessions.length} sessions to cache`);
+  syncAfterWrite();
 }
 
 /**
@@ -250,6 +252,7 @@ export async function updateCachedVoucher(voucher: Voucher): Promise<void> {
       syncedAt: now,
     })
     .where(eq(vouchersCache.id, voucher.id));
+  syncAfterWrite();
 }
 
 /**
@@ -257,6 +260,7 @@ export async function updateCachedVoucher(voucher: Voucher): Promise<void> {
  */
 export async function removeCachedVoucher(id: string): Promise<void> {
   await db.delete(vouchersCache).where(eq(vouchersCache.id, id));
+  syncAfterWrite();
 }
 
 /**
@@ -266,6 +270,7 @@ export async function removeCachedVouchers(ids: string[]): Promise<void> {
   for (const id of ids) {
     await db.delete(vouchersCache).where(eq(vouchersCache.id, id));
   }
+  syncAfterWrite();
 }
 
 /**
@@ -300,6 +305,7 @@ export async function addVouchersToCache(vouchers: Voucher[]): Promise<void> {
     const batch = cacheRows.slice(i, i + batchSize);
     await db.insert(vouchersCache).values(batch);
   }
+  syncAfterWrite();
 }
 
 /**
@@ -309,4 +315,5 @@ export async function clearVoucherCache(): Promise<void> {
   await db.delete(vouchersCache);
   await db.delete(sessionsCache);
   console.log('[VoucherCache] Cache cleared');
+  syncAfterWrite();
 }

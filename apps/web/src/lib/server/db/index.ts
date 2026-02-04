@@ -64,7 +64,7 @@ if (DATABASE_MODE === 'remote' || isEdgeRuntime) {
       url: `file:${dbPath}`,
       authToken: TURSO_AUTH_TOKEN,
       syncUrl: TURSO_DATABASE_URL,
-      syncInterval: 60000, // Sync every 60 seconds (background, non-blocking)
+      // No automatic sync interval - we sync manually after writes for instant updates
     });
   } else {
     console.log('[DB] Creating local-only database (no cloud sync)...');
@@ -431,9 +431,12 @@ export async function initializeDb() {
   console.log('[DB] Database initialized successfully');
 }
 
+// Check if sync is available
+const canSync = DATABASE_MODE === 'local' && TURSO_DATABASE_URL && TURSO_AUTH_TOKEN && !isEdgeRuntime;
+
 // Manual sync function (for forcing immediate sync)
 export async function syncDatabase() {
-  if (DATABASE_MODE === 'local' && TURSO_DATABASE_URL && TURSO_AUTH_TOKEN && !isEdgeRuntime) {
+  if (canSync) {
     try {
       await client.sync();
       console.log('[DB] Manual sync completed');
@@ -441,6 +444,16 @@ export async function syncDatabase() {
       console.error('[DB] Manual sync failed:', err);
       throw err;
     }
+  }
+}
+
+// Instant sync after writes (non-blocking, fire and forget)
+// Call this after any write operation to sync changes to cloud immediately
+export function syncAfterWrite() {
+  if (canSync) {
+    client.sync().catch(err => {
+      console.error('[DB] Background sync failed:', err);
+    });
   }
 }
 

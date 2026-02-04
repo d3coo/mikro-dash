@@ -1,4 +1,4 @@
-import { db } from '$lib/server/db';
+import { db, syncAfterWrite } from '$lib/server/db';
 import { psStations, psSessions, psDailyStats, psMenuItems, psSessionOrders, psSessionCharges, psSessionTransfers, psSessionSegments } from '$lib/server/db/schema';
 import type { PsStation, NewPsStation, PsSession, NewPsSession, PsDailyStat, PsMenuItem, NewPsMenuItem, PsSessionOrder, NewPsSessionOrder, PsSessionCharge, NewPsSessionCharge, PsSessionTransfer, NewPsSessionTransfer, PsSessionSegment, NewPsSessionSegment } from '$lib/server/db/schema';
 import { eq, desc, and, isNull, gte, lte, sql } from 'drizzle-orm';
@@ -162,6 +162,7 @@ export async function createStation(data: {
   };
 
   await db.insert(psStations).values(station);
+  syncAfterWrite();
   const result = await getStationById(data.id);
   return result!;
 }
@@ -198,6 +199,7 @@ export async function updateStation(id: string, updates: Partial<{
   if (updates.sortOrder !== undefined) updateData.sortOrder = updates.sortOrder;
 
   await db.update(psStations).set(updateData).where(eq(psStations.id, id));
+  syncAfterWrite();
 }
 
 export async function deleteStation(id: string): Promise<void> {
@@ -208,6 +210,7 @@ export async function deleteStation(id: string): Promise<void> {
   }
 
   await db.delete(psStations).where(eq(psStations.id, id));
+  syncAfterWrite();
 }
 
 // ===== SESSION MANAGEMENT =====
@@ -264,6 +267,7 @@ export async function startSession(
   // Clear grace period if any
   gracePeriodTracker.delete(stationId);
 
+  syncAfterWrite();
   const sessions = await db.select().from(psSessions).where(eq(psSessions.id, sessionId));
   return sessions[0]!;
 }
@@ -333,6 +337,7 @@ export async function endSession(sessionId: number, notes?: string, customTotalC
     setManualEndCooldown(session.stationId);
   }
 
+  syncAfterWrite();
   const updatedSessions = await db.select().from(psSessions).where(eq(psSessions.id, sessionId));
   return updatedSessions[0]!;
 }

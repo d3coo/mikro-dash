@@ -1,4 +1,4 @@
-import { db } from '$lib/server/db';
+import { db, syncAfterWrite } from '$lib/server/db';
 import { printedVouchers } from '$lib/server/db/schema';
 import { eq, inArray } from 'drizzle-orm';
 
@@ -17,6 +17,7 @@ export async function markVouchersAsPrinted(voucherCodes: string[]): Promise<voi
         set: { printedAt: now }
       });
   }
+  syncAfterWrite();
 }
 
 /**
@@ -75,6 +76,7 @@ export async function removePrintTracking(voucherCodes: string[]): Promise<void>
     await db.delete(printedVouchers)
       .where(eq(printedVouchers.voucherCode, code));
   }
+  syncAfterWrite();
 }
 
 /**

@@ -1,4 +1,4 @@
-import { db } from '$lib/server/db';
+import { db, syncAfterWrite } from '$lib/server/db';
 import { settings, packages } from '$lib/server/db/schema';
 import { eq, asc } from 'drizzle-orm';
 import type { Package, NewPackage } from '$lib/server/db/schema';
@@ -33,6 +33,7 @@ export async function setSetting(key: string, value: string): Promise<void> {
     .insert(settings)
     .values({ key, value })
     .onConflictDoUpdate({ target: settings.key, set: { value } });
+  syncAfterWrite();
 }
 
 // Get all settings as structured object
@@ -110,6 +111,7 @@ export async function getPackageByCodePrefix(voucherName: string): Promise<Packa
 
 export async function createPackage(pkg: NewPackage): Promise<void> {
   await db.insert(packages).values(pkg);
+  syncAfterWrite();
 }
 
 export async function updatePackage(id: string, updates: Partial<Omit<Package, 'id'>>): Promise<void> {
@@ -125,8 +127,10 @@ export async function updatePackage(id: string, updates: Partial<Omit<Package, '
   if (updates.codePrefix !== undefined) setData.codePrefix = updates.codePrefix;
 
   await db.update(packages).set(setData).where(eq(packages.id, id));
+  syncAfterWrite();
 }
 
 export async function deletePackage(id: string): Promise<void> {
   await db.delete(packages).where(eq(packages.id, id));
+  syncAfterWrite();
 }

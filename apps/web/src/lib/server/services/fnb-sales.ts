@@ -1,4 +1,4 @@
-import { db } from '$lib/server/db';
+import { db, syncAfterWrite } from '$lib/server/db';
 import { fnbSales, psMenuItems } from '$lib/server/db/schema';
 import type { FnbSale, NewFnbSale, PsMenuItem } from '$lib/server/db/schema';
 import { eq, desc, and, gte, lte } from 'drizzle-orm';
@@ -29,6 +29,7 @@ export async function recordFnbSale(menuItemId: number, quantity: number = 1): P
     createdAt: now
   }).returning();
 
+  syncAfterWrite();
   return result[0];
 }
 
@@ -100,6 +101,7 @@ export async function deleteFnbSale(id: number): Promise<void> {
   if (!sale) throw new Error(`F&B sale ${id} not found`);
 
   await db.delete(fnbSales).where(eq(fnbSales.id, id));
+  syncAfterWrite();
 }
 
 /**
