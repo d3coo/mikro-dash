@@ -40,7 +40,7 @@ export interface DashboardData {
  * Get all dashboard data
  */
 export async function getDashboardData(): Promise<DashboardData> {
-  const settings = getSettings();
+  const settings = await getSettings();
   let routerConnected = false;
   let vouchers: Voucher[] = [];
   let activeSessions: ActiveSession[] = [];
@@ -87,9 +87,9 @@ export async function getDashboardData(): Promise<DashboardData> {
   };
 
   // PlayStation stats
-  const psStations = getStations();
-  const psActiveSessions = getPsActiveSessions();
-  const psTodayRevenue = getTodayPsRevenue(); // In piasters
+  const psStations = await getStations();
+  const psActiveSessions = await getPsActiveSessions();
+  const psTodayRevenue = await getTodayPsRevenue();
 
   return {
     stats: {

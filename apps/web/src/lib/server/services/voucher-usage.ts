@@ -17,40 +17,39 @@ export interface VoucherUsageRecord {
 /**
  * Record or update voucher usage when a device connects
  */
-export function recordVoucherUsage(
+export async function recordVoucherUsage(
   voucherCode: string,
   macAddress: string,
   deviceName?: string,
   ipAddress?: string,
   totalBytes?: number
-): void {
+): Promise<void> {
   const now = Date.now();
   const mac = macAddress.toUpperCase();
 
   // Check if record exists
-  const existing = db
+  const existingResults = await db
     .select()
     .from(voucherUsage)
     .where(and(
       eq(voucherUsage.voucherCode, voucherCode),
       eq(voucherUsage.macAddress, mac)
-    ))
-    .get();
+    ));
+  const existing = existingResults[0];
 
   if (existing) {
     // Update existing record
-    db.update(voucherUsage)
+    await db.update(voucherUsage)
       .set({
         lastConnectedAt: now,
         deviceName: deviceName || existing.deviceName,
         ipAddress: ipAddress || existing.ipAddress,
         totalBytes: totalBytes ?? existing.totalBytes
       })
-      .where(eq(voucherUsage.id, existing.id))
-      .run();
+      .where(eq(voucherUsage.id, existing.id));
   } else {
     // Create new record
-    db.insert(voucherUsage)
+    await db.insert(voucherUsage)
       .values({
         voucherCode,
         macAddress: mac,
@@ -59,41 +58,37 @@ export function recordVoucherUsage(
         firstConnectedAt: now,
         lastConnectedAt: now,
         totalBytes: totalBytes || 0
-      })
-      .run();
+      });
   }
 }
 
 /**
  * Get usage history for a specific voucher
  */
-export function getVoucherUsageHistory(voucherCode: string): VoucherUsageRecord[] {
-  return db
+export async function getVoucherUsageHistory(voucherCode: string): Promise<VoucherUsageRecord[]> {
+  return await db
     .select()
     .from(voucherUsage)
-    .where(eq(voucherUsage.voucherCode, voucherCode))
-    .all() as VoucherUsageRecord[];
+    .where(eq(voucherUsage.voucherCode, voucherCode)) as unknown as VoucherUsageRecord[];
 }
 
 /**
  * Delete usage history for a voucher (when voucher is deleted)
  */
-export function deleteVoucherUsageHistory(voucherCode: string): void {
-  db.delete(voucherUsage)
-    .where(eq(voucherUsage.voucherCode, voucherCode))
-    .run();
+export async function deleteVoucherUsageHistory(voucherCode: string): Promise<void> {
+  await db.delete(voucherUsage)
+    .where(eq(voucherUsage.voucherCode, voucherCode));
 }
 
 /**
  * Get the last device that used a voucher
  */
-export function getLastDeviceForVoucher(voucherCode: string): VoucherUsageRecord | undefined {
-  const records = db
+export async function getLastDeviceForVoucher(voucherCode: string): Promise<VoucherUsageRecord | undefined> {
+  const records = await db
     .select()
     .from(voucherUsage)
     .where(eq(voucherUsage.voucherCode, voucherCode))
-    .orderBy(voucherUsage.lastConnectedAt)
-    .all() as VoucherUsageRecord[];
+    .orderBy(voucherUsage.lastConnectedAt) as unknown as VoucherUsageRecord[];
 
   return records[records.length - 1];
 }
@@ -101,19 +96,18 @@ export function getLastDeviceForVoucher(voucherCode: string): VoucherUsageRecord
 /**
  * Get all usage records (for admin view)
  */
-export function getAllVoucherUsage(): VoucherUsageRecord[] {
-  return db
+export async function getAllVoucherUsage(): Promise<VoucherUsageRecord[]> {
+  return await db
     .select()
     .from(voucherUsage)
-    .orderBy(voucherUsage.lastConnectedAt)
-    .all() as VoucherUsageRecord[];
+    .orderBy(voucherUsage.lastConnectedAt) as unknown as VoucherUsageRecord[];
 }
 
 /**
  * Build a map of voucher code -> device info from stored history
  */
-export function getVoucherDeviceMap(): Map<string, { macAddress: string; deviceName: string | null }> {
-  const records = getAllVoucherUsage();
+export async function getVoucherDeviceMap(): Promise<Map<string, { macAddress: string; deviceName: string | null }>> {
+  const records = await getAllVoucherUsage();
   const map = new Map<string, { macAddress: string; deviceName: string | null }>();
 
   for (const record of records) {
@@ -162,7 +156,7 @@ export async function syncActiveSessionsToHistory(): Promise<{ synced: number }>
     const bytesIn = parseInt(session['bytes-in'] || '0', 10);
     const bytesOut = parseInt(session['bytes-out'] || '0', 10);
 
-    recordVoucherUsage(
+    await recordVoucherUsage(
       session.user,
       mac,
       deviceName,

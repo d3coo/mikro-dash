@@ -114,12 +114,13 @@ const GRACE_PERIOD_MS = 1 * 60 * 1000; // 1 minute grace period before auto-endi
 
 // ===== STATION CRUD =====
 
-export function getStations(): PsStation[] {
-  return db.select().from(psStations).orderBy(psStations.id).all();
+export async function getStations(): Promise<PsStation[]> {
+  return await db.select().from(psStations).orderBy(psStations.id);
 }
 
-export function getStationById(id: string): PsStation | undefined {
-  return db.select().from(psStations).where(eq(psStations.id, id)).get();
+export async function getStationById(id: string): Promise<PsStation | undefined> {
+  const results = await db.select().from(psStations).where(eq(psStations.id, id));
+  return results[0];
 }
 
 export function createStation(data: {
@@ -374,11 +375,10 @@ export function getLastSessionForStation(stationId: string): PsSession | null {
   return session || null;
 }
 
-export function getActiveSessions(): PsSession[] {
-  return db.select()
+export async function getActiveSessions(): Promise<PsSession[]> {
+  return await db.select()
     .from(psSessions)
-    .where(isNull(psSessions.endedAt))
-    .all();
+    .where(isNull(psSessions.endedAt));
 }
 
 export function getSessionHistory(options?: {
@@ -667,12 +667,13 @@ export function getPsAnalytics(period: 'today' | 'week' | 'month'): PsAnalyticsS
 /**
  * Get today's PlayStation revenue in piasters (for dashboard)
  */
-export function getTodayPsRevenue(): number {
+export async function getTodayPsRevenue(): Promise<number> {
   const today = getToday();
-  const stats = db.select().from(psDailyStats).where(eq(psDailyStats.date, today)).get();
+  const statsResult = await db.select().from(psDailyStats).where(eq(psDailyStats.date, today));
+  const stats = statsResult[0];
 
   // Also count active sessions' current cost
-  const activeSessions = getActiveSessions();
+  const activeSessions = await getActiveSessions();
   let activeRevenue = 0;
   for (const session of activeSessions) {
     activeRevenue += calculateSessionCost(session);

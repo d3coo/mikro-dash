@@ -150,7 +150,7 @@ export async function getVouchers(): Promise<Voucher[]> {
     client.getHotspotCookies(),
     client.getDhcpLeases()
   ]);
-  const packages = getPackages();
+  const packages = await getPackages();
 
   // Create set of active usernames for status detection
   const activeUsernames = new Set(activeSessions.map(s => s.user));
@@ -166,7 +166,7 @@ export async function getVouchers(): Promise<Voucher[]> {
   }
 
   // Get stored device history from database (permanent storage)
-  const storedDeviceMap = getVoucherDeviceMap();
+  const storedDeviceMap = await getVoucherDeviceMap();
 
   // Build voucher → device info map
   // Priority: active sessions > cookies > stored history
