@@ -2,6 +2,17 @@ import { getMikroTikClient } from './mikrotik';
 import { getPackages, getPackageById, type PackageConfig } from '$lib/server/config';
 import type { HotspotUser } from '$lib/server/mikrotik/types';
 import { getVoucherDeviceMap, recordVoucherUsage, deleteVoucherUsageHistory } from './voucher-usage';
+import {
+  syncVouchersToCache,
+  syncSessionsToCache,
+  getCachedVouchers,
+  getLastSyncTime,
+  isCacheStale,
+  removeCachedVoucher,
+  removeCachedVouchers,
+  addVouchersToCache,
+  type CachedVoucher
+} from './voucher-cache';
 
 // Characters for generating codes (uppercase + numbers, excluding confusing ones like 0/O, 1/I)
 const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -220,9 +231,100 @@ export async function getVouchers(): Promise<Voucher[]> {
     }
   }
 
-  return hotspotUsers
+  const vouchers = hotspotUsers
     .filter(u => !u.name.includes('default') && u.name !== 'admin')
     .map(u => transformToVoucher(u, packages, activeUsernames, deviceInfoMap));
+
+  // Sync to cache in background (non-blocking)
+  syncVouchersToCache(vouchers).catch(err => {
+    console.error('[Vouchers] Failed to sync to cache:', err);
+  });
+
+  // Also sync active sessions
+  syncSessionsToCache(activeSessions.map(s => ({
+    id: s['.id'],
+    user: s.user,
+    macAddress: s['mac-address'],
+    address: s.address,
+    bytesIn: parseInt(s['bytes-in'] || '0', 10),
+    bytesOut: parseInt(s['bytes-out'] || '0', 10),
+    uptime: s.uptime
+  }))).catch(err => {
+    console.error('[Vouchers] Failed to sync sessions to cache:', err);
+  });
+
+  return vouchers;
+}
+
+/**
+ * Get vouchers with cache fallback
+ * Returns fresh data from router if available, falls back to cache if router unreachable
+ */
+export interface VouchersWithMeta {
+  vouchers: Voucher[];
+  source: 'router' | 'cache';
+  syncedAt: string | null;
+  isStale: boolean;
+}
+
+export async function getVouchersWithFallback(): Promise<VouchersWithMeta> {
+  try {
+    // Try to get fresh data from router
+    const vouchers = await getVouchers();
+    const syncedAt = new Date().toISOString();
+
+    return {
+      vouchers,
+      source: 'router',
+      syncedAt,
+      isStale: false
+    };
+  } catch (error) {
+    console.warn('[Vouchers] Router unreachable, falling back to cache:', error);
+
+    // Fallback to cache
+    const cachedVouchers = await getCachedVouchers();
+    const syncedAt = await getLastSyncTime();
+    const stale = await isCacheStale(300); // 5 minutes for fallback mode
+
+    if (cachedVouchers && cachedVouchers.length > 0) {
+      // Transform cached vouchers to Voucher format
+      const packages = await getPackages();
+
+      const vouchers: Voucher[] = cachedVouchers.map(cv => {
+        const pkg = packages.find(p => p.id === cv.packageId);
+        return {
+          id: cv.id,
+          name: cv.code,
+          password: cv.password,
+          profile: cv.profile || '',
+          bytesIn: 0,
+          bytesOut: 0,
+          bytesTotal: cv.bytesUsed,
+          bytesLimit: cv.bytesLimit || 0,
+          uptime: cv.uptime || '0s',
+          status: cv.status,
+          comment: cv.comment || '',
+          packageId: cv.packageId || '',
+          packageName: pkg?.nameAr || '',
+          priceLE: pkg?.priceLE || 0,
+          macAddress: cv.macAddress || undefined,
+          deviceName: cv.deviceName || undefined,
+          isOnline: cv.isOnline
+        };
+      });
+
+      return {
+        vouchers,
+        source: 'cache',
+        syncedAt,
+        isStale: stale
+      };
+    }
+
+    // No cache available, throw the original error
+    throw error;
+  }
 }
 
 /**
@@ -285,6 +387,11 @@ export async function deleteVoucher(id: string, voucherCode?: string): Promise<v
   }
 
   await client.deleteHotspotUser(id);
+
+  // Remove from cache
+  removeCachedVoucher(id).catch(err => {
+    console.error('[Vouchers] Failed to remove from cache:', err);
+  });
 }
 
 /**
@@ -301,6 +408,11 @@ export async function deleteVouchers(vouchers: Array<{ id: string; name: string 
     await client.deleteHotspotUser(voucher.id);
     deleted++;
   }
+
+  // Remove from cache
+  removeCachedVouchers(vouchers.map(v => v.id)).catch(err => {
+    console.error('[Vouchers] Failed to remove batch from cache:', err);
+  });
 
   return { deleted };
 }

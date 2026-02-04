@@ -1,6 +1,6 @@
 import type { PageServerLoad, Actions } from './$types';
 import { fail } from '@sveltejs/kit';
-import { getVouchers, createVouchers, deleteVouchers, type Voucher } from '$lib/server/services/vouchers';
+import { getVouchers, getVouchersWithFallback, createVouchers, deleteVouchers, type Voucher } from '$lib/server/services/vouchers';
 import { getMikroTikClient } from '$lib/server/services/mikrotik';
 import { getPackages, getSettings } from '$lib/server/config';
 import { getAllPrintedVoucherCodes, removePrintTracking } from '$lib/server/services/print-tracking';
@@ -21,19 +21,24 @@ export const load: PageServerLoad = async ({ url }) => {
   let allVouchers: Voucher[] = [];
   let routerConnected = false;
   let profiles: string[] = [];
+  let dataSource: 'router' | 'cache' = 'router';
+  let lastSyncedAt: string | null = null;
+  let isStaleData = false;
   const packages = await getPackages();
 
   try {
-    const client = await getMikroTikClient();
-    await client.getSystemResources(); // Test connection
-    routerConnected = true;
-
-    allVouchers = await getVouchers();
+    // Use cache-aware function that falls back to cache if router unreachable
+    const result = await getVouchersWithFallback();
+    allVouchers = result.vouchers;
+    dataSource = result.source;
+    lastSyncedAt = result.syncedAt;
+    isStaleData = result.isStale;
+    routerConnected = result.source === 'router';
 
     // Get unique profiles from vouchers
     profiles = [...new Set(allVouchers.map(v => v.profile).filter(Boolean))];
   } catch (error) {
-    console.error('Failed to connect to router:', error);
+    console.error('Failed to get vouchers:', error);
     routerConnected = false;
   }
 
@@ -117,7 +122,11 @@ export const load: PageServerLoad = async ({ url }) => {
       pageSize: PAGE_SIZE,
       hasNext: currentPage < totalPages,
       hasPrev: currentPage > 1
-    }
+    },
+    // Cache metadata
+    dataSource,
+    lastSyncedAt,
+    isStaleData
   };
 };
 

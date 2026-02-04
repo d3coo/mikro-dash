@@ -269,8 +269,21 @@
     </div>
   </header>
 
-  <!-- Router Connection Status -->
-  {#if !data.routerConnected}
+  <!-- Data Source Status -->
+  {#if data.dataSource === 'cache'}
+    <div class="alert alert-warning opacity-0 animate-fade-in" style="animation-delay: 100ms">
+      <CloudOff class="w-5 h-5" />
+      <span>
+        وضع عدم الاتصال - البيانات من الذاكرة المؤقتة
+        {#if data.lastSyncedAt}
+          (آخر تحديث: {new Date(data.lastSyncedAt).toLocaleTimeString('ar-EG')})
+        {/if}
+        {#if data.isStaleData}
+          <strong class="text-danger-light">- البيانات قديمة</strong>
+        {/if}
+      </span>
+    </div>
+  {:else if !data.routerConnected}
     <div class="alert alert-danger opacity-0 animate-fade-in" style="animation-delay: 100ms">
       <CloudOff class="w-5 h-5" />
       <span>غير متصل بالراوتر - تعذر تحميل الكروت</span>
