@@ -219,7 +219,8 @@ export async function startSession(
   stationId: string,
   startedBy: 'manual' | 'auto' = 'manual',
   timerMinutes?: number,
-  costLimitPiasters?: number
+  costLimitPiasters?: number,
+  customStartTime?: number // Optional custom start time (timestamp in ms)
 ): Promise<PsSession> {
   const station = await getStationById(stationId);
   if (!station) throw new Error(`Station ${stationId} not found`);
@@ -229,9 +230,11 @@ export async function startSession(
   if (existing) throw new Error(`Station ${stationId} already has an active session`);
 
   const now = Date.now();
+  const startTime = customStartTime || now;
+
   const session: NewPsSession = {
     stationId,
-    startedAt: now,
+    startedAt: startTime,
     endedAt: null,
     hourlyRateSnapshot: station.hourlyRate,
     totalCost: null,
@@ -255,7 +258,7 @@ export async function startSession(
   await db.insert(psSessionSegments).values({
     sessionId,
     mode: 'single',
-    startedAt: now,
+    startedAt: startTime,
     endedAt: null,
     hourlyRateSnapshot: station.hourlyRate,
     createdAt: now
@@ -270,6 +273,38 @@ export async function startSession(
   syncAfterWrite();
   const sessions = await db.select().from(psSessions).where(eq(psSessions.id, sessionId));
   return sessions[0]!;
+}
+
+/**
+ * Update the start time of an existing session
+ * Useful for correcting session times retroactively
+ */
+export async function updateSessionStartTime(sessionId: number, newStartTime: number): Promise<PsSession> {
+  const sessions = await db.select().from(psSessions).where(eq(psSessions.id, sessionId));
+  const session = sessions[0];
+  if (!session) throw new Error(`Session ${sessionId} not found`);
+
+  // Update session start time
+  await db.update(psSessions).set({
+    startedAt: newStartTime,
+    updatedAt: Date.now()
+  }).where(eq(psSessions.id, sessionId));
+
+  // Also update the first segment's start time
+  const segments = await db.select()
+    .from(psSessionSegments)
+    .where(eq(psSessionSegments.sessionId, sessionId))
+    .orderBy(psSessionSegments.startedAt);
+
+  if (segments.length > 0) {
+    await db.update(psSessionSegments).set({
+      startedAt: newStartTime
+    }).where(eq(psSessionSegments.id, segments[0].id));
+  }
+
+  syncAfterWrite();
+  const updatedSessions = await db.select().from(psSessions).where(eq(psSessions.id, sessionId));
+  return updatedSessions[0]!;
 }
 
 export async function endSession(sessionId: number, notes?: string, customTotalCost?: number): Promise<PsSession> {

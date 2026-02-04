@@ -4,6 +4,7 @@ import {
   syncStationStatus,
   startSession,
   endSession,
+  updateSessionStartTime,
   getPsAnalytics,
   getStations,
   getStationById,
@@ -117,6 +118,7 @@ export const actions: Actions = {
     const stationId = formData.get('stationId') as string;
     const timerMinutes = formData.get('timerMinutes') as string;
     const costLimit = formData.get('costLimit') as string;
+    const customStartTime = formData.get('customStartTime') as string;
 
     if (!stationId) {
       return fail(400, { error: 'Station ID is required' });
@@ -125,7 +127,8 @@ export const actions: Actions = {
     try {
       const timer = timerMinutes ? parseInt(timerMinutes, 10) : undefined;
       const costLimitPiasters = costLimit ? parseInt(costLimit, 10) * 100 : undefined; // Convert EGP to piasters
-      await startSession(stationId, 'manual', timer, costLimitPiasters);
+      const startTime = customStartTime ? parseInt(customStartTime, 10) : undefined;
+      await startSession(stationId, 'manual', timer, costLimitPiasters, startTime);
 
       // Send notification to monitor (async, don't wait)
       const station = await getStationById(stationId);
@@ -137,6 +140,23 @@ export const actions: Actions = {
       return { success: true };
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : 'Failed to start session' });
+    }
+  },
+
+  updateStartTime: async ({ request }) => {
+    const formData = await request.formData();
+    const sessionId = formData.get('sessionId') as string;
+    const newStartTime = formData.get('newStartTime') as string;
+
+    if (!sessionId || !newStartTime) {
+      return fail(400, { error: 'Session ID and new start time are required' });
+    }
+
+    try {
+      await updateSessionStartTime(parseInt(sessionId, 10), parseInt(newStartTime, 10));
+      return { success: true };
+    } catch (error) {
+      return fail(400, { error: error instanceof Error ? error.message : 'Failed to update start time' });
     }
   },
 
