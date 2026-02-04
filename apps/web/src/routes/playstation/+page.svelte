@@ -3337,12 +3337,12 @@
     font-family: monospace;
     font-weight: 700;
     text-align: center;
-    padding: 16px 24px;
+    padding: 16px 32px;
     background: rgba(255, 255, 255, 0.05);
     border: 2px solid rgba(99, 102, 241, 0.4);
     border-radius: 12px;
     color: var(--color-text);
-    width: 180px;
+    width: 240px;
     transition: all 0.2s;
   }
 
