@@ -185,6 +185,38 @@ export const psSessionSegments = sqliteTable('ps_session_segments', {
   createdAt: integer('created_at').notNull()
 });
 
+// Voucher cache - mirrored from MikroTik router for offline viewing
+export const vouchersCache = sqliteTable('vouchers_cache', {
+  id: text('id').primaryKey(),                    // MikroTik .id
+  code: text('code').notNull(),                   // Voucher code
+  status: text('status').notNull(),               // 'available' | 'used' | 'exhausted'
+  packageId: text('package_id'),                  // Links to packages table
+  profile: text('profile'),                       // MikroTik profile name
+  bytesLimit: integer('bytes_limit'),             // Total allowed bytes
+  bytesUsed: integer('bytes_used').default(0),    // bytes_in + bytes_out
+  timeLimit: text('time_limit'),                  // e.g., '1d', '24h'
+  uptime: text('uptime'),                         // Time used so far
+  macAddress: text('mac_address'),                // Connected device MAC
+  deviceName: text('device_name'),                // From DHCP
+  isOnline: integer('is_online').default(0),      // 1 if in active sessions
+  createdAt: text('created_at'),                  // From router
+  lastSeenAt: text('last_seen_at'),               // Last activity
+  syncedAt: text('synced_at').notNull()           // When we last synced this row
+});
+
+// Sessions cache - mirrored from MikroTik router for offline viewing
+export const sessionsCache = sqliteTable('sessions_cache', {
+  id: text('id').primaryKey(),                    // MikroTik .id
+  voucherCode: text('voucher_code').notNull(),    // Links to vouchers_cache
+  macAddress: text('mac_address'),
+  ipAddress: text('ip_address'),
+  bytesIn: integer('bytes_in').default(0),
+  bytesOut: integer('bytes_out').default(0),
+  uptime: text('uptime'),
+  startedAt: text('started_at'),
+  syncedAt: text('synced_at').notNull()
+});
+
 // Unified daily stats - aggregated statistics across all business segments
 export const unifiedDailyStats = sqliteTable('unified_daily_stats', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -240,3 +272,7 @@ export type PsSessionTransfer = typeof psSessionTransfers.$inferSelect;
 export type NewPsSessionTransfer = typeof psSessionTransfers.$inferInsert;
 export type PsSessionSegment = typeof psSessionSegments.$inferSelect;
 export type NewPsSessionSegment = typeof psSessionSegments.$inferInsert;
+export type VoucherCache = typeof vouchersCache.$inferSelect;
+export type NewVoucherCache = typeof vouchersCache.$inferInsert;
+export type SessionCache = typeof sessionsCache.$inferSelect;
+export type NewSessionCache = typeof sessionsCache.$inferInsert;
