@@ -27,30 +27,15 @@ if (DATABASE_MODE === 'remote' || isEdgeRuntime) {
     authToken: TURSO_AUTH_TOKEN,
   });
 } else {
-  // Local-first mode: All reads/writes go to local SQLite (instant)
-  // Import Node.js modules only in local mode
+  // Local-first mode: All reads/writes go to local SQLite
   const { resolve } = await import('path');
 
   const dbPath = process.env.DATABASE_PATH || resolve(process.cwd(), 'data.db');
   console.log(`[DB] Local database path: ${dbPath}`);
-
-  // Enable Turso sync if credentials are provided
-  const hasTursoCredentials = TURSO_DATABASE_URL && TURSO_AUTH_TOKEN;
-
-  if (hasTursoCredentials) {
-    console.log('[DB] Creating embedded replica with Turso sync...');
-    client = createClient({
-      url: `file:${dbPath}`,
-      authToken: TURSO_AUTH_TOKEN,
-      syncUrl: TURSO_DATABASE_URL,
-      // No automatic sync interval - we sync manually after writes for instant updates
-    });
-  } else {
-    console.log('[DB] Creating local-only database (no cloud sync)...');
-    client = createClient({
-      url: `file:${dbPath}`,
-    });
-  }
+  console.log('[DB] Creating local SQLite database...');
+  client = createClient({
+    url: `file:${dbPath}`,
+  });
 }
 
 export const db: LibSQLDatabase<typeof schema> = drizzle(client, { schema });
@@ -408,42 +393,15 @@ export async function initializeDb() {
   }
 
   console.log('[DB] Database initialized successfully');
-
-  // Initial sync to pull remote changes (if sync is available)
-  if (DATABASE_MODE === 'local' && TURSO_DATABASE_URL && TURSO_AUTH_TOKEN && !isEdgeRuntime) {
-    try {
-      await client.sync();
-      console.log('[DB] Initial sync from cloud completed');
-    } catch (err) {
-      console.error('[DB] Initial sync failed (continuing with local data):', err);
-    }
-  }
 }
 
-// Check if sync is available
-const canSync = DATABASE_MODE === 'local' && TURSO_DATABASE_URL && TURSO_AUTH_TOKEN && !isEdgeRuntime;
-
-// Manual sync function (for forcing immediate sync)
+// Sync functions (no-op for local-only mode)
 export async function syncDatabase() {
-  if (canSync) {
-    try {
-      await client.sync();
-      console.log('[DB] Manual sync completed');
-    } catch (err) {
-      console.error('[DB] Manual sync failed:', err);
-      throw err;
-    }
-  }
+  // No-op: sync disabled
 }
 
-// Instant sync after writes (non-blocking, fire and forget)
-// Call this after any write operation to sync changes to cloud immediately
 export function syncAfterWrite() {
-  if (canSync) {
-    client.sync().catch(err => {
-      console.error('[DB] Background sync failed:', err);
-    });
-  }
+  // No-op: sync disabled
 }
 
 // Initialize on import (async)
