@@ -47,10 +47,14 @@ export async function getDashboardData(): Promise<DashboardData> {
   let activeSessions: ActiveSession[] = [];
   let routerHealth: RouterHealth | null = null;
 
-  // Get vouchers with cache fallback
-  const voucherResult = await getVouchersWithFallback();
-  vouchers = voucherResult.vouchers;
-  routerConnected = voucherResult.source === 'router';
+  // Get vouchers with cache fallback (never throws)
+  try {
+    const voucherResult = await getVouchersWithFallback();
+    vouchers = voucherResult.vouchers;
+    routerConnected = voucherResult.source === 'router';
+  } catch (error) {
+    console.error('Failed to get vouchers:', error);
+  }
 
   // Try to get router health and active sessions
   try {
@@ -77,18 +81,22 @@ export async function getDashboardData(): Promise<DashboardData> {
   } catch (error) {
     console.error('Failed to get router health/sessions:', error);
     // Fallback: use cached sessions if available
-    const cachedSessions = await getCachedSessions();
-    if (cachedSessions) {
-      activeSessions = cachedSessions.map(s => ({
-        id: s.id,
-        user: s.voucherCode,
-        address: s.ipAddress || '',
-        macAddress: s.macAddress || '',
-        bytesIn: s.bytesIn,
-        bytesOut: s.bytesOut,
-        uptime: s.uptime || '0s',
-        deviceName: undefined
-      }));
+    try {
+      const cachedSessions = await getCachedSessions();
+      if (cachedSessions) {
+        activeSessions = cachedSessions.map(s => ({
+          id: s.id,
+          user: s.voucherCode,
+          address: s.ipAddress || '',
+          macAddress: s.macAddress || '',
+          bytesIn: s.bytesIn,
+          bytesOut: s.bytesOut,
+          uptime: s.uptime || '0s',
+          deviceName: undefined
+        }));
+      }
+    } catch (cacheError) {
+      console.error('Failed to get cached sessions:', cacheError);
     }
   }
 
@@ -102,10 +110,21 @@ export async function getDashboardData(): Promise<DashboardData> {
       .reduce((sum, v) => sum + v.priceLE, 0)
   };
 
-  // PlayStation stats
-  const psStations = await getStations();
-  const psActiveSessions = await getPsActiveSessions();
-  const psTodayRevenue = await getTodayPsRevenue();
+  // PlayStation stats (from local DB, should always work)
+  let psStationsCount = 0;
+  let psActiveSessionsCount = 0;
+  let psTodayRevenueValue = 0;
+
+  try {
+    const psStations = await getStations();
+    const psActiveSessions = await getPsActiveSessions();
+    const psTodayRevenue = await getTodayPsRevenue();
+    psStationsCount = psStations.length;
+    psActiveSessionsCount = psActiveSessions.length;
+    psTodayRevenueValue = psTodayRevenue;
+  } catch (error) {
+    console.error('Failed to get PlayStation stats:', error);
+  }
 
   return {
     stats: {
@@ -118,9 +137,9 @@ export async function getDashboardData(): Promise<DashboardData> {
       routerConnected,
       routerHealth,
       // PlayStation stats
-      psStations: psStations.length,
-      psActiveSessions: psActiveSessions.length,
-      psTodayRevenue: Math.round(psTodayRevenue / 100) // Convert to EGP
+      psStations: psStationsCount,
+      psActiveSessions: psActiveSessionsCount,
+      psTodayRevenue: Math.round(psTodayRevenueValue / 100) // Convert to EGP
     },
     vouchers,
     activeSessions,

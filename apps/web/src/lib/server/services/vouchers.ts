@@ -283,47 +283,57 @@ export async function getVouchersWithFallback(): Promise<VouchersWithMeta> {
     console.warn('[Vouchers] Router unreachable, falling back to cache:', error);
 
     // Fallback to cache
-    const cachedVouchers = await getCachedVouchers();
-    const syncedAt = await getLastSyncTime();
-    const stale = await isCacheStale(300); // 5 minutes for fallback mode
+    try {
+      const cachedVouchers = await getCachedVouchers();
+      const syncedAt = await getLastSyncTime();
+      const stale = await isCacheStale(300); // 5 minutes for fallback mode
 
-    if (cachedVouchers && cachedVouchers.length > 0) {
-      // Transform cached vouchers to Voucher format
-      const packages = await getPackages();
+      if (cachedVouchers && cachedVouchers.length > 0) {
+        // Transform cached vouchers to Voucher format
+        const packages = await getPackages();
 
-      const vouchers: Voucher[] = cachedVouchers.map(cv => {
-        const pkg = packages.find(p => p.id === cv.packageId);
+        const vouchers: Voucher[] = cachedVouchers.map(cv => {
+          const pkg = packages.find(p => p.id === cv.packageId);
+          return {
+            id: cv.id,
+            name: cv.code,
+            password: cv.password,
+            profile: cv.profile || '',
+            bytesIn: 0,
+            bytesOut: 0,
+            bytesTotal: cv.bytesUsed,
+            bytesLimit: cv.bytesLimit || 0,
+            uptime: cv.uptime || '0s',
+            status: cv.status,
+            comment: cv.comment || '',
+            packageId: cv.packageId || '',
+            packageName: pkg?.nameAr || '',
+            priceLE: pkg?.priceLE || 0,
+            macAddress: cv.macAddress || undefined,
+            deviceName: cv.deviceName || undefined,
+            isOnline: cv.isOnline
+          };
+        });
+
         return {
-          id: cv.id,
-          name: cv.code,
-          password: cv.password,
-          profile: cv.profile || '',
-          bytesIn: 0,
-          bytesOut: 0,
-          bytesTotal: cv.bytesUsed,
-          bytesLimit: cv.bytesLimit || 0,
-          uptime: cv.uptime || '0s',
-          status: cv.status,
-          comment: cv.comment || '',
-          packageId: cv.packageId || '',
-          packageName: pkg?.nameAr || '',
-          priceLE: pkg?.priceLE || 0,
-          macAddress: cv.macAddress || undefined,
-          deviceName: cv.deviceName || undefined,
-          isOnline: cv.isOnline
+          vouchers,
+          source: 'cache',
+          syncedAt,
+          isStale: stale
         };
-      });
-
-      return {
-        vouchers,
-        source: 'cache',
-        syncedAt,
-        isStale: stale
-      };
+      }
+    } catch (cacheError) {
+      console.error('[Vouchers] Cache read failed:', cacheError);
     }
 
-    // No cache available, throw the original error
-    throw error;
+    // No cache available or cache failed - return empty with offline status
+    console.warn('[Vouchers] No cache available, returning empty');
+    return {
+      vouchers: [],
+      source: 'cache',
+      syncedAt: null,
+      isStale: true
+    };
   }
 }
 
