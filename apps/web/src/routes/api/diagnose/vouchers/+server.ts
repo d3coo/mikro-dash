@@ -7,7 +7,7 @@ import { getMikroTikClient } from '$lib/server/services/mikrotik';
  */
 export const GET: RequestHandler = async () => {
   try {
-    const client = getMikroTikClient();
+    const client = await getMikroTikClient();
 
     const [hotspotUsers, activeSessions, profiles] = await Promise.all([
       client.getHotspotUsers(),

@@ -13,7 +13,7 @@ export const POST: RequestHandler = async ({ request }) => {
   try {
     const body = await request.json();
     const action = body.action as string;
-    const client = getMikroTikClient();
+    const client = await getMikroTikClient();
 
     const results: {
       profilesFixed: string[];

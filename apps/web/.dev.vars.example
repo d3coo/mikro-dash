@@ -1,0 +1,11 @@
+# Copy this to .dev.vars for local Cloudflare development
+# These are used by wrangler pages dev
+
+# Turso Database (required for remote mode)
+TURSO_DATABASE_URL=libsql://your-database.turso.io
+TURSO_AUTH_TOKEN=your-auth-token
+
+# MikroTik Router (optional - only if accessible from cloud)
+MIKROTIK_HOST=192.168.1.109
+MIKROTIK_USER=admin
+MIKROTIK_PASS=your-password

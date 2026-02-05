@@ -17,7 +17,7 @@ export const POST: RequestHandler = async ({ request }) => {
       // Mark ALL existing vouchers as printed (regardless of status)
       const vouchers = await getVouchers();
       const allCodes = vouchers.map(v => v.name);
-      markVouchersAsPrinted(allCodes);
+      await markVouchersAsPrinted(allCodes);
       return json({ success: true, marked: allCodes.length });
     }
 
@@ -27,7 +27,7 @@ export const POST: RequestHandler = async ({ request }) => {
       const availableCodes = vouchers
         .filter(v => v.status === 'available')
         .map(v => v.name);
-      markVouchersAsPrinted(availableCodes);
+      await markVouchersAsPrinted(availableCodes);
       return json({ success: true, marked: availableCodes.length });
     }
 
@@ -35,7 +35,7 @@ export const POST: RequestHandler = async ({ request }) => {
       return json({ error: 'codes array is required' }, { status: 400 });
     }
 
-    markVouchersAsPrinted(codes);
+    await markVouchersAsPrinted(codes);
     return json({ success: true, marked: codes.length });
   } catch (error) {
     console.error('Mark printed error:', error);
@@ -49,7 +49,7 @@ export const POST: RequestHandler = async ({ request }) => {
  */
 export const GET: RequestHandler = async () => {
   try {
-    const printedCodes = getAllPrintedVoucherCodes();
+    const printedCodes = await getAllPrintedVoucherCodes();
     return json({ codes: Array.from(printedCodes) });
   } catch (error) {
     console.error('Get printed vouchers error:', error);

@@ -12,7 +12,7 @@ export const GET: RequestHandler = async ({ params }) => {
       return json({ error: 'Invalid expense ID' }, { status: 400 });
     }
 
-    const expense = getExpenseById(id);
+    const expense = await getExpenseById(id);
     if (!expense) {
       return json({ error: 'Expense not found' }, { status: 404 });
     }
@@ -41,7 +41,7 @@ export const PUT: RequestHandler = async ({ params, request }) => {
       return json({ error: 'Invalid expense ID' }, { status: 400 });
     }
 
-    const existing = getExpenseById(id);
+    const existing = await getExpenseById(id);
     if (!existing) {
       return json({ error: 'Expense not found' }, { status: 404 });
     }
@@ -62,7 +62,7 @@ export const PUT: RequestHandler = async ({ params, request }) => {
     if (body.category !== undefined) updates.category = body.category as ExpenseCategory;
     if (body.isActive !== undefined) updates.isActive = body.isActive ? 1 : 0;
 
-    const expense = updateExpense(id, updates);
+    const expense = await updateExpense(id, updates);
 
     return json({
       success: true,
@@ -87,12 +87,12 @@ export const DELETE: RequestHandler = async ({ params }) => {
       return json({ error: 'Invalid expense ID' }, { status: 400 });
     }
 
-    const existing = getExpenseById(id);
+    const existing = await getExpenseById(id);
     if (!existing) {
       return json({ error: 'Expense not found' }, { status: 404 });
     }
 
-    deleteExpense(id);
+    await deleteExpense(id);
 
     return json({
       success: true,

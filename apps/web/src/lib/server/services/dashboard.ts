@@ -1,8 +1,9 @@
 import { getMikroTikClient } from './mikrotik';
-import { getVouchers, getVoucherStats, type Voucher } from './vouchers';
+import { getVouchersWithFallback, type Voucher } from './vouchers';
 import { getActiveSessions, type ActiveSession } from './sessions';
 import { getSettings } from '$lib/server/config';
 import { getTodayPsRevenue, getStations, getActiveSessions as getPsActiveSessions } from './playstation';
+import { getCachedSessions } from './voucher-cache';
 
 export interface RouterHealth {
   cpuLoad: number;
@@ -40,16 +41,25 @@ export interface DashboardData {
  * Get all dashboard data
  */
 export async function getDashboardData(): Promise<DashboardData> {
-  const settings = getSettings();
+  const settings = await getSettings();
   let routerConnected = false;
   let vouchers: Voucher[] = [];
   let activeSessions: ActiveSession[] = [];
   let routerHealth: RouterHealth | null = null;
 
+  // Get vouchers with cache fallback (never throws)
   try {
-    const client = getMikroTikClient();
+    const voucherResult = await getVouchersWithFallback();
+    vouchers = voucherResult.vouchers;
+    routerConnected = voucherResult.source === 'router';
+  } catch (error) {
+    console.error('Failed to get vouchers:', error);
+  }
+
+  // Try to get router health and active sessions
+  try {
+    const client = await getMikroTikClient();
     const resources = await client.getSystemResources();
-    routerConnected = true;
 
     // Parse router health
     const freeMemory = parseInt(resources['free-memory']) || 0;
@@ -66,14 +76,28 @@ export async function getDashboardData(): Promise<DashboardData> {
       boardName: resources['board-name'] || 'MikroTik'
     };
 
-    // Fetch data in parallel
-    [vouchers, activeSessions] = await Promise.all([
-      getVouchers(),
-      getActiveSessions()
-    ]);
+    // Get active sessions from router
+    activeSessions = await getActiveSessions();
   } catch (error) {
-    console.error('Failed to connect to router:', error);
-    routerConnected = false;
+    console.error('Failed to get router health/sessions:', error);
+    // Fallback: use cached sessions if available
+    try {
+      const cachedSessions = await getCachedSessions();
+      if (cachedSessions) {
+        activeSessions = cachedSessions.map(s => ({
+          id: s.id,
+          user: s.voucherCode,
+          address: s.ipAddress || '',
+          macAddress: s.macAddress || '',
+          bytesIn: s.bytesIn,
+          bytesOut: s.bytesOut,
+          uptime: s.uptime || '0s',
+          deviceName: undefined
+        }));
+      }
+    } catch (cacheError) {
+      console.error('Failed to get cached sessions:', cacheError);
+    }
   }
 
   // Calculate stats
@@ -86,10 +110,21 @@ export async function getDashboardData(): Promise<DashboardData> {
       .reduce((sum, v) => sum + v.priceLE, 0)
   };
 
-  // PlayStation stats
-  const psStations = getStations();
-  const psActiveSessions = getPsActiveSessions();
-  const psTodayRevenue = getTodayPsRevenue(); // In piasters
+  // PlayStation stats (from local DB, should always work)
+  let psStationsCount = 0;
+  let psActiveSessionsCount = 0;
+  let psTodayRevenueValue = 0;
+
+  try {
+    const psStations = await getStations();
+    const psActiveSessions = await getPsActiveSessions();
+    const psTodayRevenue = await getTodayPsRevenue();
+    psStationsCount = psStations.length;
+    psActiveSessionsCount = psActiveSessions.length;
+    psTodayRevenueValue = psTodayRevenue;
+  } catch (error) {
+    console.error('Failed to get PlayStation stats:', error);
+  }
 
   return {
     stats: {
@@ -102,9 +137,9 @@ export async function getDashboardData(): Promise<DashboardData> {
       routerConnected,
       routerHealth,
       // PlayStation stats
-      psStations: psStations.length,
-      psActiveSessions: psActiveSessions.length,
-      psTodayRevenue: Math.round(psTodayRevenue / 100) // Convert to EGP
+      psStations: psStationsCount,
+      psActiveSessions: psActiveSessionsCount,
+      psTodayRevenue: Math.round(psTodayRevenueValue / 100) // Convert to EGP
     },
     vouchers,
     activeSessions,

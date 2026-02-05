@@ -28,9 +28,9 @@ export const GET: RequestHandler = async ({ url }) => {
     }
 
     const category = categoryParam as ExpenseCategory | undefined;
-    const expensesList = category ? getExpensesByCategory(category) : getExpenses();
-    const costPerGb = getCostPerGb();
-    const monthlyFixed = getMonthlyFixedCosts();
+    const expensesList = category ? await getExpensesByCategory(category) : await getExpenses();
+    const costPerGb = await getCostPerGb();
+    const monthlyFixed = await getMonthlyFixedCosts();
 
     return json({
       success: true,
@@ -80,7 +80,7 @@ export const POST: RequestHandler = async ({ request }) => {
       return json({ error: 'amount must be a positive number' }, { status: 400 });
     }
 
-    const expense = createExpense({
+    const expense = await createExpense({
       type,
       category: category as ExpenseCategory,
       name,

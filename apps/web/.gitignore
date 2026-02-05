@@ -18,9 +18,21 @@ Thumbs.db
 !.env.example
 !.env.test
 
+# Cloudflare
+.dev.vars
+!.dev.vars.example
+
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# Database journal (temporary file)
+# Database files (local data)
+data.db
 data.db-journal
+data.db-shm
+data.db-wal
+data.db-client_wal_index
+data.db-info
+
+# Electron build output
+dist-electron/

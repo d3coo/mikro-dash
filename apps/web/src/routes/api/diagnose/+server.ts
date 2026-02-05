@@ -8,7 +8,7 @@ import { getMikroTikClient } from '$lib/server/services/mikrotik';
  */
 export const GET: RequestHandler = async () => {
   try {
-    const client = getMikroTikClient();
+    const client = await getMikroTikClient();
 
     // Fetch all relevant data in parallel
     const [ipBindings, hotspotCookies, hotspotHosts, activeSessions] = await Promise.all([
@@ -103,7 +103,7 @@ export const GET: RequestHandler = async () => {
 export const POST: RequestHandler = async ({ request }) => {
   try {
     const body = await request.json();
-    const client = getMikroTikClient();
+    const client = await getMikroTikClient();
 
     if (body.action === 'clean-cookies') {
       // Delete ALL stale cookies (not in active sessions)

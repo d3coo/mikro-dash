@@ -1,7 +1,19 @@
 import { getMikroTikClient } from './mikrotik';
+import { MikroTikClient } from '$lib/server/mikrotik';
 import { getPackages, getPackageById, type PackageConfig } from '$lib/server/config';
 import type { HotspotUser } from '$lib/server/mikrotik/types';
 import { getVoucherDeviceMap, recordVoucherUsage, deleteVoucherUsageHistory } from './voucher-usage';
+import {
+  syncVouchersToCache,
+  syncSessionsToCache,
+  getCachedVouchers,
+  getLastSyncTime,
+  isCacheStale,
+  removeCachedVoucher,
+  removeCachedVouchers,
+  addVouchersToCache,
+  type CachedVoucher
+} from './voucher-cache';
 
 // Characters for generating codes (uppercase + numbers, excluding confusing ones like 0/O, 1/I)
 const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -45,7 +57,7 @@ function generateRandomCode(length: number): string {
  * Fully random - no prefix
  * The code is used as both username AND password for easy single-field login
  */
-async function generateVoucherCode(client: ReturnType<typeof getMikroTikClient>): Promise<string> {
+async function generateVoucherCode(client: MikroTikClient): Promise<string> {
   const users = await client.getHotspotUsers();
   const existingNames = new Set(users.map(u => u.name.toUpperCase())); // Case-insensitive check
 
@@ -143,14 +155,14 @@ function transformToVoucher(
  * Get all vouchers from router
  */
 export async function getVouchers(): Promise<Voucher[]> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
   const [hotspotUsers, activeSessions, cookies, dhcpLeases] = await Promise.all([
     client.getHotspotUsers(),
     client.getActiveSessions(),
     client.getHotspotCookies(),
     client.getDhcpLeases()
   ]);
-  const packages = getPackages();
+  const packages = await getPackages();
 
   // Create set of active usernames for status detection
   const activeUsernames = new Set(activeSessions.map(s => s.user));
@@ -166,7 +178,7 @@ export async function getVouchers(): Promise<Voucher[]> {
   }
 
   // Get stored device history from database (permanent storage)
-  const storedDeviceMap = getVoucherDeviceMap();
+  const storedDeviceMap = await getVoucherDeviceMap();
 
   // Build voucher → device info map
   // Priority: active sessions > cookies > stored history
@@ -220,9 +232,110 @@ export async function getVouchers(): Promise<Voucher[]> {
     }
   }
 
-  return hotspotUsers
+  const vouchers = hotspotUsers
     .filter(u => !u.name.includes('default') && u.name !== 'admin')
     .map(u => transformToVoucher(u, packages, activeUsernames, deviceInfoMap));
+
+  // Sync to cache in background (non-blocking)
+  syncVouchersToCache(vouchers).catch(err => {
+    console.error('[Vouchers] Failed to sync to cache:', err);
+  });
+
+  // Also sync active sessions
+  syncSessionsToCache(activeSessions.map(s => ({
+    id: s['.id'],
+    user: s.user,
+    macAddress: s['mac-address'],
+    address: s.address,
+    bytesIn: parseInt(s['bytes-in'] || '0', 10),
+    bytesOut: parseInt(s['bytes-out'] || '0', 10),
+    uptime: s.uptime
+  }))).catch(err => {
+    console.error('[Vouchers] Failed to sync sessions to cache:', err);
+  });
+
+  return vouchers;
+}
+
+/**
+ * Get vouchers with cache fallback
+ * Returns fresh data from router if available, falls back to cache if router unreachable
+ */
+export interface VouchersWithMeta {
+  vouchers: Voucher[];
+  source: 'router' | 'cache';
+  syncedAt: string | null;
+  isStale: boolean;
+}
+
+export async function getVouchersWithFallback(): Promise<VouchersWithMeta> {
+  try {
+    // Try to get fresh data from router
+    const vouchers = await getVouchers();
+    const syncedAt = new Date().toISOString();
+
+    return {
+      vouchers,
+      source: 'router',
+      syncedAt,
+      isStale: false
+    };
+  } catch (error) {
+    console.warn('[Vouchers] Router unreachable, falling back to cache:', error);
+
+    // Fallback to cache
+    try {
+      const cachedVouchers = await getCachedVouchers();
+      const syncedAt = await getLastSyncTime();
+      const stale = await isCacheStale(300); // 5 minutes for fallback mode
+
+      if (cachedVouchers && cachedVouchers.length > 0) {
+        // Transform cached vouchers to Voucher format
+        const packages = await getPackages();
+
+        const vouchers: Voucher[] = cachedVouchers.map(cv => {
+          const pkg = packages.find(p => p.id === cv.packageId);
+          return {
+            id: cv.id,
+            name: cv.code,
+            password: cv.password,
+            profile: cv.profile || '',
+            bytesIn: 0,
+            bytesOut: 0,
+            bytesTotal: cv.bytesUsed,
+            bytesLimit: cv.bytesLimit || 0,
+            uptime: cv.uptime || '0s',
+            status: cv.status,
+            comment: cv.comment || '',
+            packageId: cv.packageId || '',
+            packageName: pkg?.nameAr || '',
+            priceLE: pkg?.priceLE || 0,
+            macAddress: cv.macAddress || undefined,
+            deviceName: cv.deviceName || undefined,
+            isOnline: cv.isOnline
+          };
+        });
+
+        return {
+          vouchers,
+          source: 'cache',
+          syncedAt,
+          isStale: stale
+        };
+      }
+    } catch (cacheError) {
+      console.error('[Vouchers] Cache read failed:', cacheError);
+    }
+
+    // No cache available or cache failed - return empty with offline status
+    console.warn('[Vouchers] No cache available, returning empty');
+    return {
+      vouchers: [],
+      source: 'cache',
+      syncedAt: null,
+      isStale: true
+    };
+  }
 }
 
 /**
@@ -246,12 +359,12 @@ export async function getVoucherByName(name: string): Promise<Voucher | undefine
  * Username and password are the SAME code for easy single-field login
  */
 export async function createVouchers(packageId: string, quantity: number): Promise<{ created: number }> {
-  const pkg = getPackageById(packageId);
+  const pkg = await getPackageById(packageId);
   if (!pkg) {
     throw new Error(`Invalid package: ${packageId}`);
   }
 
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
   let created = 0;
 
   for (let i = 0; i < quantity; i++) {
@@ -277,7 +390,7 @@ export async function createVouchers(packageId: string, quantity: number): Promi
  * Delete voucher from MikroTik and its usage history
  */
 export async function deleteVoucher(id: string, voucherCode?: string): Promise<void> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
 
   // If we have the voucher code, delete its usage history
   if (voucherCode) {
@@ -285,13 +398,18 @@ export async function deleteVoucher(id: string, voucherCode?: string): Promise<v
   }
 
   await client.deleteHotspotUser(id);
+
+  // Remove from cache
+  removeCachedVoucher(id).catch(err => {
+    console.error('[Vouchers] Failed to remove from cache:', err);
+  });
 }
 
 /**
  * Delete multiple vouchers and their usage history
  */
 export async function deleteVouchers(vouchers: Array<{ id: string; name: string }>): Promise<{ deleted: number }> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
   let deleted = 0;
 
   for (const voucher of vouchers) {
@@ -302,6 +420,11 @@ export async function deleteVouchers(vouchers: Array<{ id: string; name: string 
     deleted++;
   }
 
+  // Remove from cache
+  removeCachedVouchers(vouchers.map(v => v.id)).catch(err => {
+    console.error('[Vouchers] Failed to remove batch from cache:', err);
+  });
+
   return { deleted };
 }
 
@@ -311,7 +434,7 @@ export async function deleteVouchers(vouchers: Array<{ id: string; name: string 
  * @param newLimitUptime - New total time limit (e.g., "3d", "4d", "72h")
  */
 export async function extendVoucherTime(id: string, newLimitUptime: string): Promise<void> {
-  const client = getMikroTikClient();
+  const client = await getMikroTikClient();
   await client.updateHotspotUser(id, { limitUptime: newLimitUptime });
 }
 

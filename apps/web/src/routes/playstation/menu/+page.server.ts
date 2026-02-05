@@ -8,7 +8,7 @@ import {
 import { fail } from '@sveltejs/kit';
 
 export const load: PageServerLoad = async () => {
-  const menuItems = getMenuItems();
+  const menuItems = await getMenuItems();
 
   // Group by category
   const categories = {
@@ -34,7 +34,7 @@ export const actions: Actions = {
 
     try {
       // Price is in EGP, convert to piasters (multiply by 100)
-      createMenuItem({
+      await createMenuItem({
         name,
         nameAr,
         category,
@@ -67,7 +67,7 @@ export const actions: Actions = {
       if (!isNaN(price)) updates.price = price * 100; // Convert to piasters
       updates.isAvailable = isAvailable;
 
-      updateMenuItem(id, updates);
+      await updateMenuItem(id, updates);
       return { success: true };
     } catch (error) {
       return fail(500, { error: error instanceof Error ? error.message : 'حدث خطأ' });
@@ -83,7 +83,7 @@ export const actions: Actions = {
     }
 
     try {
-      deleteMenuItem(id);
+      await deleteMenuItem(id);
       return { success: true };
     } catch (error) {
       return fail(500, { error: error instanceof Error ? error.message : 'حدث خطأ' });

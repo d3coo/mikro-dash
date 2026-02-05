@@ -1,0 +1,21 @@
+# Cloudflare Pages configuration for MikroDash
+name = "mikro-dash"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Pages-specific settings
+pages_build_output_dir = ".svelte-kit/cloudflare"
+
+[vars]
+DATABASE_MODE = "remote"
+
+# Environment variables to set in Cloudflare Pages dashboard:
+# - TURSO_DATABASE_URL: Your Turso database URL (libsql://...)
+# - TURSO_AUTH_TOKEN: Your Turso auth token
+# - MIKROTIK_HOST: MikroTik router IP (if accessible from internet)
+# - MIKROTIK_USER: Router username
+# - MIKROTIK_PASS: Router password
+
+# Note: For local development, use .dev.vars file:
+# TURSO_DATABASE_URL=libsql://your-db.turso.io
+# TURSO_AUTH_TOKEN=your-token

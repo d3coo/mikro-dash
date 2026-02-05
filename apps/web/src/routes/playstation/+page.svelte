@@ -211,6 +211,10 @@
   let orderCart = $state<Map<number, number>>(new Map()); // itemId -> quantity
   let selectedDuration = $state<number | null>(null);
   let selectedCostLimit = $state<number | null>(null); // Cost limit in EGP
+  let customStartTimeHour = $state<string>(''); // Hour for custom start (HH:mm format)
+  let showEditStartTimeModal = $state(false);
+  let editStartTimeSessionId = $state<number | null>(null);
+  let editStartTimeHour = $state<string>(''); // Time only (HH:mm format) for editing
   let endSessionMode = $state<'rounded' | 'zero' | 'custom'>('rounded');
   let customAmount = $state('');
 
@@ -560,6 +564,7 @@
     activeStationForStart = stationId;
     selectedDuration = null;
     selectedCostLimit = null;
+    customStartTimeHour = '';
     showDurationModal = true;
   }
 
@@ -569,6 +574,33 @@
     activeStationForStart = null;
     selectedDuration = null;
     selectedCostLimit = null;
+    customStartTimeHour = '';
+  }
+
+  // Open edit start time modal
+  function openEditStartTimeModal(sessionId: number, currentStartTime: number) {
+    editStartTimeSessionId = sessionId;
+    // Convert timestamp to time-only format (HH:mm)
+    const date = new Date(currentStartTime);
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    editStartTimeHour = `${hours}:${minutes}`;
+    showEditStartTimeModal = true;
+  }
+
+  // Close edit start time modal
+  function closeEditStartTimeModal() {
+    showEditStartTimeModal = false;
+    editStartTimeSessionId = null;
+    editStartTimeHour = '';
+  }
+
+  // Convert time string (HH:mm) to today's timestamp
+  function timeToTodayTimestamp(timeStr: string): number {
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    const today = new Date();
+    today.setHours(hours, minutes, 0, 0);
+    return today.getTime();
   }
 
   // Open timer modal for active session
@@ -1070,6 +1102,13 @@
                 <Clock class="w-5 h-5" />
                 <span class="start-time-value">{formatTime(status.activeSession.startedAt)}</span>
                 <button
+                  class="edit-time-btn"
+                  title="تعديل وقت البداية"
+                  onclick={() => openEditStartTimeModal(status.activeSession!.id, status.activeSession!.startedAt)}
+                >
+                  <Pencil class="w-3 h-3" />
+                </button>
+                <button
                   class="set-timer-btn"
                   class:has-timer={timerInfo}
                   class:expired={timerInfo?.isExpired}
@@ -1372,6 +1411,27 @@
             {/each}
           </div>
         </div>
+
+        <!-- Custom Start Time Section -->
+        <div class="limit-section">
+          <h4 class="limit-section-title">
+            <Clock class="w-4 h-4" />
+            وقت بداية مخصص (اليوم)
+          </h4>
+          <div class="time-picker-row">
+            <input
+              type="time"
+              class="input-modern time-input"
+              bind:value={customStartTimeHour}
+            />
+            {#if customStartTimeHour}
+              <button type="button" class="clear-time-btn" onclick={() => customStartTimeHour = ''}>
+                <X class="w-4 h-4" />
+              </button>
+            {/if}
+          </div>
+          <p class="limit-hint">اتركه فارغاً للبدء من الآن</p>
+        </div>
       </div>
       <div class="modal-footer-rtl">
         <form
@@ -1392,6 +1452,7 @@
           <input type="hidden" name="stationId" value={activeStationForStart} />
           <input type="hidden" name="timerMinutes" value={selectedDuration || ''} />
           <input type="hidden" name="costLimit" value={selectedCostLimit || ''} />
+          <input type="hidden" name="customStartTime" value={customStartTimeHour ? timeToTodayTimestamp(customStartTimeHour) : ''} />
           <button type="submit" class="btn btn-primary">
             <Play class="w-4 h-4" />
             بدء الجلسة
@@ -2072,6 +2133,64 @@
           </button>
         </form>
         <button class="btn btn-ghost" onclick={closeSwitchStationModal}>إلغاء</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Edit Start Time Modal -->
+{#if showEditStartTimeModal && editStartTimeSessionId}
+  <div class="modal-overlay" onclick={closeEditStartTimeModal}>
+    <div class="modal-box modal-time-edit modal-rtl" onclick={(e) => e.stopPropagation()}>
+      <div class="modal-header">
+        <button class="modal-close" onclick={closeEditStartTimeModal}>
+          <X class="w-5 h-5" />
+        </button>
+        <h3>
+          <Clock class="w-5 h-5" />
+          تعديل وقت البداية
+        </h3>
+      </div>
+      <div class="modal-body">
+        <div class="edit-time-container">
+          <div class="today-badge">
+            <span>اليوم</span>
+            <span class="today-date">{new Date().toLocaleDateString('ar-EG', { weekday: 'long', month: 'short', day: 'numeric' })}</span>
+          </div>
+          <div class="time-input-large">
+            <input
+              type="time"
+              class="big-time-input"
+              bind:value={editStartTimeHour}
+            />
+          </div>
+          <p class="edit-time-note">سيتم إعادة حساب التكلفة تلقائياً</p>
+        </div>
+      </div>
+      <div class="modal-footer-rtl">
+        <form
+          method="POST"
+          action="?/updateStartTime"
+          use:enhance={() => {
+            return async ({ result }) => {
+              if (result.type === 'success') {
+                toast.success('تم تعديل وقت البداية');
+                closeEditStartTimeModal();
+                await invalidateAll();
+              } else {
+                toast.error('فشل في تعديل وقت البداية');
+              }
+            };
+          }}
+        >
+          <input type="hidden" name="sessionId" value={editStartTimeSessionId} />
+          <input type="hidden" name="newStartTime" value={editStartTimeHour ? timeToTodayTimestamp(editStartTimeHour) : ''} />
+          <button type="submit" class="btn btn-primary btn-lg" disabled={!editStartTimeHour}>
+            <Clock class="w-5 h-5" />
+            حفظ
+          </button>
+        </form>
+        <button class="btn btn-ghost" onclick={closeEditStartTimeModal}>إلغاء</button>
       </div>
     </div>
   </div>
@@ -3073,6 +3192,175 @@
     font-weight: 700;
     font-family: monospace;
     letter-spacing: 1px;
+  }
+
+  .edit-time-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: 6px;
+    color: var(--color-primary-light);
+    cursor: pointer;
+    transition: all 0.2s;
+    opacity: 0.7;
+  }
+
+  .edit-time-btn:hover {
+    opacity: 1;
+    background: rgba(99, 102, 241, 0.2);
+    transform: scale(1.1);
+  }
+
+  .custom-start-time-input {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .custom-start-time-input input {
+    flex: 1;
+  }
+
+  .limit-hint {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    margin-top: 6px;
+  }
+
+  .edit-time-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .edit-time-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .edit-time-hint {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    margin-top: 4px;
+  }
+
+  /* Time Picker Styles */
+  .time-picker-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .time-input {
+    width: 140px;
+    font-size: 18px;
+    font-family: monospace;
+    text-align: center;
+    padding: 10px 16px;
+  }
+
+  .clear-time-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 8px;
+    color: #f87171;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .clear-time-btn:hover {
+    background: rgba(239, 68, 68, 0.2);
+  }
+
+  /* Edit Time Modal - Improved */
+  .modal-time-edit {
+    max-width: 320px;
+  }
+
+  .modal-time-edit .modal-header h3 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .edit-time-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 8px 0;
+  }
+
+  .today-badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 20px;
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: 10px;
+    color: var(--color-primary-light);
+  }
+
+  .today-badge span:first-child {
+    font-size: 12px;
+    opacity: 0.8;
+  }
+
+  .today-date {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .time-input-large {
+    display: flex;
+    justify-content: center;
+  }
+
+  .big-time-input {
+    font-size: 36px;
+    font-family: monospace;
+    font-weight: 700;
+    text-align: center;
+    padding: 16px 32px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid rgba(99, 102, 241, 0.4);
+    border-radius: 12px;
+    color: var(--color-text);
+    width: 240px;
+    transition: all 0.2s;
+  }
+
+  .big-time-input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+  }
+
+  .edit-time-note {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    text-align: center;
+  }
+
+  .btn-lg {
+    padding: 12px 24px;
+    font-size: 16px;
   }
 
   .timer-badge-large {

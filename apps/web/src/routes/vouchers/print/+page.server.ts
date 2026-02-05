@@ -21,13 +21,13 @@ export const load: PageServerLoad = async ({ url }) => {
   let vouchers: PrintVoucher[] = [];
 
   try {
-    const client = getMikroTikClient();
+    const client = await getMikroTikClient();
     const allUsers = await client.getHotspotUsers();
     const activeSessions = await client.getActiveSessions();
     const activeUsernames = new Set(activeSessions.map((a: any) => a.user));
 
     // Get printed voucher codes if filtering by unprinted
-    const printedCodes = unprintedOnly ? getAllPrintedVoucherCodes() : new Set<string>();
+    const printedCodes = unprintedOnly ? await getAllPrintedVoucherCodes() : new Set<string>();
 
     // Helper to determine voucher status
     const getVoucherStatus = (user: any): 'available' | 'used' | 'exhausted' => {
@@ -44,10 +44,10 @@ export const load: PageServerLoad = async ({ url }) => {
       return 'available';
     };
 
-    // Helper to convert user to PrintVoucher
-    const toPrintVoucher = (user: any): PrintVoucher => {
-      const pkg = getPackageFromComment(user.comment || '', user.profile)
-        || getPackageByCodePrefix(user.name);
+    // Helper to convert user to PrintVoucher (async)
+    const toPrintVoucher = async (user: any): Promise<PrintVoucher> => {
+      const pkg = await getPackageFromComment(user.comment || '', user.profile)
+        || await getPackageByCodePrefix(user.name);
 
       return {
         id: user['.id'],
@@ -64,29 +64,25 @@ export const load: PageServerLoad = async ({ url }) => {
 
     if (status === 'available') {
       // Get all available vouchers (excluding system users)
-      vouchers = allUsers
-        .filter((user: any) => {
-          const isAvailable = getVoucherStatus(user) === 'available';
-          const isNotSystem = !systemUsers.includes(user.name?.toLowerCase());
-          const isNotPrinted = unprintedOnly ? !printedCodes.has(user.name) : true;
-          return isAvailable && isNotSystem && isNotPrinted;
-        })
-        .map(toPrintVoucher);
+      const filteredUsers = allUsers.filter((user: any) => {
+        const isAvailable = getVoucherStatus(user) === 'available';
+        const isNotSystem = !systemUsers.includes(user.name?.toLowerCase());
+        const isNotPrinted = unprintedOnly ? !printedCodes.has(user.name) : true;
+        return isAvailable && isNotSystem && isNotPrinted;
+      });
+      vouchers = await Promise.all(filteredUsers.map(toPrintVoucher));
     } else if (ids.length > 0) {
       // Get specific vouchers by ID
-      vouchers = ids
-        .map(id => {
-          const user = allUsers.find((u: any) => u['.id'] === id);
-          if (!user) return null;
-          return toPrintVoucher(user);
-        })
-        .filter((v): v is PrintVoucher => v !== null);
+      const usersToConvert = ids
+        .map(id => allUsers.find((u: any) => u['.id'] === id))
+        .filter((u): u is any => u !== undefined);
+      vouchers = await Promise.all(usersToConvert.map(toPrintVoucher));
     }
   } catch (error) {
     console.error('Failed to fetch vouchers from MikroTik:', error);
   }
 
-  const settings = getSettings();
+  const settings = await getSettings();
 
   return {
     vouchers,

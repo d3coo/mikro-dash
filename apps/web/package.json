@@ -8,17 +8,19 @@
 	"scripts": {
 		"dev": "vite dev --port 3000",
 		"build": "vite build",
+		"start": "node build/index.js",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-		"electron:rebuild": "cd ../../node_modules/better-sqlite3 && npx --yes @electron/rebuild -v 40.1.0 -m .",
 		"electron:dev": "npm run build && electron .",
-		"electron:build": "npm run build && npm run electron:rebuild && electron-builder",
-		"electron:build:win": "npm run build && npm run electron:rebuild && electron-builder --win",
-		"electron:build:portable": "npm run build && npm run electron:rebuild && electron-builder --win portable",
+		"electron:build": "npm run build && electron-builder",
+		"electron:build:win": "npm run build && electron-builder --win",
+		"electron:build:portable": "npm run build && electron-builder --win portable",
 		"tauri": "tauri",
 		"tauri:dev": "tauri dev",
-		"tauri:build": "tauri build"
+		"tauri:build": "tauri build",
+		"build:cloudflare": "ADAPTER=cloudflare vite build",
+		"pages:deploy": "bun run build:cloudflare && wrangler pages deploy .svelte-kit/cloudflare"
 	},
 	"build": {
 		"appId": "com.mikrodash.app",
@@ -39,16 +41,8 @@
 		],
 		"extraResources": [
 			{
-				"from": "../../node_modules/better-sqlite3",
-				"to": "node_modules/better-sqlite3"
-			},
-			{
-				"from": "../../node_modules/bindings",
-				"to": "node_modules/bindings"
-			},
-			{
-				"from": "../../node_modules/file-uri-to-path",
-				"to": "node_modules/file-uri-to-path"
+				"from": "../../node_modules/@libsql",
+				"to": "node_modules/@libsql"
 			},
 			{
 				"from": "../../node_modules/drizzle-orm",
@@ -122,13 +116,12 @@
 		}
 	},
 	"devDependencies": {
-		"@electron/rebuild": "^4.0.1",
 		"@sveltejs/adapter-auto": "^7.0.0",
+		"@sveltejs/adapter-cloudflare": "^7.0.0",
 		"@sveltejs/adapter-node": "^5.5.0",
 		"@sveltejs/kit": "^2.49.1",
 		"@sveltejs/vite-plugin-svelte": "^6.2.1",
 		"@tauri-apps/cli": "^2.9.6",
-		"@types/better-sqlite3": "^7.6.13",
 		"@types/qrcode": "^1.5.6",
 		"drizzle-kit": "^0.31.8",
 		"electron": "^40.1.0",
@@ -141,8 +134,8 @@
 	"dependencies": {
 		"@fontsource/cairo": "^5.2.7",
 		"@fontsource/ibm-plex-mono": "^5.2.7",
+		"@libsql/client": "^0.17.0",
 		"@tailwindcss/vite": "^4.1.18",
-		"better-sqlite3": "^12.6.0",
 		"bits-ui": "^2.15.4",
 		"chart.js": "^4.5.1",
 		"clsx": "^2.1.1",

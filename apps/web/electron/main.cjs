@@ -5,7 +5,7 @@ const fs = require('fs');
 
 let mainWindow;
 let serverProcess;
-const PORT = 3000;
+const PORT = 3001; // Different from dev server (3000) to avoid conflicts
 
 // Get the correct paths for packaged vs development
 const isPackaged = app.isPackaged;
