@@ -5,10 +5,11 @@
  * and automatically starts/ends sessions based on WiFi connection status.
  */
 
-import { syncStationStatus, getStations } from './playstation';
+import { syncStationStatus } from './playstation';
+import { getPsStations } from '$lib/server/convex';
 
 // Configuration
-const POLL_INTERVAL_MS = 5 * 1000; // Poll every 5 seconds for faster detection
+const POLL_INTERVAL_MS = 30 * 1000; // Poll every 30 seconds (was 5s - too aggressive)
 const MAX_CONSECUTIVE_ERRORS = 10; // More tolerance for errors
 
 // State
@@ -32,7 +33,7 @@ export async function startBackgroundSync(): Promise<void> {
   }
 
   // Check if there are any stations configured
-  const stations = await getStations();
+  const stations = await getPsStations();
   if (stations.length === 0) {
     console.log('[PS-Sync] No stations configured, skipping background sync start');
     return;
@@ -160,6 +161,6 @@ export async function forceSync(): Promise<{ started: string[]; ended: string[] 
  * Called during server initialization
  */
 export async function shouldAutoStart(): Promise<boolean> {
-  const stations = await getStations();
+  const stations = await getPsStations();
   return stations.length > 0;
 }

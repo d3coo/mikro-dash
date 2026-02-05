@@ -1,5 +1,5 @@
 import type { PageServerLoad } from './$types';
-import { getSessionHistory, getStations, getPsAnalytics, getSessionOrders } from '$lib/server/services/playstation';
+import { getPsSessionHistory, getPsStations, getPsAnalytics } from '$lib/server/convex';
 
 export const load: PageServerLoad = async ({ url }) => {
   const stationId = url.searchParams.get('station') || undefined;
@@ -11,11 +11,12 @@ export const load: PageServerLoad = async ({ url }) => {
   let endDate: number | undefined = now;
 
   switch (period) {
-    case 'today':
+    case 'today': {
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
       startDate = todayStart.getTime();
       break;
+    }
     case 'week':
       startDate = now - 7 * 24 * 60 * 60 * 1000;
       break;
@@ -28,29 +29,24 @@ export const load: PageServerLoad = async ({ url }) => {
       break;
   }
 
-  const sessions = await getSessionHistory({
+  const sessions = await getPsSessionHistory({
     stationId,
     startDate,
     endDate,
-    limit: 100
+    limit: 100,
   });
 
-  // Get orders for each session
-  const sessionsWithOrders = await Promise.all(sessions.map(async (session) => ({
-    ...session,
-    orders: await getSessionOrders(session.id)
-  })));
-
-  const stations = await getStations();
-  const analytics = await getPsAnalytics(period === 'today' ? 'today' : period === 'week' ? 'week' : 'month');
+  const stations = await getPsStations();
+  const analyticsPeriod = period === 'today' ? 'today' : period === 'week' ? 'week' : 'month';
+  const analytics = await getPsAnalytics(analyticsPeriod);
 
   return {
-    sessions: sessionsWithOrders,
+    sessions,
     stations,
     analytics,
     filters: {
       stationId,
-      period
-    }
+      period,
+    },
   };
 };

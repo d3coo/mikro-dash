@@ -5,8 +5,22 @@
   import { invalidateAll } from '$app/navigation';
   import { enhance } from '$app/forms';
   import { browser } from '$app/environment';
+  import { createPsConvexState, type StationStatus as ConvexStationStatus } from '$lib/playstation/convex-state.svelte';
+  import type { Id } from '../../../convex/_generated/dataModel';
 
   let { data } = $props();
+
+  // ===== CONVEX REAL-TIME STATE =====
+  // Convex provides real-time updates with automatic caching for offline support
+  // The convex state returns undefined when not ready, allowing safe fallback to server data
+  const convex = browser ? createPsConvexState() : null;
+
+  // Use Convex data when available, fall back to server data
+  // Convex getters return undefined when not ready (loading, error, or no data)
+  let stationStatuses = $derived(convex?.stationStatuses ?? data.stationStatuses);
+  let menuItems = $derived(convex?.menuItems ?? data.menuItems);
+  let analytics = $derived(convex?.analytics ?? data.analytics);
+  let isConvexReady = $derived(convex?.isReady ?? false);
 
   // ===== NOTIFICATION SOUND SYSTEM =====
   let audioContext: AudioContext | null = null;
@@ -45,7 +59,14 @@
   }
 
   // ===== ORDER REMOVAL =====
-  async function removeOrder(orderId: number) {
+  async function removeOrder(orderId: number | string) {
+    // Use Convex mutation if available
+    if (convex) {
+      await convex.removeOrder(orderId as Id<'psSessionOrders'>);
+      return; // Convex will update the UI automatically via subscription
+    }
+
+    // Fallback to form action
     try {
       const formData = new FormData();
       formData.append('orderId', orderId.toString());
@@ -194,11 +215,14 @@
   let showZeroConfirmModal = $state(false);
   let showChargeModal = $state(false);
   let showTransferModal = $state(false);
-  let activeStationForOrder = $state<{ stationId: string; sessionId: number } | null>(null);
+  // ID type union to support both SQLite (number) and Convex (string) IDs
+  type AnyId = string | number;
+
+  let activeStationForOrder = $state<{ stationId: string; sessionId: AnyId } | null>(null);
   let activeStationForStart = $state<string | null>(null);
-  let activeSessionForTimer = $state<number | null>(null);
+  let activeSessionForTimer = $state<AnyId | null>(null);
   let activeSessionForEnd = $state<{
-    sessionId: number;
+    sessionId: AnyId;
     stationName: string;
     calculatedCost: number;
     ordersTotal: number;
@@ -206,14 +230,14 @@
     transferredCost: number;
     costBreakdown: Array<{ mode: string; minutes: number; cost: number }> | null;
   } | null>(null);
-  let activeSessionForCharge = $state<{ sessionId: number; stationName: string } | null>(null);
-  let activeSessionForTransfer = $state<{ sessionId: number; stationId: string; stationName: string; gamingCost: number; ordersCost: number } | null>(null);
-  let orderCart = $state<Map<number, number>>(new Map()); // itemId -> quantity
+  let activeSessionForCharge = $state<{ sessionId: AnyId; stationName: string } | null>(null);
+  let activeSessionForTransfer = $state<{ sessionId: AnyId; stationId: string; stationName: string; gamingCost: number; ordersCost: number } | null>(null);
+  let orderCart = $state<Map<AnyId, number>>(new Map()); // itemId -> quantity
   let selectedDuration = $state<number | null>(null);
   let selectedCostLimit = $state<number | null>(null); // Cost limit in EGP
   let customStartTimeHour = $state<string>(''); // Hour for custom start (HH:mm format)
   let showEditStartTimeModal = $state(false);
-  let editStartTimeSessionId = $state<number | null>(null);
+  let editStartTimeSessionId = $state<AnyId | null>(null);
   let editStartTimeHour = $state<string>(''); // Time only (HH:mm format) for editing
   let endSessionMode = $state<'rounded' | 'zero' | 'custom'>('rounded');
   let customAmount = $state('');
@@ -221,15 +245,15 @@
   // Charge modal state
   let chargeAmount = $state('');
   let chargeReason = $state('');
-  let editingChargeId = $state<number | null>(null);
+  let editingChargeId = $state<AnyId | null>(null);
 
   // Transfer modal state
-  let transferTargetSessionId = $state<number | null>(null);
+  let transferTargetSessionId = $state<AnyId | null>(null);
   let transferIncludeOrders = $state(true);
 
   // Switch station modal state
   let showSwitchStationModal = $state(false);
-  let activeSessionForSwitch = $state<{ sessionId: number; currentStationId: string; stationName: string } | null>(null);
+  let activeSessionForSwitch = $state<{ sessionId: AnyId; currentStationId: string; stationName: string } | null>(null);
   let switchTargetStationId = $state<string | null>(null);
 
   // Background sync status
@@ -357,9 +381,9 @@
 
   // Check for timers that just expired during live countdown
   function checkForExpiredTimers() {
-    if (!data.stationStatuses) return;
+    if (!stationStatuses) return;
 
-    for (const status of data.stationStatuses) {
+    for (const status of stationStatuses as any[]) {
       if (status.activeSession?.timerMinutes && !status.activeSession.timerNotified) {
         // Skip if paused - don't expire timer while paused
         if (status.isPaused) continue;
@@ -472,10 +496,10 @@
     return 'متاح';
   }
 
-  // Stats
-  let occupiedCount = $derived(data.stationStatuses.filter(s => s.station.status === 'occupied').length);
-  let availableCount = $derived(data.stationStatuses.filter(s => s.station.status === 'available').length);
-  let maintenanceCount = $derived(data.stationStatuses.filter(s => s.station.status === 'maintenance').length);
+  // Stats (using Convex data when available)
+  let occupiedCount = $derived(stationStatuses?.filter((s: any) => s.station.status === 'occupied').length ?? 0);
+  let availableCount = $derived(stationStatuses?.filter((s: any) => s.station.status === 'available').length ?? 0);
+  let maintenanceCount = $derived(stationStatuses?.filter((s: any) => s.station.status === 'maintenance').length ?? 0);
 
   // Timer remaining (accounting for paused time)
   function getTimerRemaining(session: { startedAt: number; timerMinutes?: number | null; pausedAt?: number | null; totalPausedMs?: number | null }): { text: string; isExpired: boolean; isPaused: boolean } | null {
@@ -511,7 +535,7 @@
   }
 
   // Open order modal
-  function openOrderModal(stationId: string, sessionId: number) {
+  function openOrderModal(stationId: string, sessionId: AnyId) {
     activeStationForOrder = { stationId, sessionId };
     orderCart = new Map();
     showOrderModal = true;
@@ -525,13 +549,13 @@
   }
 
   // Add item to cart or increment quantity
-  function addToCart(itemId: number) {
+  function addToCart(itemId: AnyId) {
     const current = orderCart.get(itemId) || 0;
     orderCart = new Map(orderCart).set(itemId, current + 1);
   }
 
   // Remove one item from cart or decrement quantity
-  function removeFromCart(itemId: number) {
+  function removeFromCart(itemId: AnyId) {
     const current = orderCart.get(itemId) || 0;
     if (current <= 1) {
       const newCart = new Map(orderCart);
@@ -546,7 +570,7 @@
   function getCartTotal(): number {
     let total = 0;
     orderCart.forEach((qty, itemId) => {
-      const item = data.menuItems?.find(m => m.id === itemId);
+      const item = menuItems?.find(m => m.id === itemId);
       if (item) total += item.price * qty;
     });
     return total;
@@ -578,7 +602,7 @@
   }
 
   // Open edit start time modal
-  function openEditStartTimeModal(sessionId: number, currentStartTime: number) {
+  function openEditStartTimeModal(sessionId: AnyId, currentStartTime: number) {
     editStartTimeSessionId = sessionId;
     // Convert timestamp to time-only format (HH:mm)
     const date = new Date(currentStartTime);
@@ -604,7 +628,7 @@
   }
 
   // Open timer modal for active session
-  function openTimerModal(sessionId: number, currentTimer: number | null) {
+  function openTimerModal(sessionId: AnyId, currentTimer: number | null) {
     activeSessionForTimer = sessionId;
     selectedDuration = currentTimer;
     showTimerModal = true;
@@ -619,7 +643,7 @@
 
   // Open end session modal
   function openEndSessionModal(
-    sessionId: number,
+    sessionId: AnyId,
     stationName: string,
     calculatedCost: number,
     ordersTotal: number,
@@ -671,13 +695,13 @@
 
   // Get menu items grouped by category
   let menuByCategory = $derived({
-    drinks: data.menuItems?.filter(m => m.category === 'drinks' && m.isAvailable) || [],
-    food: data.menuItems?.filter(m => m.category === 'food' && m.isAvailable) || [],
-    snacks: data.menuItems?.filter(m => m.category === 'snacks' && m.isAvailable) || []
+    drinks: menuItems?.filter(m => m.category === 'drinks' && m.isAvailable) || [],
+    food: menuItems?.filter(m => m.category === 'food' && m.isAvailable) || [],
+    snacks: menuItems?.filter(m => m.category === 'snacks' && m.isAvailable) || []
   });
 
   // Open charge modal
-  function openChargeModal(sessionId: number, stationName: string, chargeToEdit?: { id: number; amount: number; reason: string | null }) {
+  function openChargeModal(sessionId: AnyId, stationName: string, chargeToEdit?: { id: AnyId; amount: number; reason: string | null }) {
     activeSessionForCharge = { sessionId, stationName };
     if (chargeToEdit) {
       editingChargeId = chargeToEdit.id;
@@ -700,7 +724,7 @@
   }
 
   // Delete charge
-  async function deleteChargeHandler(chargeId: number) {
+  async function deleteChargeHandler(chargeId: AnyId) {
     try {
       const formData = new FormData();
       formData.append('chargeId', chargeId.toString());
@@ -724,7 +748,7 @@
   }
 
   // Open transfer modal
-  function openTransferModal(sessionId: number, stationId: string, stationName: string, gamingCost: number, ordersCost: number) {
+  function openTransferModal(sessionId: AnyId, stationId: string, stationName: string, gamingCost: number, ordersCost: number) {
     activeSessionForTransfer = { sessionId, stationId, stationName, gamingCost, ordersCost };
     transferTargetSessionId = null;
     transferIncludeOrders = true;
@@ -739,12 +763,12 @@
   }
 
   // Get other active sessions (for transfer target selection)
-  function getOtherActiveSessions(excludeSessionId: number) {
+  function getOtherActiveSessions(excludeSessionId: AnyId) {
     return data.activeSessions?.filter(s => s.id !== excludeSessionId) || [];
   }
 
   // Open switch station modal
-  function openSwitchStationModal(sessionId: number, currentStationId: string, stationName: string) {
+  function openSwitchStationModal(sessionId: AnyId, currentStationId: string, stationName: string) {
     activeSessionForSwitch = { sessionId, currentStationId, stationName };
     switchTargetStationId = null;
     showSwitchStationModal = true;
@@ -758,15 +782,16 @@
 
   // Get available stations (not occupied, not maintenance, not current)
   function getAvailableStations(excludeStationId: string) {
-    return data.stationStatuses
-      .filter(s => s.station.id !== excludeStationId &&
+    if (!stationStatuses) return [];
+    return (stationStatuses as any[])
+      .filter(s => (s.station._id ?? s.station.id) !== excludeStationId &&
                    s.station.status === 'available' &&
                    !s.activeSession)
       .map(s => s.station);
   }
 
   // Switch session mode
-  async function switchSessionMode(sessionId: number, newMode: 'single' | 'multi') {
+  async function switchSessionMode(sessionId: AnyId, newMode: 'single' | 'multi') {
     try {
       const formData = new FormData();
       formData.append('sessionId', sessionId.toString());
@@ -935,6 +960,47 @@
     </div>
   {/if}
 
+  <!-- Loading Skeleton -->
+  {#if browser && !isConvexReady}
+    <div class="stats-grid opacity-0 animate-fade-in" style="animation-delay: 100ms">
+      {#each [1, 2, 3] as _}
+        <div class="stat-card glass-card">
+          <div class="stat-header">
+            <div class="skeleton skeleton-text" style="width: 80px"></div>
+            <div class="skeleton skeleton-icon"></div>
+          </div>
+          <div class="skeleton skeleton-value" style="width: 60px; margin-top: 8px"></div>
+          <div class="stat-footer">
+            <div class="skeleton skeleton-text" style="width: 50px"></div>
+          </div>
+        </div>
+      {/each}
+    </div>
+
+    <section class="stations-section opacity-0 animate-fade-in" style="animation-delay: 200ms">
+      <div class="section-header">
+        <h2 class="section-title">الأجهزة</h2>
+      </div>
+      <div class="stations-grid">
+        {#each [1, 2, 3, 4] as _, index}
+          <div class="station-card glass-card opacity-0 animate-fade-in" style="animation-delay: {300 + index * 50}ms">
+            <div class="station-header">
+              <div class="station-info">
+                <div class="skeleton skeleton-text" style="width: 70px; height: 20px"></div>
+                <div class="skeleton skeleton-text" style="width: 50px; height: 14px; margin-top: 4px"></div>
+              </div>
+              <div class="skeleton skeleton-badge" style="width: 60px; height: 24px; border-radius: 12px"></div>
+            </div>
+            <div class="skeleton-station-body">
+              <div class="skeleton skeleton-block" style="height: 80px; margin-top: 12px; border-radius: 12px"></div>
+              <div class="skeleton skeleton-block" style="height: 40px; margin-top: 12px; border-radius: 8px"></div>
+              <div class="skeleton skeleton-block" style="height: 40px; margin-top: 8px; border-radius: 8px"></div>
+            </div>
+          </div>
+        {/each}
+      </div>
+    </section>
+  {:else}
   <!-- Stats Overview -->
   <div class="stats-grid opacity-0 animate-fade-in" style="animation-delay: 100ms">
     <div class="stat-card glass-card">
@@ -944,7 +1010,7 @@
           <Timer class="w-5 h-5" />
         </div>
       </div>
-      <div class="stat-value">{data.analytics.totalSessions}</div>
+      <div class="stat-value">{analytics?.totalSessions ?? 0}</div>
       <div class="stat-footer">
         <span class="stat-subtitle">اليوم</span>
         <TrendingUp class="w-4 h-4 text-success" />
@@ -958,9 +1024,9 @@
           <Banknote class="w-5 h-5" />
         </div>
       </div>
-      <div class="stat-value">{formatRevenue(data.analytics.totalRevenue)} ج.م</div>
+      <div class="stat-value">{formatRevenue(analytics?.totalRevenue ?? 0)} ج.م</div>
       <div class="stat-footer">
-        <span class="stat-subtitle">{data.analytics.totalMinutes} دقيقة</span>
+        <span class="stat-subtitle">{analytics?.totalMinutes ?? 0} دقيقة</span>
         <TrendingUp class="w-4 h-4 text-success" />
       </div>
     </div>
@@ -975,7 +1041,7 @@
       <div class="stat-value">
         <span class="text-success">{occupiedCount}</span>
         <span class="text-text-muted mx-1">/</span>
-        <span>{data.stationCount}</span>
+        <span>{stationStatuses?.length ?? 0}</span>
       </div>
       <div class="stat-footer">
         <span class="stat-subtitle">{availableCount} متاح</span>
@@ -987,7 +1053,7 @@
   </div>
 
   <!-- Stations Grid -->
-  {#if data.stationStatuses.length > 0}
+  {#if stationStatuses && stationStatuses.length > 0}
     <section class="stations-section opacity-0 animate-fade-in" style="animation-delay: 200ms">
       <div class="section-header">
         <h2 class="section-title">الأجهزة</h2>
@@ -998,7 +1064,7 @@
       </div>
 
       <div class="stations-grid">
-        {#each data.stationStatuses as status, index}
+        {#each stationStatuses as status, index (status.station.id)}
           {@const statusColor = getStatusColor(status.station.status, status.isOnline, status.isOfflineWithSession)}
           {@const isMultiMode = status.activeSession?.currentMode === 'multi'}
           <div
@@ -1010,7 +1076,7 @@
             <div class="station-header">
               <div class="station-info">
                 <h3 class="station-name">{status.station.nameAr}</h3>
-                <span class="station-id">{status.station.id}</span>
+                <span class="station-id">{status.station.name}</span>
               </div>
               <div class="station-status">
                 <span class="status-badge status-{statusColor}">
@@ -1071,7 +1137,7 @@
 
               <!-- Big PS Number/Name Card -->
               <div class="ps-big-card">
-                <div class="ps-big-number">{status.station.id}</div>
+                <div class="ps-big-number">{status.station.name}</div>
                 <div class="ps-big-name">{status.station.nameAr}</div>
               </div>
 
@@ -1202,7 +1268,7 @@
                           <span class="order-cost">{formatRevenue(charge.amount)} ج.م</span>
                           <button
                             class="edit-order-btn"
-                            onclick={() => openChargeModal(status.activeSession!.id, status.station.nameAr, charge)}
+                            onclick={() => openChargeModal(status.activeSession!.id, status.station.nameAr, { id: charge.id, amount: charge.amount, reason: charge.reason ?? null })}
                             title="تعديل"
                           >
                             <Pencil class="w-3 h-3" />
@@ -1360,6 +1426,7 @@
         إضافة جهاز
       </a>
     </div>
+  {/if}
   {/if}
 </div>
 
@@ -1575,7 +1642,7 @@
             </div>
             <div class="cart-items">
               {#each Array.from(orderCart.entries()) as [itemId, qty]}
-                {@const item = data.menuItems?.find(m => m.id === itemId)}
+                {@const item = menuItems?.find(m => m.id === itemId)}
                 {#if item}
                   <div class="cart-item">
                     <span class="cart-item-name">{item.nameAr} × {qty}</span>
@@ -2023,7 +2090,7 @@
           <label>اختر الجهاز المستهدف:</label>
           <div class="target-sessions-grid">
             {#each otherSessions as session}
-              {@const station = data.stationStatuses.find(s => s.station.id === session.stationId)?.station}
+              {@const station = stationStatuses?.find((s: any) => (s.station._id ?? s.station.id) === session.stationId)?.station}
               <button
                 type="button"
                 class="target-session-option"
@@ -2197,6 +2264,48 @@
 {/if}
 
 <style>
+  /* Loading Skeleton */
+  .skeleton {
+    background: linear-gradient(90deg, rgba(255,255,255,0.06) 25%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.06) 75%);
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s ease-in-out infinite;
+    border-radius: 6px;
+  }
+
+  .skeleton-text {
+    height: 14px;
+    display: block;
+  }
+
+  .skeleton-value {
+    height: 28px;
+    display: block;
+  }
+
+  .skeleton-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+  }
+
+  .skeleton-badge {
+    display: block;
+  }
+
+  .skeleton-block {
+    display: block;
+    width: 100%;
+  }
+
+  .skeleton-station-body {
+    padding: 0 4px;
+  }
+
+  @keyframes skeleton-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
   .playstation-page {
     display: flex;
     flex-direction: column;

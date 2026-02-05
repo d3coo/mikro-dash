@@ -56,6 +56,7 @@ export const getWithActiveSession = query({
  */
 export const create = mutation({
   args: {
+    stationId: v.string(),
     name: v.string(),
     nameAr: v.string(),
     macAddress: v.string(),
@@ -71,6 +72,7 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert('psStations', {
+      stationId: args.stationId,
       name: args.name,
       nameAr: args.nameAr,
       macAddress: args.macAddress,

@@ -1,16 +1,12 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { endSession, getActiveSessionForStation } from '$lib/server/services/playstation';
-import { db } from '$lib/server/db';
-import { settings } from '$lib/server/db/schema';
-import { eq } from 'drizzle-orm';
+import { endPsSession, getStationStatuses, getSetting } from '$lib/server/convex';
 
 export const POST: RequestHandler = async ({ request, url }) => {
   try {
     // Check PIN
     const pin = url.searchParams.get('pin');
-    const staffPinResults = await db.select().from(settings).where(eq(settings.key, 'staff_pin'));
-    const staffPin = staffPinResults[0]?.value || '1234'; // Default PIN
+    const staffPin = await getSetting('staff_pin') || '1234';
 
     if (pin !== staffPin) {
       return json({
@@ -21,7 +17,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 
     const body = await request.json();
     const stationId = body.stationId as string;
-    const sessionId = body.sessionId as number | undefined;
+    const sessionId = body.sessionId as string | undefined;
 
     if (!stationId && !sessionId) {
       return json({
@@ -34,27 +30,25 @@ export const POST: RequestHandler = async ({ request, url }) => {
 
     // If stationId provided, find active session
     if (!targetSessionId && stationId) {
-      const activeSession = await getActiveSessionForStation(stationId);
-      if (!activeSession) {
+      const statuses = await getStationStatuses();
+      const stationStatus = statuses.find(s => s.station._id === stationId);
+      if (!stationStatus?.activeSession) {
         return json({
           success: false,
           error: 'No active session on this station'
         }, { status: 404 });
       }
-      targetSessionId = activeSession.id;
+      targetSessionId = stationStatus.activeSession._id;
     }
 
-    const session = await endSession(targetSessionId!);
+    const result = await endPsSession(targetSessionId!);
 
     return json({
       success: true,
       session: {
-        id: session.id,
-        stationId: session.stationId,
-        startedAt: session.startedAt,
-        endedAt: session.endedAt,
-        totalCost: session.totalCost ? session.totalCost / 100 : null,
-        durationMinutes: session.endedAt ? Math.floor((session.endedAt - session.startedAt) / (1000 * 60)) : null
+        id: result._id,
+        stationId: result.stationId,
+        totalCost: result.totalCost ? result.totalCost / 100 : null,
       }
     });
   } catch (error) {

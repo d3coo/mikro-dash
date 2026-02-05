@@ -49,6 +49,7 @@ export const insertPsStations = mutation({
     const idMap: Record<string, string> = {};
     for (const item of items) {
       const id = await ctx.db.insert('psStations', {
+        stationId: item.id,
         name: item.name,
         nameAr: item.name_ar,
         macAddress: item.mac_address,
@@ -65,6 +66,58 @@ export const insertPsStations = mutation({
       idMap[item.id] = id;
     }
     return { inserted: items.length, idMap };
+  },
+});
+
+/**
+ * Backfill stationId for existing psStations documents that are missing it.
+ * Uses the station name as stationId fallback (e.g., "Station 4" -> "Station 4").
+ */
+export const backfillStationIds = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const stations = await ctx.db.query('psStations').collect();
+    let updated = 0;
+    for (const station of stations) {
+      if (!station.stationId) {
+        // Use the station name as a fallback stationId
+        await ctx.db.patch(station._id, { stationId: station.name });
+        updated++;
+      }
+    }
+    return { updated, total: stations.length };
+  },
+});
+
+/**
+ * Rename stations from "Station X" to "ps-XX" format and fix sortOrder.
+ * Extracts the number from the current name (e.g., "Station 4" -> 4)
+ * and generates "ps-01", "ps-02", etc. Also sets sortOrder = that number.
+ */
+export const renameStationsToPsFormat = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const stations = await ctx.db.query('psStations').collect();
+    const results: Array<{ old: string; new: string; sortOrder: number }> = [];
+
+    for (const station of stations) {
+      // Extract number from current name (handles "Station 4", "station 1", "جهاز 3", etc.)
+      const match = station.name.match(/\d+/);
+      if (!match) continue;
+      const num = parseInt(match[0], 10);
+      const newName = `ps-${String(num).padStart(2, '0')}`;
+      const newStationId = newName;
+
+      await ctx.db.patch(station._id, {
+        name: newName,
+        stationId: newStationId,
+        sortOrder: num,
+      });
+
+      results.push({ old: station.name, new: newName, sortOrder: num });
+    }
+
+    return { updated: results.length, total: stations.length, results };
   },
 });
 

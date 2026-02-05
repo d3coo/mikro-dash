@@ -3,5 +3,11 @@ import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-	plugins: [tailwindcss(), sveltekit()]
+	plugins: [tailwindcss(), sveltekit()],
+	server: {
+		fs: {
+			// Allow serving files from the convex directory
+			allow: ['..', 'convex']
+		}
+	}
 });

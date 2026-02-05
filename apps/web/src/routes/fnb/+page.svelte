@@ -5,7 +5,7 @@
 
   let { data, form } = $props();
 
-  let selectedItemId = $state<number | null>(null);
+  let selectedItemId = $state<string | null>(null);
   let quantity = $state(1);
 
   // Format currency (piasters to EGP)
@@ -46,7 +46,7 @@
     snacks: '🍿'
   };
 
-  function selectItem(itemId: number) {
+  function selectItem(itemId: string) {
     if (selectedItemId === itemId) {
       selectedItemId = null;
       quantity = 1;
@@ -75,7 +75,7 @@
     }
   });
 
-  const selectedItem = $derived(data.menuItems.find((item: any) => item.id === selectedItemId));
+  const selectedItem = $derived(data.menuItems.find((item: any) => item._id === selectedItemId));
 </script>
 
 <div class="fnb-page">
@@ -139,8 +139,8 @@
               {#each items as item}
                 <button
                   type="button"
-                  class="menu-item {selectedItemId === item.id ? 'selected' : ''}"
-                  onclick={() => selectItem(item.id)}
+                  class="menu-item {selectedItemId === item._id ? 'selected' : ''}"
+                  onclick={() => selectItem(item._id)}
                 >
                   <span class="item-name">{item.nameAr}</span>
                   <span class="item-price">{formatCurrency(item.price)}</span>
@@ -170,7 +170,7 @@
           </div>
 
           <form method="POST" action="?/recordSale" use:enhance>
-            <input type="hidden" name="menuItemId" value={selectedItem.id} />
+            <input type="hidden" name="menuItemId" value={selectedItem._id} />
             <input type="hidden" name="quantity" value={quantity} />
             <button type="submit" class="btn-primary-full">
               <Plus class="w-5 h-5" />
@@ -226,7 +226,7 @@
               <div class="sale-actions">
                 <span class="sale-price">{formatCurrency(sale.priceSnapshot * sale.quantity)}</span>
                 <form method="POST" action="?/deleteSale" use:enhance>
-                  <input type="hidden" name="id" value={sale.id} />
+                  <input type="hidden" name="id" value={sale._id} />
                   <button type="submit" class="btn-icon-danger" title="حذف">
                     <Trash2 class="w-4 h-4" />
                   </button>

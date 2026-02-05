@@ -18,6 +18,12 @@ import {
 // Characters for generating codes (uppercase + numbers, excluding confusing ones like 0/O, 1/I)
 const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
+// In-memory cache to avoid hammering MikroTik on every page load
+const VOUCHER_CACHE_TTL_MS = 30_000; // 30 seconds
+let cachedVouchersInMemory: Voucher[] | null = null;
+let lastFetchTime = 0;
+let fetchInProgress: Promise<Voucher[]> | null = null;
+
 export interface Voucher {
   id: string;           // MikroTik internal ID (.id)
   name: string;         // Voucher code/username
@@ -152,9 +158,45 @@ function transformToVoucher(
 }
 
 /**
- * Get all vouchers from router
+ * Get all vouchers from router (with in-memory throttle)
+ * Returns cached result if less than 30s old to avoid hammering MikroTik
  */
 export async function getVouchers(): Promise<Voucher[]> {
+  const now = Date.now();
+
+  // Return cached result if fresh enough
+  if (cachedVouchersInMemory && (now - lastFetchTime) < VOUCHER_CACHE_TTL_MS) {
+    return cachedVouchersInMemory;
+  }
+
+  // If a fetch is already in progress, wait for it instead of starting another
+  if (fetchInProgress) {
+    return fetchInProgress;
+  }
+
+  fetchInProgress = fetchVouchersFromRouter();
+  try {
+    const result = await fetchInProgress;
+    cachedVouchersInMemory = result;
+    lastFetchTime = Date.now();
+    return result;
+  } finally {
+    fetchInProgress = null;
+  }
+}
+
+/**
+ * Force-refresh vouchers (bypass cache) - use after create/delete operations
+ */
+export function invalidateVoucherCache(): void {
+  cachedVouchersInMemory = null;
+  lastFetchTime = 0;
+}
+
+/**
+ * Internal: actually fetch vouchers from the MikroTik router
+ */
+async function fetchVouchersFromRouter(): Promise<Voucher[]> {
   const client = await getMikroTikClient();
   const [hotspotUsers, activeSessions, cookies, dhcpLeases] = await Promise.all([
     client.getHotspotUsers(),
@@ -383,6 +425,7 @@ export async function createVouchers(packageId: string, quantity: number): Promi
     created++;
   }
 
+  invalidateVoucherCache();
   return { created };
 }
 
@@ -398,6 +441,7 @@ export async function deleteVoucher(id: string, voucherCode?: string): Promise<v
   }
 
   await client.deleteHotspotUser(id);
+  invalidateVoucherCache();
 
   // Remove from cache
   removeCachedVoucher(id).catch(err => {
@@ -420,6 +464,8 @@ export async function deleteVouchers(vouchers: Array<{ id: string; name: string 
     deleted++;
   }
 
+  invalidateVoucherCache();
+
   // Remove from cache
   removeCachedVouchers(vouchers.map(v => v.id)).catch(err => {
     console.error('[Vouchers] Failed to remove batch from cache:', err);
@@ -436,6 +482,7 @@ export async function deleteVouchers(vouchers: Array<{ id: string; name: string 
 export async function extendVoucherTime(id: string, newLimitUptime: string): Promise<void> {
   const client = await getMikroTikClient();
   await client.updateHotspotUser(id, { limitUptime: newLimitUptime });
+  invalidateVoucherCache();
 }
 
 /**

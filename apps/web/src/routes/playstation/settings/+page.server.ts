@@ -1,42 +1,35 @@
 import type { PageServerLoad, Actions } from './$types';
 import {
-  getStations,
-  getStationById,
-  createStation,
-  updateStation,
-  deleteStation
-} from '$lib/server/services/playstation';
+  getPsStations,
+  createPsStation,
+  updatePsStation,
+  deletePsStation,
+} from '$lib/server/convex';
 import { fail } from '@sveltejs/kit';
 
 export const load: PageServerLoad = async () => {
-  const stations = await getStations();
+  const stations = await getPsStations();
   return { stations };
 };
 
 export const actions: Actions = {
   create: async ({ request }) => {
     const formData = await request.formData();
-    const id = (formData.get('id') as string)?.trim();
+    const stationId = (formData.get('id') as string)?.trim();
     const name = (formData.get('name') as string)?.trim();
     const nameAr = (formData.get('nameAr') as string)?.trim();
     const macAddress = (formData.get('macAddress') as string)?.trim();
     const hourlyRate = parseInt(formData.get('hourlyRate') as string, 10);
     const hourlyRateMultiStr = (formData.get('hourlyRateMulti') as string)?.trim();
-    const hourlyRateMulti = hourlyRateMultiStr ? parseInt(hourlyRateMultiStr, 10) : null;
-    const monitorIp = (formData.get('monitorIp') as string)?.trim() || null;
+    const hourlyRateMulti = hourlyRateMultiStr ? parseInt(hourlyRateMultiStr, 10) : undefined;
+    const monitorIp = (formData.get('monitorIp') as string)?.trim() || undefined;
     const monitorPort = parseInt(formData.get('monitorPort') as string, 10) || 8080;
     const monitorType = (formData.get('monitorType') as string) || 'tcl';
     const timerEndAction = (formData.get('timerEndAction') as string) || 'notify';
     const hdmiInput = parseInt(formData.get('hdmiInput') as string, 10) || 2;
 
-    if (!id || !name || !nameAr || !macAddress || isNaN(hourlyRate)) {
+    if (!stationId || !name || !nameAr || !macAddress || isNaN(hourlyRate)) {
       return fail(400, { error: 'جميع الحقول مطلوبة' });
-    }
-
-    // Check for duplicate ID
-    const existing = await getStationById(id);
-    if (existing) {
-      return fail(400, { error: 'معرف الجهاز موجود بالفعل' });
     }
 
     // Validate MAC address format
@@ -54,21 +47,20 @@ export const actions: Actions = {
     }
 
     try {
-      // Convert rate from EGP to piasters (multiply by 100)
-      const stations = await getStations();
-      await createStation({
-        id,
+      const stations = await getPsStations();
+      await createPsStation({
+        stationId,
         name,
         nameAr,
         macAddress,
         hourlyRate: hourlyRate * 100, // Store in piasters
-        hourlyRateMulti: hourlyRateMulti ? hourlyRateMulti * 100 : null, // Store in piasters
+        hourlyRateMulti: hourlyRateMulti ? hourlyRateMulti * 100 : undefined,
         monitorIp,
         monitorPort,
         monitorType,
         timerEndAction,
         hdmiInput,
-        sortOrder: stations.length
+        sortOrder: stations.length,
       });
       return { success: true };
     } catch (error) {
@@ -84,13 +76,13 @@ export const actions: Actions = {
     const macAddress = (formData.get('macAddress') as string)?.trim();
     const hourlyRate = parseInt(formData.get('hourlyRate') as string, 10);
     const hourlyRateMultiStr = (formData.get('hourlyRateMulti') as string)?.trim();
-    const hourlyRateMulti = hourlyRateMultiStr ? parseInt(hourlyRateMultiStr, 10) : null;
+    const hourlyRateMulti = hourlyRateMultiStr ? parseInt(hourlyRateMultiStr, 10) : undefined;
     const status = formData.get('status') as string;
-    const monitorIp = (formData.get('monitorIp') as string)?.trim() || null;
+    const monitorIp = (formData.get('monitorIp') as string)?.trim() || undefined;
     const monitorPort = parseInt(formData.get('monitorPort') as string, 10) || 8080;
-    const monitorType = (formData.get('monitorType') as string) || null;
-    const timerEndAction = (formData.get('timerEndAction') as string) || null;
-    const hdmiInput = parseInt(formData.get('hdmiInput') as string, 10) || null;
+    const monitorType = (formData.get('monitorType') as string) || undefined;
+    const timerEndAction = (formData.get('timerEndAction') as string) || undefined;
+    const hdmiInput = parseInt(formData.get('hdmiInput') as string, 10) || undefined;
 
     if (!id) {
       return fail(400, { error: 'معرف الجهاز مطلوب' });
@@ -113,20 +105,20 @@ export const actions: Actions = {
     }
 
     try {
-      const updates: Parameters<typeof updateStation>[1] = {};
+      const updates: Record<string, unknown> = {};
       if (name) updates.name = name;
       if (nameAr) updates.nameAr = nameAr;
       if (macAddress) updates.macAddress = macAddress;
-      if (!isNaN(hourlyRate)) updates.hourlyRate = hourlyRate * 100; // Store in piasters
-      updates.hourlyRateMulti = hourlyRateMulti ? hourlyRateMulti * 100 : null; // Store in piasters or null
+      if (!isNaN(hourlyRate)) updates.hourlyRate = hourlyRate * 100;
+      if (hourlyRateMulti) updates.hourlyRateMulti = hourlyRateMulti * 100;
       if (status) updates.status = status;
-      updates.monitorIp = monitorIp;
+      if (monitorIp) updates.monitorIp = monitorIp;
       updates.monitorPort = monitorPort;
       if (monitorType) updates.monitorType = monitorType;
       if (timerEndAction) updates.timerEndAction = timerEndAction;
       if (hdmiInput) updates.hdmiInput = hdmiInput;
 
-      await updateStation(id, updates);
+      await updatePsStation(id, updates);
       return { success: true };
     } catch (error) {
       return fail(500, { error: error instanceof Error ? error.message : 'حدث خطأ' });
@@ -142,7 +134,7 @@ export const actions: Actions = {
     }
 
     try {
-      await deleteStation(id);
+      await deletePsStation(id);
       return { success: true };
     } catch (error) {
       return fail(500, { error: error instanceof Error ? error.message : 'حدث خطأ' });

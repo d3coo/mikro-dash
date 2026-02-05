@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { getStationStatuses, calculateSessionCost } from '$lib/server/services/playstation';
+import { getStationStatuses } from '$lib/server/convex';
 
 export const GET: RequestHandler = async () => {
   try {
@@ -11,24 +11,19 @@ export const GET: RequestHandler = async () => {
       let session = null;
 
       if (s.activeSession) {
-        const elapsedMs = now - s.activeSession.startedAt;
-        const elapsedMinutes = Math.floor(elapsedMs / (1000 * 60));
-        const currentCost = calculateSessionCost(s.activeSession, now);
-
         session = {
           startedAt: s.activeSession.startedAt,
-          elapsedMinutes,
-          currentCost: currentCost / 100 // Convert to EGP
+          elapsedMinutes: s.elapsedMinutes,
+          currentCost: s.currentCost / 100 // Convert to EGP
         };
       }
 
       return {
-        id: s.station.id,
+        id: s.station._id,
         name: s.station.name,
         nameAr: s.station.nameAr,
-        status: s.station.status === 'occupied' ? 'occupied' : s.station.status === 'maintenance' ? 'maintenance' : 'available',
-        hourlyRate: s.station.hourlyRate / 100, // Convert to EGP
-        isOnline: s.isOnline,
+        status: s.station.status,
+        hourlyRate: s.station.hourlyRate / 100,
         session
       };
     });

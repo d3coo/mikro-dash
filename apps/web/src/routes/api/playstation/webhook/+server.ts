@@ -1,10 +1,11 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import {
-  getStations,
-  getActiveSessionForStation,
-  startSession,
-  endSession,
+  getPsStations,
+  getStationStatuses,
+  startPsSession,
+} from '$lib/server/convex';
+import {
   getStationOnlineState,
   setStationOnlineState,
   isInManualEndCooldown,
@@ -63,7 +64,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
     const normalizedMac = mac.toUpperCase().replace(/-/g, ':');
 
     // Find station by MAC
-    const stations = await getStations();
+    const stations = await getPsStations();
     const station = stations.find(s =>
       s.macAddress.toUpperCase().replace(/-/g, ':') === normalizedMac
     );
@@ -77,7 +78,10 @@ export const POST: RequestHandler = async ({ request, url }) => {
       return json({ success: true, message: 'Station in maintenance, skipped' });
     }
 
-    const activeSession = await getActiveSessionForStation(station.id);
+    // Check for active session via Convex
+    const statuses = await getStationStatuses();
+    const stationStatus = statuses.find(s => s.station._id === station._id);
+    const activeSession = stationStatus?.activeSession ?? null;
     const previousState = getStationOnlineState(normalizedMac);
 
     if (action === 'connect' || action === 'up') {
@@ -87,16 +91,16 @@ export const POST: RequestHandler = async ({ request, url }) => {
 
       if (!activeSession && isFirstConnect) {
         // Check if station is in manual-end cooldown
-        if (isInManualEndCooldown(station.id)) {
-          console.log(`[Webhook] Station ${station.id} in cooldown - not auto-starting`);
+        if (isInManualEndCooldown(station._id)) {
+          console.log(`[Webhook] Station ${station._id} in cooldown - not auto-starting`);
           return json({ success: true, message: 'Station in manual-end cooldown, no auto-start' });
         }
 
         // Auto-start session only on first connect
-        console.log(`[Webhook] Auto-starting session for ${station.id} (${station.nameAr}) - first connect`);
-        const session = await startSession(station.id, 'auto');
+        console.log(`[Webhook] Auto-starting session for ${station._id} (${station.nameAr}) - first connect`);
+        const sessionId = await startPsSession(station._id, 'auto');
         lastWebhookUpdate = Date.now();
-        return json({ success: true, action: 'started', sessionId: session.id });
+        return json({ success: true, action: 'started', sessionId });
       }
 
       if (!isFirstConnect) {
@@ -109,11 +113,11 @@ export const POST: RequestHandler = async ({ request, url }) => {
       setStationOnlineState(normalizedMac, 'down');
 
       // Clear manual-end cooldown since device actually disconnected
-      clearManualEndCooldown(station.id);
+      clearManualEndCooldown(station._id);
 
       // Never auto-end sessions - admin must end them manually with price selection
       if (activeSession) {
-        console.log(`[Webhook] Device disconnected for ${station.id} - session stays open for admin to end with price selection`);
+        console.log(`[Webhook] Device disconnected for ${station._id} - session stays open for admin to end with price selection`);
         lastWebhookUpdate = Date.now();
         return json({ success: true, message: 'Device disconnected - session stays open for manual end' });
       }

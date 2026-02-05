@@ -5,7 +5,7 @@
   let { data } = $props();
 
   // Format duration in minutes to human readable
-  function formatDuration(startedAt: number, endedAt: number | null): string {
+  function formatDuration(startedAt: number, endedAt: number | null | undefined): string {
     const end = endedAt || Date.now();
     const durationMs = end - startedAt;
     const hours = Math.floor(durationMs / (1000 * 60 * 60));
@@ -37,8 +37,8 @@
   }
 
   // Format cost from piasters to EGP
-  function formatCost(piasters: number | null): string {
-    if (piasters === null) return '-';
+  function formatCost(piasters: number | null | undefined): string {
+    if (piasters == null) return '-';
     return `${(piasters / 100).toFixed(1)} ج.م`;
   }
 
@@ -49,7 +49,7 @@
 
   // Get station name
   function getStationName(stationId: string): string {
-    const station = data.stations.find(s => s.id === stationId);
+    const station = data.stations.find(s => s._id === stationId);
     return station?.nameAr || stationId;
   }
 
@@ -147,7 +147,7 @@
         >
           <option value="">جميع الأجهزة</option>
           {#each data.stations as station}
-            <option value={station.id}>{station.nameAr}</option>
+            <option value={station._id}>{station.nameAr}</option>
           {/each}
         </select>
       </div>

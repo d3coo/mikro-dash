@@ -5,7 +5,7 @@ import { eq, and, gte, lte, desc, sql } from 'drizzle-orm';
 import { getVouchers } from './vouchers';
 import { getPackages } from '$lib/server/config';
 import { getFnbSalesSummary, getTodayFnbRevenue } from './fnb-sales';
-import { getTodayPsRevenue, getActiveSessions, calculateSessionCost } from './playstation';
+import { getActivePsSessions } from '$lib/server/convex';
 
 // ===== TYPES =====
 
@@ -254,12 +254,14 @@ export async function getUnifiedAnalytics(
 
   // For today, also include active sessions (gaming cost only, not orders)
   if (period === 'today' || endDate === getTodayDate()) {
-    const activeSessions = await getActiveSessions();
+    const activeSessions = await getActivePsSessions();
     for (const session of activeSessions) {
       const now = Date.now();
-      psGamingRevenue += calculateSessionCost(session, now);
-      // Note: We NO LONGER add ordersCost here - it goes to F&B segment
-      psMinutes += Math.floor((now - session.startedAt) / (1000 * 60));
+      // Simple cost calculation: hourlyRate * minutes / 60
+      const elapsedMs = now - session.startedAt - (session.totalPausedMs || 0);
+      const minutes = Math.ceil(elapsedMs / (1000 * 60));
+      psGamingRevenue += Math.round((session.hourlyRateSnapshot * minutes) / 60);
+      psMinutes += Math.floor(elapsedMs / (1000 * 60));
     }
   }
 

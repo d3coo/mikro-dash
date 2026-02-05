@@ -35,7 +35,7 @@
     formNameAr = item.nameAr;
     formCategory = item.category;
     formPrice = item.price / 100; // Convert from piasters to EGP
-    formIsAvailable = item.isAvailable === 1;
+    formIsAvailable = !!item.isAvailable;
     showEditModal = true;
   }
 
@@ -275,7 +275,7 @@
     }}
     class="form-grid"
   >
-    <input type="hidden" name="id" value={selectedItem?.id} />
+    <input type="hidden" name="id" value={selectedItem?._id} />
 
     <div class="form-group">
       <label for="edit-name">الاسم (إنجليزي)</label>
@@ -387,7 +387,7 @@
       }}
       class="form-actions"
     >
-      <input type="hidden" name="id" value={selectedItem?.id} />
+      <input type="hidden" name="id" value={selectedItem?._id} />
       <button type="button" class="btn btn-secondary" onclick={closeModals}>
         إلغاء
       </button>

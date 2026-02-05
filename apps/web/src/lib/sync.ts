@@ -15,7 +15,7 @@ let convexApi: any = null;
 async function getConvex() {
   if (!convexClient) {
     const { convex } = await import('./convex');
-    const { api } = await import('../convex/_generated/api');
+    const { api } = await import('../../convex/_generated/api');
     convexClient = convex;
     convexApi = api;
   }

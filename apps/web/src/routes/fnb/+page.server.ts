@@ -1,28 +1,35 @@
 import type { PageServerLoad, Actions } from './$types';
 import { fail } from '@sveltejs/kit';
-import { getTodayFnbSales, getTodayFnbRevenue, recordFnbSale, deleteFnbSale } from '$lib/server/services/fnb-sales';
-import { getMenuItems } from '$lib/server/services/playstation';
+import {
+  getTodayFnbSalesWithItems,
+  getPsMenuItems,
+  recordFnbSale,
+  deleteFnbSale,
+} from '$lib/server/convex';
 
 export const load: PageServerLoad = async () => {
   try {
-    const sales = await getTodayFnbSales();
-    const revenue = await getTodayFnbRevenue();
-    const allMenuItems = await getMenuItems();
-    const menuItems = allMenuItems.filter(item => item.isAvailable);
+    const sales = await getTodayFnbSalesWithItems();
+    const allMenuItems = await getPsMenuItems();
+    const menuItems = allMenuItems.filter((item) => item.isAvailable);
+
+    // Calculate revenue
+    const revenue = sales.reduce((sum, s) => sum + s.priceSnapshot * s.quantity, 0);
 
     // Group sales by menu item for summary
-    const salesByItem = new Map<number, { name: string; quantity: number; total: number }>();
+    const salesByItem = new Map<string, { name: string; quantity: number; total: number }>();
     for (const sale of sales) {
       const itemName = sale.menuItem?.nameAr || 'غير معروف';
-      const existing = salesByItem.get(sale.menuItemId);
+      const key = sale.menuItemId as string;
+      const existing = salesByItem.get(key);
       if (existing) {
         existing.quantity += sale.quantity;
         existing.total += sale.priceSnapshot * sale.quantity;
       } else {
-        salesByItem.set(sale.menuItemId, {
+        salesByItem.set(key, {
           name: itemName,
           quantity: sale.quantity,
-          total: sale.priceSnapshot * sale.quantity
+          total: sale.priceSnapshot * sale.quantity,
         });
       }
     }
@@ -32,7 +39,7 @@ export const load: PageServerLoad = async () => {
       revenue,
       menuItems,
       salesSummary: Array.from(salesByItem.values()),
-      totalItems: sales.reduce((sum, s) => sum + s.quantity, 0)
+      totalItems: sales.reduce((sum, s) => sum + s.quantity, 0),
     };
   } catch (error) {
     console.error('F&B page load error:', error);
@@ -42,7 +49,7 @@ export const load: PageServerLoad = async () => {
       menuItems: [],
       salesSummary: [],
       totalItems: 0,
-      error: 'فشل في تحميل البيانات'
+      error: 'فشل في تحميل البيانات',
     };
   }
 };
@@ -50,10 +57,10 @@ export const load: PageServerLoad = async () => {
 export const actions: Actions = {
   recordSale: async ({ request }) => {
     const formData = await request.formData();
-    const menuItemId = parseInt(formData.get('menuItemId') as string, 10);
+    const menuItemId = formData.get('menuItemId') as string;
     const quantity = parseInt(formData.get('quantity') as string, 10) || 1;
 
-    if (isNaN(menuItemId) || menuItemId <= 0) {
+    if (!menuItemId) {
       return fail(400, { error: 'يرجى اختيار عنصر' });
     }
 
@@ -72,9 +79,9 @@ export const actions: Actions = {
 
   deleteSale: async ({ request }) => {
     const formData = await request.formData();
-    const id = parseInt(formData.get('id') as string, 10);
+    const id = formData.get('id') as string;
 
-    if (isNaN(id)) {
+    if (!id) {
       return fail(400, { error: 'معرف البيع غير صالح' });
     }
 

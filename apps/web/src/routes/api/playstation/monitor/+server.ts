@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { getStationById } from '$lib/server/services/playstation';
+import { getPsStationById } from '$lib/server/convex';
 import * as monitorControl from '$lib/server/services/monitor-control';
 import * as adb from '$lib/server/services/adb-control';
 import * as pipup from '$lib/server/services/pipup';
@@ -35,17 +35,16 @@ export const POST: RequestHandler = async ({ request }) => {
     const { action, stationId, ip, ...params } = body;
 
     // Get station if stationId provided
-    let station = stationId ? await getStationById(stationId) : null;
+    let station = stationId ? await getPsStationById(stationId) : null;
 
     // If no station but IP provided, create a minimal station object
     if (!station && ip) {
       station = {
-        id: 'temp',
+        _id: 'temp',
         name: 'Temp',
         nameAr: params.stationName || 'Station',
         macAddress: '',
         hourlyRate: 0,
-        hourlyRateMulti: null,
         status: 'available',
         monitorIp: ip,
         monitorPort: params.port || 8080,
@@ -53,8 +52,6 @@ export const POST: RequestHandler = async ({ request }) => {
         timerEndAction: params.timerEndAction || 'notify',
         hdmiInput: params.hdmiInput || 2,
         sortOrder: 0,
-        createdAt: Date.now(),
-        updatedAt: Date.now()
       };
     }
 
@@ -64,6 +61,18 @@ export const POST: RequestHandler = async ({ request }) => {
 
     const targetIp = station?.monitorIp || ip;
 
+    // Map PsStation to monitor-control Station interface
+    const toMonitorStation = (s: NonNullable<typeof station>) => ({
+      id: s._id,
+      name: s.name,
+      nameAr: s.nameAr,
+      monitorIp: s.monitorIp ?? null,
+      monitorPort: s.monitorPort,
+      monitorType: s.monitorType,
+      timerEndAction: s.timerEndAction,
+      hdmiInput: s.hdmiInput,
+    });
+
     switch (action) {
       // Timer events (called from client-side timer)
       case 'timer_warning': {
@@ -71,7 +80,7 @@ export const POST: RequestHandler = async ({ request }) => {
           return json({ success: false, error: 'Station not found' }, { status: 404 });
         }
         const minutesRemaining = params.minutesRemaining ?? 5;
-        const result = await monitorControl.onTimerWarning(station, minutesRemaining);
+        const result = await monitorControl.onTimerWarning(toMonitorStation(station), minutesRemaining);
         return json(result);
       }
 
@@ -79,7 +88,7 @@ export const POST: RequestHandler = async ({ request }) => {
         if (!station) {
           return json({ success: false, error: 'Station not found' }, { status: 404 });
         }
-        const result = await monitorControl.onTimerExpired(station);
+        const result = await monitorControl.onTimerExpired(toMonitorStation(station));
         return json(result);
       }
 
@@ -89,7 +98,7 @@ export const POST: RequestHandler = async ({ request }) => {
           return json({ success: false, error: 'Station not found' }, { status: 404 });
         }
         const timerMinutes = params.timerMinutes ? parseInt(params.timerMinutes, 10) : undefined;
-        const result = await monitorControl.onSessionStart(station, timerMinutes);
+        const result = await monitorControl.onSessionStart(toMonitorStation(station), timerMinutes);
         return json(result);
       }
 
@@ -97,7 +106,7 @@ export const POST: RequestHandler = async ({ request }) => {
         if (!station) {
           return json({ success: false, error: 'Station not found' }, { status: 404 });
         }
-        const result = await monitorControl.onSessionEnd(station);
+        const result = await monitorControl.onSessionEnd(toMonitorStation(station));
         return json(result);
       }
 
@@ -153,12 +162,11 @@ export const POST: RequestHandler = async ({ request }) => {
         if (!station) {
           // Create minimal station for testing
           station = {
-            id: 'test',
+            _id: 'test',
             name: 'Test',
             nameAr: 'Test',
             macAddress: '',
             hourlyRate: 0,
-            hourlyRateMulti: null,
             status: 'available',
             monitorIp: targetIp,
             monitorPort: 8080,
@@ -166,11 +174,9 @@ export const POST: RequestHandler = async ({ request }) => {
             timerEndAction: 'notify',
             hdmiInput: 2,
             sortOrder: 0,
-            createdAt: Date.now(),
-            updatedAt: Date.now()
           };
         }
-        const result = await monitorControl.testConnections(station!);
+        const result = await monitorControl.testConnections(toMonitorStation(station!));
         return json({
           success: result.adb.success || result.pipup.success,
           adb: result.adb,

@@ -22,6 +22,7 @@ export default defineSchema({
 
   // PlayStation stations
   psStations: defineTable({
+    stationId: v.optional(v.string()), // e.g., "PS-01" - user-facing identifier (optional for backfill)
     name: v.string(),
     nameAr: v.string(),
     macAddress: v.string(),
