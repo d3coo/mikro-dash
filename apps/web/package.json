@@ -139,6 +139,8 @@
 		"bits-ui": "^2.15.4",
 		"chart.js": "^4.5.1",
 		"clsx": "^2.1.1",
+		"convex": "^1.31.7",
+		"convex-svelte": "^0.0.12",
 		"drizzle-orm": "^0.45.1",
 		"html2canvas": "^1.4.1",
 		"html5-qrcode": "^2.3.8",
