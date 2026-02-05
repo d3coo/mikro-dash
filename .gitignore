@@ -37,6 +37,9 @@ yarn-error.log*
 .DS_Store
 *.pem
 
+# Worktrees
+.worktrees/
+
 # Logs
 logs/
 *.log
