@@ -23,7 +23,7 @@
 
   // Group menu items by category
   const menuByCategory = $derived(() => {
-    const grouped = new Map<string, typeof data.menuItems>();
+    const grouped = new Map<string, (typeof data.menuItems)[number][]>();
     for (const item of data.menuItems) {
       const cat = item.category;
       if (!grouped.has(cat)) {

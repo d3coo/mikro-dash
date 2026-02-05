@@ -1,6 +1,6 @@
 <script lang="ts">
   import { browser } from '$app/environment';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
 
   interface Props {
     labels: string[];
@@ -25,61 +25,63 @@
   let canvasEl: HTMLCanvasElement;
   let chart: any = null;
 
-  onMount(async () => {
+  onMount(() => {
     if (!browser) return;
 
-    const { Chart, ArcElement, DoughnutController, Title, Tooltip, Legend } = await import('chart.js');
+    (async () => {
+      const { Chart, ArcElement, DoughnutController, Title, Tooltip, Legend } = await import('chart.js');
 
-    Chart.register(ArcElement, DoughnutController, Title, Tooltip, Legend);
+      Chart.register(ArcElement, DoughnutController, Title, Tooltip, Legend);
 
-    const ctx = canvasEl.getContext('2d');
-    if (!ctx) return;
+      const ctx = canvasEl.getContext('2d');
+      if (!ctx) return;
 
-    chart = new Chart(ctx, {
-      type: 'doughnut',
-      data: {
-        labels,
-        datasets: [{
-          data,
-          backgroundColor: colors.slice(0, data.length),
-          borderColor: 'rgba(15, 23, 42, 0.8)',
-          borderWidth: 2,
-          hoverBorderColor: '#fff',
-          hoverBorderWidth: 2
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        cutout: '60%',
-        plugins: {
-          legend: {
-            display: true,
-            position: 'right',
-            rtl: true,
-            labels: {
-              color: '#94a3b8',
-              padding: 12,
-              usePointStyle: true,
-              pointStyle: 'circle'
+      chart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels,
+          datasets: [{
+            data,
+            backgroundColor: colors.slice(0, data.length),
+            borderColor: 'rgba(15, 23, 42, 0.8)',
+            borderWidth: 2,
+            hoverBorderColor: '#fff',
+            hoverBorderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '60%',
+          plugins: {
+            legend: {
+              display: true,
+              position: 'right',
+              rtl: true,
+              labels: {
+                color: '#94a3b8',
+                padding: 12,
+                usePointStyle: true,
+                pointStyle: 'circle'
+              }
+            },
+            tooltip: {
+              rtl: true,
+              backgroundColor: 'rgba(15, 23, 42, 0.9)',
+              borderColor: 'rgba(148, 163, 184, 0.2)',
+              borderWidth: 1,
+              titleColor: '#f1f5f9',
+              bodyColor: '#cbd5e1',
+              padding: 12
             }
-          },
-          tooltip: {
-            rtl: true,
-            backgroundColor: 'rgba(15, 23, 42, 0.9)',
-            borderColor: 'rgba(148, 163, 184, 0.2)',
-            borderWidth: 1,
-            titleColor: '#f1f5f9',
-            bodyColor: '#cbd5e1',
-            padding: 12
           }
         }
-      }
-    });
+      });
+    })();
+  });
 
-    return () => {
-      if (chart) chart.destroy();
-    };
+  onDestroy(() => {
+    if (chart) chart.destroy();
   });
 </script>
 

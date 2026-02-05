@@ -6,7 +6,7 @@ import { getAllVoucherUsage, syncActiveSessionsToHistory } from '$lib/server/ser
  * GET /api/voucher-history - Get all stored voucher usage history
  */
 export const GET: RequestHandler = async () => {
-  const history = getAllVoucherUsage();
+  const history = await getAllVoucherUsage();
 
   return json({
     success: true,

@@ -35,7 +35,7 @@ export const POST: RequestHandler = async ({ request }) => {
     const { action, stationId, ip, ...params } = body;
 
     // Get station if stationId provided
-    let station = stationId ? getStationById(stationId) : null;
+    let station = stationId ? await getStationById(stationId) : null;
 
     // If no station but IP provided, create a minimal station object
     if (!station && ip) {

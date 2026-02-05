@@ -104,7 +104,8 @@ export const psSessions = sqliteTable('ps_sessions', {
   pausedAt: integer('paused_at'),                 // Timestamp when PS went offline (NULL = not paused)
   totalPausedMs: integer('total_paused_ms').default(0), // Total milliseconds session was paused
   notes: text('notes'),
-  createdAt: integer('created_at').notNull()
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at'),               // Last update timestamp
 });
 
 // PlayStation daily stats

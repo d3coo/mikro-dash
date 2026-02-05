@@ -1674,7 +1674,7 @@
   {@const totalCostRaw = activeSessionForEnd.calculatedCost + activeSessionForEnd.ordersTotal + activeSessionForEnd.extraCharges + activeSessionForEnd.transferredCost}
   {@const roundedCost = roundToNearest(totalCostRaw, 500)}
   {@const finalCost = getFinalCost()}
-  {@const hasOtherSessions = data.activeSessions && data.activeSessions.filter(s => s.id !== activeSessionForEnd.sessionId).length > 0}
+  {@const hasOtherSessions = data.activeSessions && data.activeSessions.filter(s => s.id !== activeSessionForEnd!.sessionId).length > 0}
 
   <div class="modal-overlay" onclick={closeEndSessionModal}>
     <div class="modal-box modal-lg modal-rtl" onclick={(e) => e.stopPropagation()}>

@@ -14,7 +14,6 @@ export const GET: RequestHandler = async () => {
       hourlyRate: s.station.hourlyRate / 100, // Convert to EGP
       status: s.station.status,
       isOnline: s.isOnline,
-      inGracePeriod: s.inGracePeriod,
       session: s.activeSession ? {
         id: s.activeSession.id,
         startedAt: s.activeSession.startedAt,

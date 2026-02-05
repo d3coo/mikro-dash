@@ -63,7 +63,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
     const normalizedMac = mac.toUpperCase().replace(/-/g, ':');
 
     // Find station by MAC
-    const stations = getStations();
+    const stations = await getStations();
     const station = stations.find(s =>
       s.macAddress.toUpperCase().replace(/-/g, ':') === normalizedMac
     );
@@ -77,7 +77,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
       return json({ success: true, message: 'Station in maintenance, skipped' });
     }
 
-    const activeSession = getActiveSessionForStation(station.id);
+    const activeSession = await getActiveSessionForStation(station.id);
     const previousState = getStationOnlineState(normalizedMac);
 
     if (action === 'connect' || action === 'up') {
@@ -94,7 +94,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 
         // Auto-start session only on first connect
         console.log(`[Webhook] Auto-starting session for ${station.id} (${station.nameAr}) - first connect`);
-        const session = startSession(station.id, 'auto');
+        const session = await startSession(station.id, 'auto');
         lastWebhookUpdate = Date.now();
         return json({ success: true, action: 'started', sessionId: session.id });
       }

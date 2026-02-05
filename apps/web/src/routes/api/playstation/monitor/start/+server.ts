@@ -9,8 +9,8 @@ export const POST: RequestHandler = async ({ request, url }) => {
   try {
     // Check PIN
     const pin = url.searchParams.get('pin');
-    const staffPinSetting = db.select().from(settings).where(eq(settings.key, 'staff_pin')).get();
-    const staffPin = staffPinSetting?.value || '1234'; // Default PIN
+    const staffPinResults = await db.select().from(settings).where(eq(settings.key, 'staff_pin'));
+    const staffPin = staffPinResults[0]?.value || '1234'; // Default PIN
 
     if (pin !== staffPin) {
       return json({
@@ -29,7 +29,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
       }, { status: 400 });
     }
 
-    const station = getStationById(stationId);
+    const station = await getStationById(stationId);
     if (!station) {
       return json({
         success: false,
@@ -37,7 +37,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
       }, { status: 404 });
     }
 
-    const session = startSession(stationId, 'manual');
+    const session = await startSession(stationId, 'manual');
 
     return json({
       success: true,

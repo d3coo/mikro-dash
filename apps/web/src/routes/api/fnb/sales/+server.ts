@@ -22,15 +22,15 @@ export const GET: RequestHandler = async ({ url }) => {
     const end = url.searchParams.get('end');
 
     if (today === 'true') {
-      const sales = getTodayFnbSales();
-      const revenue = getTodayFnbRevenue();
+      const sales = await getTodayFnbSales();
+      const revenue = await getTodayFnbRevenue();
 
       return json({
         success: true,
         sales,
         summary: {
           totalRevenue: revenue,
-          totalItems: sales.reduce((sum, s) => sum + s.quantity, 0)
+          totalItems: sales.reduce((sum: number, s: { quantity: number }) => sum + s.quantity, 0)
         }
       });
     }
