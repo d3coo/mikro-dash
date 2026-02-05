@@ -240,6 +240,18 @@ export const unifiedDailyStats = sqliteTable('unified_daily_stats', {
   updatedAt: integer('updated_at').notNull()
 });
 
+// Pending writes queue for offline support
+export const pendingWrites = sqliteTable('pending_writes', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  mutation: text('mutation').notNull(),        // e.g., "psSessions.start"
+  args: text('args').notNull(),                // JSON stringified args
+  localId: text('local_id'),                   // Temporary local ID for optimistic UI
+  createdAt: integer('created_at').notNull(),
+  status: text('status').notNull().default('pending'), // pending|syncing|failed
+  error: text('error'),                        // Error message if failed
+  retryCount: integer('retry_count').default(0),
+});
+
 // Type exports
 export type Setting = typeof settings.$inferSelect;
 export type NewSetting = typeof settings.$inferInsert;
@@ -277,3 +289,5 @@ export type VoucherCache = typeof vouchersCache.$inferSelect;
 export type NewVoucherCache = typeof vouchersCache.$inferInsert;
 export type SessionCache = typeof sessionsCache.$inferSelect;
 export type NewSessionCache = typeof sessionsCache.$inferInsert;
+export type PendingWrite = typeof pendingWrites.$inferSelect;
+export type NewPendingWrite = typeof pendingWrites.$inferInsert;

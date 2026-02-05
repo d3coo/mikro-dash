@@ -323,6 +323,19 @@ export async function initializeDb() {
     )
   `);
 
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS pending_writes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      mutation TEXT NOT NULL,
+      args TEXT NOT NULL,
+      local_id TEXT,
+      created_at INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      error TEXT,
+      retry_count INTEGER DEFAULT 0
+    )
+  `);
+
   // Run migrations for existing tables (add columns if they don't exist)
   const migrations = [
     { table: 'packages', column: 'bytes_limit', sql: 'ALTER TABLE packages ADD COLUMN bytes_limit INTEGER NOT NULL DEFAULT 0' },
