@@ -1,11 +1,14 @@
-import { db } from '$lib/server/db';
-import { expenses, dailyStats, psDailyStats, psSessions, unifiedDailyStats, fnbSales, psSessionOrders } from '$lib/server/db/schema';
-import type { UnifiedDailyStat, Expense } from '$lib/server/db/schema';
-import { eq, and, gte, lte, desc, sql } from 'drizzle-orm';
+import {
+  getActiveExpenses,
+  getActivePsSessions,
+  getPsSessionHistory,
+  upsertUnifiedDailyStats,
+  getUnifiedDailyStatsRange as convexGetUnifiedDailyStatsRange,
+  type ConvexExpense,
+  type ConvexUnifiedDailyStat
+} from '$lib/server/convex';
 import { getVouchers } from './vouchers';
-import { getPackages } from '$lib/server/config';
-import { getFnbSalesSummary, getTodayFnbRevenue } from './fnb-sales';
-import { getActivePsSessions } from '$lib/server/convex';
+import { getFnbSalesSummary } from './fnb-sales';
 
 // ===== TYPES =====
 
@@ -89,14 +92,12 @@ function parseCreatedAt(comment: string): number | null {
 // ===== EXPENSE QUERIES =====
 
 /**
- * Get expenses grouped by category
+ * Get expenses grouped by category (from Convex)
  */
-export async function getExpensesByCategory(): Promise<Record<BusinessSegment, Expense[]>> {
-  const allExpenses = await db.select()
-    .from(expenses)
-    .where(eq(expenses.isActive, 1));
+export async function getExpensesByCategory(): Promise<Record<BusinessSegment, ConvexExpense[]>> {
+  const allExpenses = await getActiveExpenses();
 
-  const result: Record<BusinessSegment, Expense[]> = {
+  const result: Record<BusinessSegment, ConvexExpense[]> = {
     wifi: [],
     playstation: [],
     fnb: [],
@@ -122,12 +123,8 @@ export async function calculateCategoryExpenses(
   category: BusinessSegment,
   daysInPeriod: number
 ): Promise<number> {
-  const categoryExpenses = await db.select()
-    .from(expenses)
-    .where(and(
-      eq(expenses.isActive, 1),
-      eq(expenses.category, category)
-    ));
+  const allExpenses = await getActiveExpenses();
+  const categoryExpenses = allExpenses.filter(e => e.category === category);
 
   let total = 0;
   for (const expense of categoryExpenses) {
@@ -150,15 +147,11 @@ export async function calculateCategoryExpenses(
  * Get cost per GB for WiFi (in piasters)
  */
 async function getWifiCostPerGbPiasters(): Promise<number> {
-  const perGbExpenses = await db.select()
-    .from(expenses)
-    .where(and(
-      eq(expenses.type, 'per_gb'),
-      eq(expenses.isActive, 1),
-      eq(expenses.category, 'wifi')
-    ));
-
-  return perGbExpenses[0]?.amount || 0;
+  const allExpenses = await getActiveExpenses();
+  const perGbExpense = allExpenses.find(
+    e => e.type === 'per_gb' && e.category === 'wifi'
+  );
+  return perGbExpense?.amount || 0;
 }
 
 // ===== MAIN ANALYTICS FUNCTION =====
@@ -200,21 +193,15 @@ export async function getUnifiedAnalytics(
 
   // ===== WIFI SEGMENT =====
   const vouchers = await getVouchers();
-  const packages = await getPackages();
 
   // Filter vouchers: either created in this period OR sold (used/exhausted) without timestamp
-  // For vouchers with created: timestamp, filter by date
-  // For vouchers without timestamp (legacy), count them if they're sold (used/exhausted)
   const periodVouchers = vouchers.filter(v => {
     const createdAt = parseCreatedAt(v.comment);
     if (createdAt) {
-      // Has timestamp - filter by date range
       return createdAt >= startMs && createdAt <= endMs;
     } else {
-      // No timestamp (legacy voucher) - count if sold and period is 'today' or includes today
-      // For historical queries, we can't know when legacy vouchers were sold
       const isSold = v.status === 'used' || v.status === 'exhausted';
-      const includesLegacy = endDate === getTodayDate(); // Only count legacy for current periods
+      const includesLegacy = endDate === getTodayDate();
       return isSold && includesLegacy;
     }
   });
@@ -234,22 +221,29 @@ export async function getUnifiedAnalytics(
   const wifiExpenses = wifiDataExpenses + wifiFixedExpenses;
 
   // ===== PLAYSTATION SEGMENT (Gaming Time Only) =====
-  const psStats = await db.select()
-    .from(psDailyStats)
-    .where(and(
-      gte(psDailyStats.date, startDate),
-      lte(psDailyStats.date, endDate)
-    ));
+  // Get completed PS sessions from Convex for the period
+  const psHistory = await getPsSessionHistory({ startDate: startMs, endDate: endMs });
 
-  // Sum up PS stats from daily records
   let psGamingRevenue = 0;
-  let psSessions_count = 0;
+  let psSessions_count = psHistory.length;
   let psMinutes = 0;
+  let psOrdersRevenue = 0;
+  let psOrdersItemCount = 0;
 
-  for (const stat of psStats) {
-    psGamingRevenue += stat.totalRevenue;
-    psSessions_count += stat.totalSessions;
-    psMinutes += stat.totalMinutes;
+  for (const session of psHistory) {
+    // Gaming revenue (totalCost is gaming cost only, set by end mutation)
+    psGamingRevenue += session.totalCost || 0;
+
+    // Duration in minutes
+    const endedAt = session.endedAt ?? Date.now();
+    const durationMs = endedAt - session.startedAt - (session.totalPausedMs || 0);
+    psMinutes += Math.floor(durationMs / (1000 * 60));
+
+    // Orders revenue from nested orders array
+    for (const order of session.orders) {
+      psOrdersRevenue += order.priceSnapshot * order.quantity;
+      psOrdersItemCount += order.quantity;
+    }
   }
 
   // For today, also include active sessions (gaming cost only, not orders)
@@ -257,7 +251,6 @@ export async function getUnifiedAnalytics(
     const activeSessions = await getActivePsSessions();
     for (const session of activeSessions) {
       const now = Date.now();
-      // Simple cost calculation: hourlyRate * minutes / 60
       const elapsedMs = now - session.startedAt - (session.totalPausedMs || 0);
       const minutes = Math.ceil(elapsedMs / (1000 * 60));
       psGamingRevenue += Math.round((session.hourlyRateSnapshot * minutes) / 60);
@@ -265,22 +258,6 @@ export async function getUnifiedAnalytics(
     }
   }
 
-  // Get PS orders revenue (F&B during sessions) - this will be moved to F&B segment
-  const psOrders = await db.select()
-    .from(psSessionOrders)
-    .innerJoin(psSessions, eq(psSessionOrders.sessionId, psSessions.id))
-    .where(and(
-      gte(psSessions.startedAt, startMs),
-      lte(psSessions.startedAt, endMs)
-    ));
-
-  const psOrdersRevenue = psOrders.reduce((sum, row) =>
-    sum + (row.ps_session_orders.priceSnapshot * row.ps_session_orders.quantity), 0);
-  const psOrdersItemCount = psOrders.reduce((sum, row) => sum + row.ps_session_orders.quantity, 0);
-
-  // PS revenue is now GAMING ONLY (subtract any orders that were included in daily stats)
-  // Daily stats totalRevenue may include orders, so we need to subtract them
-  const psGamingOnlyRevenue = psGamingRevenue - psOrdersRevenue;
   const psExpenses = await calculateCategoryExpenses('playstation', daysInPeriod);
 
   // ===== F&B SEGMENT (Combined: PS Orders + Standalone F&B) =====
@@ -298,7 +275,7 @@ export async function getUnifiedAnalytics(
 
   // ===== CALCULATE TOTALS =====
   // Total revenue = WiFi + PS Gaming + F&B (which includes PS orders)
-  const totalRevenue = wifiRevenue + psGamingOnlyRevenue + fnbTotalRevenue;
+  const totalRevenue = wifiRevenue + psGamingRevenue + fnbTotalRevenue;
   const segmentExpenses = wifiExpenses + psExpenses + fnbExpenses;
   const totalExpenses = segmentExpenses + generalExpenses;
   const grossProfit = totalRevenue - segmentExpenses;
@@ -306,7 +283,7 @@ export async function getUnifiedAnalytics(
 
   // Calculate contribution percentages
   const wifiContribution = totalRevenue > 0 ? Math.round((wifiRevenue / totalRevenue) * 100) : 0;
-  const psContribution = totalRevenue > 0 ? Math.round((psGamingOnlyRevenue / totalRevenue) * 100) : 0;
+  const psContribution = totalRevenue > 0 ? Math.round((psGamingRevenue / totalRevenue) * 100) : 0;
   const fnbContribution = totalRevenue > 0 ? Math.round((fnbTotalRevenue / totalRevenue) * 100) : 0;
 
   return {
@@ -327,21 +304,21 @@ export async function getUnifiedAnalytics(
         dataUsedGB: Math.round(wifiDataUsedGB * 100) / 100
       },
       playstation: {
-        revenue: psGamingOnlyRevenue, // Gaming time only, NO orders
+        revenue: psGamingRevenue,
         expenses: psExpenses,
-        profit: psGamingOnlyRevenue - psExpenses,
+        profit: psGamingRevenue - psExpenses,
         contribution: psContribution,
         sessions: psSessions_count,
         minutes: psMinutes
       },
       fnb: {
-        revenue: fnbTotalRevenue, // Combined: PS orders + standalone
+        revenue: fnbTotalRevenue,
         expenses: fnbExpenses,
         profit: fnbTotalRevenue - fnbExpenses,
         contribution: fnbContribution,
         itemsSold: fnbTotalItemsSold,
-        psOrdersRevenue: psOrdersRevenue,      // Breakdown: PS session orders
-        standaloneRevenue: standaloneRevenue   // Breakdown: Standalone F&B
+        psOrdersRevenue: psOrdersRevenue,
+        standaloneRevenue: standaloneRevenue
       }
     },
     totals: {
@@ -366,7 +343,7 @@ export async function getUnifiedAnalytics(
  * Aggregate and save unified daily stats for a specific date
  * This should be called periodically (end of day, or on page load for today)
  */
-export async function aggregateUnifiedDailyStats(date: string): Promise<UnifiedDailyStat> {
+export async function aggregateUnifiedDailyStats(date: string): Promise<ConvexUnifiedDailyStat | null> {
   const startMs = new Date(date).getTime();
   const endMs = startMs + 24 * 60 * 60 * 1000 - 1;
   const today = getTodayDate();
@@ -379,7 +356,6 @@ export async function aggregateUnifiedDailyStats(date: string): Promise<UnifiedD
     if (createdAt) {
       return createdAt >= startMs && createdAt <= endMs;
     } else {
-      // Legacy vouchers only counted for today's aggregation
       const isSold = v.status === 'used' || v.status === 'exhausted';
       return isSold && isToday;
     }
@@ -391,33 +367,31 @@ export async function aggregateUnifiedDailyStats(date: string): Promise<UnifiedD
   const wifiDataSold = dayVouchers.reduce((sum, v) => sum + v.bytesLimit, 0);
   const wifiDataUsed = dayVouchers.reduce((sum, v) => sum + v.bytesTotal, 0);
 
-  // PlayStation data from daily stats
-  const psStatsResults = await db.select()
-    .from(psDailyStats)
-    .where(eq(psDailyStats.date, date));
-  const psStats = psStatsResults[0];
+  // PlayStation data from Convex session history
+  const psHistory = await getPsSessionHistory({ startDate: startMs, endDate: endMs });
 
-  const psGamingRevenue = psStats?.totalRevenue || 0;
-  const psSessions_count = psStats?.totalSessions || 0;
-  const psMinutes_count = psStats?.totalMinutes || 0;
+  let psGamingRevenue = 0;
+  let psSessions_count = psHistory.length;
+  let psMinutes_count = 0;
+  let psOrdersRevenue = 0;
 
-  // PS orders for that day
-  const psOrders = await db.select()
-    .from(psSessionOrders)
-    .innerJoin(psSessions, eq(psSessionOrders.sessionId, psSessions.id))
-    .where(and(
-      gte(psSessions.startedAt, startMs),
-      lte(psSessions.startedAt, endMs)
-    ));
+  for (const session of psHistory) {
+    psGamingRevenue += session.totalCost || 0;
 
-  const psOrdersRevenue = psOrders.reduce((sum, row) =>
-    sum + (row.ps_session_orders.priceSnapshot * row.ps_session_orders.quantity), 0);
+    const endedAt = session.endedAt ?? Date.now();
+    const durationMs = endedAt - session.startedAt - (session.totalPausedMs || 0);
+    psMinutes_count += Math.floor(durationMs / (1000 * 60));
+
+    for (const order of session.orders) {
+      psOrdersRevenue += order.priceSnapshot * order.quantity;
+    }
+  }
 
   // F&B standalone sales
   const fnbSummary = await getFnbSalesSummary(startMs, endMs);
 
-  const now = Date.now();
-  const statsData = {
+  // Upsert via Convex
+  await upsertUnifiedDailyStats({
     date,
     wifiRevenue,
     wifiVouchersSold,
@@ -429,41 +403,18 @@ export async function aggregateUnifiedDailyStats(date: string): Promise<UnifiedD
     psOrdersRevenue,
     fnbRevenue: fnbSummary.totalRevenue,
     fnbItemsSold: fnbSummary.totalItemsSold,
-    createdAt: now,
-    updatedAt: now
-  };
+  });
 
-  // Upsert
-  const existingResults = await db.select()
-    .from(unifiedDailyStats)
-    .where(eq(unifiedDailyStats.date, date));
-  const existing = existingResults[0];
-
-  if (existing) {
-    const result = await db.update(unifiedDailyStats)
-      .set({ ...statsData, updatedAt: now })
-      .where(eq(unifiedDailyStats.date, date))
-      .returning();
-    return result[0]!;
-  } else {
-    const result = await db.insert(unifiedDailyStats)
-      .values(statsData)
-      .returning();
-    return result[0];
-  }
+  // Return the upserted stat (re-fetch to get latest)
+  const range = await convexGetUnifiedDailyStatsRange(date, date);
+  return range[0] ?? null;
 }
 
 /**
  * Get historical unified daily stats for a date range
  */
-export async function getUnifiedDailyStatsRange(startDate: string, endDate: string): Promise<UnifiedDailyStat[]> {
-  return await db.select()
-    .from(unifiedDailyStats)
-    .where(and(
-      gte(unifiedDailyStats.date, startDate),
-      lte(unifiedDailyStats.date, endDate)
-    ))
-    .orderBy(unifiedDailyStats.date);
+export async function getUnifiedDailyStatsRange(startDate: string, endDate: string): Promise<ConvexUnifiedDailyStat[]> {
+  return await convexGetUnifiedDailyStatsRange(startDate, endDate);
 }
 
 // ===== CHART DATA =====
@@ -486,6 +437,11 @@ export async function getRevenueBySegmentChart(days: number): Promise<UnifiedCha
   const vouchers = await getVouchers();
   const today = getTodayDate();
 
+  // Batch fetch: get all PS history for the full range at once
+  const rangeStart = new Date(getDateDaysAgo(days - 1)).getTime();
+  const rangeEnd = new Date(today).getTime() + 24 * 60 * 60 * 1000 - 1;
+  const allPsHistory = await getPsSessionHistory({ startDate: rangeStart, endDate: rangeEnd });
+
   for (let i = days - 1; i >= 0; i--) {
     const date = getDateDaysAgo(i);
     const dayStart = new Date(date).getTime();
@@ -498,7 +454,6 @@ export async function getRevenueBySegmentChart(days: number): Promise<UnifiedCha
       if (createdAt) {
         return createdAt >= dayStart && createdAt <= dayEnd;
       } else {
-        // Legacy vouchers (no timestamp) only counted for today
         const isSold = v.status === 'used' || v.status === 'exhausted';
         return isSold && isToday;
       }
@@ -506,27 +461,18 @@ export async function getRevenueBySegmentChart(days: number): Promise<UnifiedCha
     const wifiRevenue = dayVouchers.filter(v => v.status === 'used' || v.status === 'exhausted')
       .reduce((sum, v) => sum + v.priceLE, 0) * 100;
 
-    // PS revenue from daily stats (total includes orders)
-    const psStatsResults = await db.select()
-      .from(psDailyStats)
-      .where(eq(psDailyStats.date, date));
-    const psStats = psStatsResults[0];
-    const psTotalRevenue = psStats?.totalRevenue || 0;
+    // PS data for this day (filter from batch result)
+    const dayPsSessions = allPsHistory.filter(s => s.startedAt >= dayStart && s.startedAt <= dayEnd);
 
-    // Get PS orders for that day to subtract from PS total
-    const psOrders = await db.select()
-      .from(psSessionOrders)
-      .innerJoin(psSessions, eq(psSessionOrders.sessionId, psSessions.id))
-      .where(and(
-        gte(psSessions.startedAt, dayStart),
-        lte(psSessions.startedAt, dayEnd)
-      ));
+    let psGamingRevenue = 0;
+    let psOrdersRevenue = 0;
 
-    const psOrdersRevenue = psOrders.reduce((sum, row) =>
-      sum + (row.ps_session_orders.priceSnapshot * row.ps_session_orders.quantity), 0);
-
-    // PS gaming only = total - orders
-    const psGamingRevenue = psTotalRevenue - psOrdersRevenue;
+    for (const session of dayPsSessions) {
+      psGamingRevenue += session.totalCost || 0;
+      for (const order of session.orders) {
+        psOrdersRevenue += order.priceSnapshot * order.quantity;
+      }
+    }
 
     // Standalone F&B revenue
     const fnbSummary = await getFnbSalesSummary(dayStart, dayEnd);
@@ -542,8 +488,8 @@ export async function getRevenueBySegmentChart(days: number): Promise<UnifiedCha
       date,
       label,
       wifi: wifiRevenue,
-      playstation: psGamingRevenue, // Gaming only
-      fnb: fnbTotalRevenue,          // PS orders + standalone
+      playstation: psGamingRevenue,
+      fnb: fnbTotalRevenue,
       total: wifiRevenue + psGamingRevenue + fnbTotalRevenue
     });
   }
@@ -598,8 +544,8 @@ export async function getProfitBySegmentChart(days: number): Promise<UnifiedChar
 // ===== DATA MIGRATION =====
 
 /**
- * Backfill unified_daily_stats from existing daily_stats and ps_daily_stats tables
- * This should be run once after deploying the unified analytics system
+ * Backfill unified_daily_stats from current data sources
+ * Re-aggregates stats for each day in the range using Convex data
  */
 export async function backfillUnifiedDailyStats(days: number = 90): Promise<{
   processed: number;
@@ -608,26 +554,9 @@ export async function backfillUnifiedDailyStats(days: number = 90): Promise<{
   const errors: string[] = [];
   let processed = 0;
 
-  // Get all unique dates from both tables
-  const wifiStats = await db.select().from(dailyStats);
-  const psStatsList = await db.select().from(psDailyStats);
-
-  const allDates = new Set<string>();
-  for (const stat of wifiStats) {
-    allDates.add(stat.date);
-  }
-  for (const stat of psStatsList) {
-    allDates.add(stat.date);
-  }
-
-  // Also add dates from the last N days to ensure recent coverage
+  // Process the last N days
   for (let i = 0; i < days; i++) {
-    allDates.add(getDateDaysAgo(i));
-  }
-
-  // Process each date
-  const sortedDates = Array.from(allDates).sort();
-  for (const date of sortedDates) {
+    const date = getDateDaysAgo(i);
     try {
       await aggregateUnifiedDailyStats(date);
       processed++;

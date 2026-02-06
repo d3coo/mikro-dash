@@ -1,10 +1,18 @@
-import { db, syncAfterWrite } from '$lib/server/db';
-import { settings, packages } from '$lib/server/db/schema';
-import { eq, asc } from 'drizzle-orm';
-import type { Package, NewPackage } from '$lib/server/db/schema';
+import {
+  getSetting as convexGetSetting,
+  setSetting as convexSetSetting,
+  getPackages as convexGetPackages,
+  createPackage as convexCreatePackage,
+  updatePackage as convexUpdatePackage,
+  deletePackage as convexDeletePackage,
+  type Package as ConvexPackage
+} from '$lib/server/convex';
 
-// Re-export types
-export type { Package as PackageConfig };
+// Backward-compatible package type: extends Convex Package with old SQLite fields
+export type PackageConfig = ConvexPackage & {
+  id: string;       // Alias for _id (old SQLite primary key)
+  codePrefix: string; // Deprecated, always ''
+};
 
 // Settings interface for structured access
 export interface Settings {
@@ -23,17 +31,13 @@ export interface Settings {
 
 // Get a single setting
 export async function getSetting(key: string): Promise<string | undefined> {
-  const results = await db.select().from(settings).where(eq(settings.key, key));
-  return results[0]?.value;
+  const value = await convexGetSetting(key);
+  return value ?? undefined;
 }
 
 // Set a single setting
 export async function setSetting(key: string, value: string): Promise<void> {
-  await db
-    .insert(settings)
-    .values({ key, value })
-    .onConflictDoUpdate({ target: settings.key, set: { value } });
-  syncAfterWrite();
+  await convexSetSetting(key, value);
 }
 
 // Get all settings as structured object
@@ -68,14 +72,24 @@ export async function updateSettings(updates: Partial<Settings>): Promise<void> 
   }
 }
 
-// Package functions
-export async function getPackages(): Promise<Package[]> {
-  return await db.select().from(packages).orderBy(asc(packages.sortOrder));
+// Map Convex package to backward-compatible PackageConfig
+function toPackageConfig(pkg: ConvexPackage): PackageConfig {
+  return {
+    ...pkg,
+    id: pkg._id,
+    codePrefix: ''
+  };
 }
 
-export async function getPackageById(id: string): Promise<Package | undefined> {
-  const results = await db.select().from(packages).where(eq(packages.id, id));
-  return results[0];
+// Package functions
+export async function getPackages(): Promise<PackageConfig[]> {
+  const packages = await convexGetPackages();
+  return packages.map(toPackageConfig);
+}
+
+export async function getPackageById(id: string): Promise<PackageConfig | undefined> {
+  const packages = await getPackages();
+  return packages.find((p) => p._id === id);
 }
 
 /**
@@ -83,7 +97,7 @@ export async function getPackageById(id: string): Promise<Package | undefined> {
  * Comment format: "pkg:PACKAGE_ID|Name - Price LE"
  * Falls back to profile matching if no package ID found
  */
-export async function getPackageFromComment(comment: string, profile?: string): Promise<Package | undefined> {
+export async function getPackageFromComment(comment: string, profile?: string): Promise<PackageConfig | undefined> {
   const allPackages = await getPackages();
 
   // Try to extract package ID from comment (format: pkg:ID|...)
@@ -102,35 +116,53 @@ export async function getPackageFromComment(comment: string, profile?: string): 
 }
 
 // Legacy: Get package by code prefix (for backward compatibility with old vouchers)
-export async function getPackageByCodePrefix(voucherName: string): Promise<Package | undefined> {
+export async function getPackageByCodePrefix(voucherName: string): Promise<PackageConfig | undefined> {
   const allPackages = await getPackages();
   // Sort by prefix length descending to match longer prefixes first (G10 before G1)
   const sorted = [...allPackages].sort((a, b) => b.codePrefix.length - a.codePrefix.length);
   return sorted.find((p) => voucherName.startsWith(p.codePrefix));
 }
 
-export async function createPackage(pkg: NewPackage): Promise<void> {
-  await db.insert(packages).values(pkg);
-  syncAfterWrite();
+export async function createPackage(pkg: {
+  name: string;
+  nameAr: string;
+  priceLE: number;
+  bytesLimit: number;
+  timeLimit?: string;
+  profile: string;
+  server?: string | null;
+  sortOrder?: number;
+  // Accepted for backward compatibility but ignored
+  id?: string;
+  codePrefix?: string;
+}): Promise<void> {
+  await convexCreatePackage({
+    name: pkg.name,
+    nameAr: pkg.nameAr,
+    priceLE: pkg.priceLE,
+    bytesLimit: pkg.bytesLimit,
+    timeLimit: pkg.timeLimit,
+    profile: pkg.profile,
+    server: pkg.server || undefined,
+    sortOrder: pkg.sortOrder
+  });
 }
 
-export async function updatePackage(id: string, updates: Partial<Omit<Package, 'id'>>): Promise<void> {
-  const setData: Record<string, unknown> = {};
-  if (updates.name !== undefined) setData.name = updates.name;
-  if (updates.nameAr !== undefined) setData.nameAr = updates.nameAr;
-  if (updates.priceLE !== undefined) setData.priceLE = updates.priceLE;
-  if (updates.bytesLimit !== undefined) setData.bytesLimit = updates.bytesLimit;
-  if (updates.profile !== undefined) setData.profile = updates.profile;
-  if (updates.server !== undefined) setData.server = updates.server;
-  if (updates.sortOrder !== undefined) setData.sortOrder = updates.sortOrder;
-  // codePrefix is deprecated but keep for backward compatibility
-  if (updates.codePrefix !== undefined) setData.codePrefix = updates.codePrefix;
-
-  await db.update(packages).set(setData).where(eq(packages.id, id));
-  syncAfterWrite();
+export async function updatePackage(id: string, updates: Partial<{
+  name: string;
+  nameAr: string;
+  priceLE: number;
+  bytesLimit: number;
+  timeLimit: string;
+  profile: string;
+  server: string | null;
+  sortOrder: number;
+  codePrefix: string; // Accepted for backward compatibility but ignored
+}>): Promise<void> {
+  const { codePrefix: _, ...convexUpdates } = updates;
+  await convexUpdatePackage(id, convexUpdates);
 }
 
 export async function deletePackage(id: string): Promise<void> {
-  await db.delete(packages).where(eq(packages.id, id));
-  syncAfterWrite();
+  await convexDeletePackage(id);
 }

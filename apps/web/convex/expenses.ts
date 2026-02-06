@@ -96,3 +96,13 @@ export const toggleActive = mutation({
     return id;
   },
 });
+
+/**
+ * Delete an expense
+ */
+export const remove = mutation({
+  args: { id: v.id('expenses') },
+  handler: async (ctx, { id }) => {
+    await ctx.db.delete(id);
+  },
+});

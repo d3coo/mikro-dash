@@ -1,12 +1,10 @@
 /**
  * Convex helpers for Svelte components
- * Provides reactive queries and mutations with offline support
+ * Provides reactive queries and mutations
  */
 
 import { browser } from '$app/environment';
-import { get, writable, type Readable, type Writable } from 'svelte/store';
-import { connectionStatus } from './stores/connection';
-import { queueOfflineWrite } from './offline';
+import { writable, type Readable } from 'svelte/store';
 
 // Dynamic import to avoid SSR issues
 let convexClient: any = null;
@@ -86,53 +84,31 @@ export function createQuery<T>(
 }
 
 /**
- * Execute a Convex mutation with offline support
- * If offline, queues the mutation for later sync
+ * Execute a Convex mutation
+ * Convex handles offline support automatically via optimistic updates
  */
 export async function executeMutation<T>(
 	mutationPath: string,
-	args: Record<string, any>,
-	options?: {
-		localId?: string;
-		offlineSupported?: boolean;
-	}
-): Promise<T | null> {
+	args: Record<string, any>
+): Promise<T> {
 	if (!browser) {
 		throw new Error('Mutations can only be executed in the browser');
 	}
 
-	const isOffline = get(connectionStatus) === 'offline';
+	const { client, api } = await getConvex();
 
-	if (isOffline && options?.offlineSupported) {
-		// Queue for later sync
-		await queueOfflineWrite(mutationPath, args, options.localId);
-		return null;
+	// Navigate to the mutation function
+	const parts = mutationPath.split('.');
+	let fn = api;
+	for (const part of parts) {
+		fn = fn?.[part];
 	}
 
-	try {
-		const { client, api } = await getConvex();
-
-		// Navigate to the mutation function
-		const parts = mutationPath.split('.');
-		let fn = api;
-		for (const part of parts) {
-			fn = fn?.[part];
-		}
-
-		if (!fn) {
-			throw new Error(`Mutation not found: ${mutationPath}`);
-		}
-
-		return await client.mutation(fn, args);
-	} catch (error) {
-		// If network error and offline support is enabled, queue it
-		if (options?.offlineSupported && isNetworkError(error)) {
-			connectionStatus.set('offline');
-			await queueOfflineWrite(mutationPath, args, options.localId);
-			return null;
-		}
-		throw error;
+	if (!fn) {
+		throw new Error(`Mutation not found: ${mutationPath}`);
 	}
+
+	return await client.mutation(fn, args);
 }
 
 /**
@@ -160,16 +136,4 @@ export async function executeQuery<T>(
 	}
 
 	return await client.query(fn, args);
-}
-
-function isNetworkError(error: unknown): boolean {
-	if (error instanceof Error) {
-		return (
-			error.message.includes('network') ||
-			error.message.includes('fetch') ||
-			error.message.includes('offline') ||
-			error.name === 'NetworkError'
-		);
-	}
-	return false;
 }

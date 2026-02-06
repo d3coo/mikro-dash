@@ -1,14 +1,10 @@
 <script lang="ts">
 	import '../app.css';
 	import Sidebar from '$lib/components/sidebar.svelte';
-	import ConnectionStatusBanner from '$lib/components/connection-status-banner.svelte';
 	import { Toaster } from 'svelte-sonner';
 	import { navigating } from '$app/stores';
-	import { onMount } from 'svelte';
 	import { browser } from '$app/environment';
 	import { setupConvex } from 'convex-svelte';
-	import { initConnectionMonitor } from '$lib/stores/connection';
-	import { syncPendingWrites } from '$lib/sync';
 	import { PUBLIC_CONVEX_URL } from '$env/static/public';
 
 	let { children } = $props();
@@ -17,21 +13,6 @@
 	if (browser && PUBLIC_CONVEX_URL) {
 		setupConvex(PUBLIC_CONVEX_URL);
 	}
-
-	// Initialize connection monitoring on mount
-	onMount(() => {
-		if (!browser) return;
-
-		const cleanup = initConnectionMonitor(async () => {
-			// Sync pending writes when reconnected
-			const { synced, failed } = await syncPendingWrites();
-			if (synced > 0 || failed > 0) {
-				console.log(`[Sync] Reconnected: ${synced} synced, ${failed} failed`);
-			}
-		});
-
-		return cleanup;
-	});
 
 	// Determine skeleton type based on target page
 	let targetPath = $derived($navigating?.to?.url?.pathname || '');
@@ -59,9 +40,6 @@
 </svelte:head>
 
 <div dir="rtl" lang="ar" class="app-wrapper">
-	<!-- Connection Status Banner -->
-	<ConnectionStatusBanner />
-
 	<!-- Navigation Loading Skeleton -->
 	{#if $navigating && skeletonType}
 		<div class="nav-loading-skeleton">

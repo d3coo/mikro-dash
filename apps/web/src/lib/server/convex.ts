@@ -502,4 +502,212 @@ export async function deleteFnbSale(id: string) {
 	return await client.mutation(api.fnbSales.remove, { id: id as any });
 }
 
+export async function getFnbSales(options?: { startDate?: number; endDate?: number; limit?: number }) {
+	const client = getConvexClient();
+	return await client.query(api.fnbSales.getSales, {
+		startDate: options?.startDate,
+		endDate: options?.endDate,
+		limit: options?.limit,
+	});
+}
+
+export async function getFnbSalesSummary(startDate: number, endDate: number) {
+	const client = getConvexClient();
+	return await client.query(api.fnbSales.getSalesSummary, { startDate, endDate });
+}
+
+export async function getFnbSaleById(id: string) {
+	const client = getConvexClient();
+	return await client.query(api.fnbSales.getById, { id: id as any });
+}
+
+// ============= Print Tracking =============
+
+export async function markVouchersAsPrinted(voucherCodes: string[]): Promise<void> {
+	if (voucherCodes.length === 0) return;
+	const client = getConvexClient();
+	await client.mutation(api.printTracking.markAsPrinted, { voucherCodes });
+}
+
+export async function isVoucherPrinted(voucherCode: string): Promise<boolean> {
+	const client = getConvexClient();
+	return await client.query(api.printTracking.isPrinted, { voucherCode });
+}
+
+export async function getVouchersPrintStatus(voucherCodes: string[]): Promise<Map<string, number | undefined>> {
+	const result = new Map<string, number | undefined>();
+	if (voucherCodes.length === 0) return result;
+
+	const client = getConvexClient();
+	const statuses = await client.query(api.printTracking.getPrintStatus, { voucherCodes });
+	for (const { voucherCode, printedAt } of statuses) {
+		result.set(voucherCode, printedAt ?? undefined);
+	}
+	return result;
+}
+
+export async function getAllPrintedVoucherCodes(): Promise<Set<string>> {
+	const client = getConvexClient();
+	const codes = await client.query(api.printTracking.getAllPrintedCodes);
+	return new Set(codes);
+}
+
+export async function removePrintTracking(voucherCodes: string[]): Promise<void> {
+	if (voucherCodes.length === 0) return;
+	const client = getConvexClient();
+	await client.mutation(api.printTracking.removePrintTracking, { voucherCodes });
+}
+
+export async function getPrintedCounts(allVoucherCodes: string[]): Promise<{ printed: number; unprinted: number }> {
+	const client = getConvexClient();
+	return await client.query(api.printTracking.getPrintedCounts, { allVoucherCodes });
+}
+
+// ============= Voucher Usage =============
+
+export async function recordVoucherUsage(
+	voucherCode: string,
+	macAddress: string,
+	deviceName?: string,
+	ipAddress?: string,
+	totalBytes?: number
+): Promise<void> {
+	const client = getConvexClient();
+	await client.mutation(api.voucherUsage.recordUsage, {
+		voucherCode,
+		macAddress,
+		deviceName,
+		ipAddress,
+		totalBytes,
+	});
+}
+
+export async function getVoucherUsageHistory(voucherCode: string) {
+	const client = getConvexClient();
+	return await client.query(api.voucherUsage.getHistory, { voucherCode });
+}
+
+export async function deleteVoucherUsageHistory(voucherCode: string): Promise<void> {
+	const client = getConvexClient();
+	await client.mutation(api.voucherUsage.deleteHistory, { voucherCode });
+}
+
+export async function getLastDeviceForVoucher(voucherCode: string) {
+	const client = getConvexClient();
+	return await client.query(api.voucherUsage.getLastDevice, { voucherCode });
+}
+
+export async function getAllVoucherUsage() {
+	const client = getConvexClient();
+	return await client.query(api.voucherUsage.getAll);
+}
+
+export async function getVoucherDeviceMap() {
+	const client = getConvexClient();
+	return await client.query(api.voucherUsage.getDeviceMap);
+}
+
+// ============= Expenses =============
+
+export type ConvexExpense = {
+	_id: string;
+	_creationTime: number;
+	type: string;
+	category: string;
+	name: string;
+	nameAr: string;
+	amount: number;
+	isActive: boolean;
+};
+
+export async function getExpenses(): Promise<ConvexExpense[]> {
+	const client = getConvexClient();
+	return await client.query(api.expenses.list);
+}
+
+export async function getActiveExpenses(): Promise<ConvexExpense[]> {
+	const client = getConvexClient();
+	return await client.query(api.expenses.listActive);
+}
+
+export async function createExpense(data: {
+	type: string;
+	category: string;
+	name: string;
+	nameAr: string;
+	amount: number;
+	isActive: boolean;
+}): Promise<string> {
+	const client = getConvexClient();
+	return await client.mutation(api.expenses.create, data);
+}
+
+export async function updateExpense(
+	id: string,
+	data: Partial<{
+		type: string;
+		category: string;
+		name: string;
+		nameAr: string;
+		amount: number;
+		isActive: boolean;
+	}>
+): Promise<string> {
+	const client = getConvexClient();
+	return await client.mutation(api.expenses.update, { id: id as any, ...data });
+}
+
+export async function deleteExpense(id: string): Promise<void> {
+	const client = getConvexClient();
+	await client.mutation(api.expenses.remove, { id: id as any });
+}
+
+// ============= Unified Daily Stats =============
+
+export type ConvexUnifiedDailyStat = {
+	_id: string;
+	_creationTime: number;
+	date: string;
+	wifiRevenue: number;
+	wifiVouchersSold: number;
+	wifiDataSold: number;
+	wifiDataUsed: number;
+	psGamingRevenue: number;
+	psSessions: number;
+	psMinutes: number;
+	psOrdersRevenue: number;
+	fnbRevenue: number;
+	fnbItemsSold: number;
+};
+
+export async function getUnifiedDailyStatsByDate(date: string): Promise<ConvexUnifiedDailyStat | null> {
+	const client = getConvexClient();
+	return await client.query(api.unifiedDailyStats.getByDate, { date });
+}
+
+export async function getUnifiedDailyStatsRange(
+	startDate: string,
+	endDate: string
+): Promise<ConvexUnifiedDailyStat[]> {
+	const client = getConvexClient();
+	return await client.query(api.unifiedDailyStats.getRange, { startDate, endDate });
+}
+
+export async function upsertUnifiedDailyStats(data: {
+	date: string;
+	wifiRevenue?: number;
+	wifiVouchersSold?: number;
+	wifiDataSold?: number;
+	wifiDataUsed?: number;
+	psGamingRevenue?: number;
+	psSessions?: number;
+	psMinutes?: number;
+	psOrdersRevenue?: number;
+	fnbRevenue?: number;
+	fnbItemsSold?: number;
+}): Promise<string> {
+	const client = getConvexClient();
+	return await client.mutation(api.unifiedDailyStats.upsert, data);
+}
+
 /* eslint-enable @typescript-eslint/no-explicit-any */

@@ -1,47 +1,54 @@
-import { db } from '$lib/server/db';
-import { expenses, dailyStats, type Expense, type NewExpense, type DailyStat } from '$lib/server/db/schema';
-import { eq, desc, and, gte, lte } from 'drizzle-orm';
+import {
+  getExpenses as convexGetExpenses,
+  getActiveExpenses as convexGetActiveExpenses,
+  createExpense as convexCreateExpense,
+  updateExpense as convexUpdateExpense,
+  deleteExpense as convexDeleteExpense,
+  getUnifiedDailyStatsByDate,
+  getUnifiedDailyStatsRange,
+  upsertUnifiedDailyStats,
+  type ConvexExpense,
+  type ConvexUnifiedDailyStat
+} from '$lib/server/convex';
 import { getVouchers } from './vouchers';
 import { getPackages } from '$lib/server/config';
 
 // ===== EXPENSE MANAGEMENT =====
 
+export type ExpenseCategory = 'wifi' | 'playstation' | 'fnb' | 'general';
+
 /**
  * Get all expenses
  */
-export async function getExpenses(): Promise<Expense[]> {
-  return await db.select().from(expenses).orderBy(expenses.type, expenses.name);
+export async function getExpenses(): Promise<ConvexExpense[]> {
+  return await convexGetExpenses();
 }
 
 /**
  * Get active expenses only
  */
-export async function getActiveExpenses(): Promise<Expense[]> {
-  return await db.select().from(expenses).where(eq(expenses.isActive, 1));
+export async function getActiveExpenses(): Promise<ConvexExpense[]> {
+  return await convexGetActiveExpenses();
 }
 
 /**
  * Get expenses filtered by category
  */
-export async function getExpensesByCategory(category?: ExpenseCategory): Promise<Expense[]> {
+export async function getExpensesByCategory(category?: ExpenseCategory): Promise<ConvexExpense[]> {
   if (category) {
-    return await db.select()
-      .from(expenses)
-      .where(eq(expenses.category, category))
-      .orderBy(expenses.type, expenses.name);
+    const all = await convexGetExpenses();
+    return all.filter(e => e.category === category);
   }
   return await getExpenses();
 }
 
 /**
- * Get expense by ID
+ * Get expense by ID (now string _id from Convex)
  */
-export async function getExpenseById(id: number): Promise<Expense | undefined> {
-  const results = await db.select().from(expenses).where(eq(expenses.id, id));
-  return results[0];
+export async function getExpenseById(id: string): Promise<ConvexExpense | undefined> {
+  const all = await convexGetExpenses();
+  return all.find(e => e._id === id);
 }
-
-export type ExpenseCategory = 'wifi' | 'playstation' | 'fnb' | 'general';
 
 /**
  * Create new expense
@@ -52,47 +59,45 @@ export async function createExpense(expense: {
   name: string;
   nameAr: string;
   amount: number;
-}): Promise<Expense> {
-  const now = Date.now();
-  // Default category based on type
+}): Promise<ConvexExpense> {
   const category = expense.category || (expense.type === 'per_gb' ? 'wifi' : 'general');
 
-  const results = await db.insert(expenses).values({
+  const id = await convexCreateExpense({
     type: expense.type,
     category,
     name: expense.name,
     nameAr: expense.nameAr,
     amount: expense.amount,
-    isActive: 1,
-    createdAt: now,
-    updatedAt: now
-  }).returning();
-  return results[0];
+    isActive: true,
+  });
+
+  // Return the created expense
+  const all = await convexGetExpenses();
+  return all.find(e => e._id === id)!;
 }
 
 /**
- * Update expense
+ * Update expense (id is now string)
  */
-export async function updateExpense(id: number, updates: Partial<{
+export async function updateExpense(id: string, updates: Partial<{
   name: string;
   nameAr: string;
   amount: number;
   category: ExpenseCategory;
-  isActive: number;
-}>): Promise<Expense | undefined> {
-  const now = Date.now();
-  const results = await db.update(expenses)
-    .set({ ...updates, updatedAt: now })
-    .where(eq(expenses.id, id))
-    .returning();
-  return results[0];
+  isActive: boolean;
+}>): Promise<ConvexExpense | undefined> {
+  await convexUpdateExpense(id, updates);
+
+  // Return updated expense
+  const all = await convexGetExpenses();
+  return all.find(e => e._id === id);
 }
 
 /**
- * Delete expense
+ * Delete expense (id is now string)
  */
-export async function deleteExpense(id: number): Promise<void> {
-  await db.delete(expenses).where(eq(expenses.id, id));
+export async function deleteExpense(id: string): Promise<void> {
+  await convexDeleteExpense(id);
 }
 
 /**
@@ -100,10 +105,8 @@ export async function deleteExpense(id: number): Promise<void> {
  * Returns the per_gb expense amount converted from piasters to EGP
  */
 export async function getCostPerGb(): Promise<number> {
-  const results = await db.select()
-    .from(expenses)
-    .where(and(eq(expenses.type, 'per_gb'), eq(expenses.isActive, 1)));
-  const perGbExpense = results[0];
+  const active = await convexGetActiveExpenses();
+  const perGbExpense = active.find(e => e.type === 'per_gb');
 
   // Amount is in piasters, convert to EGP
   return perGbExpense ? perGbExpense.amount / 100 : 0;
@@ -113,9 +116,8 @@ export async function getCostPerGb(): Promise<number> {
  * Get total monthly fixed costs (in EGP)
  */
 export async function getMonthlyFixedCosts(): Promise<number> {
-  const fixedExpenses = await db.select()
-    .from(expenses)
-    .where(and(eq(expenses.type, 'fixed_monthly'), eq(expenses.isActive, 1)));
+  const active = await convexGetActiveExpenses();
+  const fixedExpenses = active.filter(e => e.type === 'fixed_monthly');
 
   // Sum amounts (in piasters) and convert to EGP
   const totalPiasters = fixedExpenses.reduce((sum, e) => sum + e.amount, 0);
@@ -152,35 +154,27 @@ function parseCreatedAt(comment: string): number | null {
 /**
  * Get daily stats for a specific date
  */
-export async function getDailyStats(date: string): Promise<DailyStat | undefined> {
-  const results = await db.select().from(dailyStats).where(eq(dailyStats.date, date));
-  return results[0];
+export async function getDailyStats(date: string): Promise<ConvexUnifiedDailyStat | null> {
+  return await getUnifiedDailyStatsByDate(date);
 }
 
 /**
  * Get stats for a date range
  */
-export async function getStatsRange(startDate: string, endDate: string): Promise<DailyStat[]> {
-  return await db.select()
-    .from(dailyStats)
-    .where(and(
-      gte(dailyStats.date, startDate),
-      lte(dailyStats.date, endDate)
-    ))
-    .orderBy(dailyStats.date);
+export async function getStatsRange(startDate: string, endDate: string): Promise<ConvexUnifiedDailyStat[]> {
+  return await getUnifiedDailyStatsRange(startDate, endDate);
 }
 
 /**
  * Aggregate and save daily stats from current voucher data
  * This should be called periodically (on page load, scheduled, etc.)
  */
-export async function aggregateTodayStats(): Promise<DailyStat> {
+export async function aggregateTodayStats(): Promise<ConvexUnifiedDailyStat | null> {
   const today = getTodayDate();
   const todayStart = new Date(today).getTime();
   const todayEnd = todayStart + 24 * 60 * 60 * 1000;
 
   const vouchers = await getVouchers();
-  const packages = await getPackages();
 
   // Find vouchers created today
   const todayVouchers = vouchers.filter(v => {
@@ -189,49 +183,27 @@ export async function aggregateTodayStats(): Promise<DailyStat> {
   });
 
   // Calculate metrics
-  const vouchersSold = todayVouchers.length;
-  const revenue = todayVouchers.reduce((sum, v) => sum + v.priceLE, 0);
+  const wifiVouchersSold = todayVouchers.length;
+  const wifiRevenue = todayVouchers.reduce((sum, v) => sum + v.priceLE, 0) * 100; // Store in piasters
 
   // Data sold: sum of bytes limits for sold vouchers
-  const dataSold = todayVouchers.reduce((sum, v) => sum + v.bytesLimit, 0);
+  const wifiDataSold = todayVouchers.reduce((sum, v) => sum + v.bytesLimit, 0);
 
   // Data used: sum of actual bytes used by ALL vouchers (not just today's)
   // Only count used/exhausted vouchers
-  const dataUsed = vouchers
+  const wifiDataUsed = vouchers
     .filter(v => v.status === 'used' || v.status === 'exhausted')
     .reduce((sum, v) => sum + v.bytesTotal, 0);
 
-  // Sales by package
-  const salesByPackage: Record<string, number> = {};
-  for (const v of todayVouchers) {
-    const pkgId = v.packageId || 'unknown';
-    salesByPackage[pkgId] = (salesByPackage[pkgId] || 0) + 1;
-  }
-
-  const now = Date.now();
-  const statsData = {
+  await upsertUnifiedDailyStats({
     date: today,
-    vouchersSold,
-    revenue: revenue * 100, // Store in piasters
-    dataSold,
-    dataUsed,
-    salesByPackage: JSON.stringify(salesByPackage),
-    createdAt: now,
-    updatedAt: now
-  };
+    wifiVouchersSold,
+    wifiRevenue,
+    wifiDataSold,
+    wifiDataUsed,
+  });
 
-  // Upsert: update if exists, insert if not
-  const existing = await getDailyStats(today);
-  if (existing) {
-    const results = await db.update(dailyStats)
-      .set({ ...statsData, updatedAt: now })
-      .where(eq(dailyStats.date, today))
-      .returning();
-    return results[0]!;
-  } else {
-    const results = await db.insert(dailyStats).values(statsData).returning();
-    return results[0];
-  }
+  return await getUnifiedDailyStatsByDate(today);
 }
 
 // ===== ANALYTICS SUMMARIES =====
