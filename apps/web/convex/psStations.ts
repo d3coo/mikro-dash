@@ -141,6 +141,24 @@ export const updateStatus = mutation({
 });
 
 /**
+ * Bulk update online status for stations
+ * Called by background sync after checking router's wireless registrations
+ */
+export const bulkUpdateOnlineStatus = mutation({
+  args: {
+    updates: v.array(v.object({
+      id: v.id('psStations'),
+      isOnline: v.boolean(),
+    })),
+  },
+  handler: async (ctx, { updates }) => {
+    for (const { id, isOnline } of updates) {
+      await ctx.db.patch(id, { isOnline });
+    }
+  },
+});
+
+/**
  * Delete a PlayStation station
  */
 export const remove = mutation({

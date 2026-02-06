@@ -2169,7 +2169,7 @@
                   onclick={(e) => { e.stopPropagation(); switchTargetStationId = station.id; }}
                 >
                   <span class="target-station-name">{station.nameAr}</span>
-                  <span class="target-station-id">{station.id}</span>
+                  <span class="target-station-id">{station.stationId || station.name}</span>
                 </button>
               {/each}
             </div>

@@ -93,7 +93,7 @@ function mapId<T extends { _id: string }>(obj: T): T & { id: string } {
 }
 
 function mapStation<T extends { _id: string; stationId?: string }>(obj: T): T & { id: string } {
-	return { ...obj, id: obj.stationId || obj._id };
+	return { ...obj, id: obj._id };
 }
 
 function mapStationStatus(status: any): StationStatus {
@@ -137,8 +137,8 @@ function mapStationStatus(status: any): StationStatus {
 		elapsedMinutes: status.elapsedMinutes || 0,
 		currentCost: status.currentCost || 0,
 		isPaused: status.isPaused || false,
-		isOnline: true,
-		isOfflineWithSession: false,
+		isOnline: status.station.isOnline ?? false,
+		isOfflineWithSession: !!(status.station.isOnline === false && status.activeSession),
 		costBreakdown,
 		lastSessionOrders: [],
 		lastSessionCharges: [],

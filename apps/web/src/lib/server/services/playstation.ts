@@ -10,6 +10,7 @@ import {
 	startPsSession,
 	pausePsSession,
 	resumePsSession,
+	bulkUpdateStationOnlineStatus,
 } from '$lib/server/convex';
 
 // PlayStation MAC address prefixes (common OUI prefixes for Sony PlayStation)
@@ -209,6 +210,17 @@ export async function syncStationStatus(): Promise<{
 				}
 			}
 		}
+	}
+
+	// Update online status in Convex so the UI gets real-time updates
+	const onlineUpdates = stations.map(station => ({
+		id: station._id,
+		isOnline: onlineMap.get(station._id) ?? false,
+	}));
+	try {
+		await bulkUpdateStationOnlineStatus(onlineUpdates);
+	} catch (e) {
+		console.error('[Sync] Failed to update online status in Convex:', e);
 	}
 
 	return { started, ended };

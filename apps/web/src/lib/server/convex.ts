@@ -177,6 +177,13 @@ export async function deletePsStation(id: string): Promise<void> {
 	await client.mutation(api.psStations.remove, { id: id as any });
 }
 
+export async function bulkUpdateStationOnlineStatus(updates: Array<{ id: string; isOnline: boolean }>): Promise<void> {
+	const client = getConvexClient();
+	await client.mutation(api.psStations.bulkUpdateOnlineStatus, {
+		updates: updates.map(u => ({ id: u.id as any, isOnline: u.isOnline })),
+	});
+}
+
 // ============= PS Menu Items =============
 
 export type PsMenuItem = {

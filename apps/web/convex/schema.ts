@@ -35,6 +35,7 @@ export default defineSchema({
     timerEndAction: v.string(),
     hdmiInput: v.number(),
     sortOrder: v.number(),
+    isOnline: v.optional(v.boolean()),
   }),
 
   // PlayStation sessions
