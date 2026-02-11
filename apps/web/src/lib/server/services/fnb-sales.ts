@@ -1,12 +1,29 @@
-import { db, syncAfterWrite } from '$lib/server/db';
-import { fnbSales, psMenuItems } from '$lib/server/db/schema';
-import type { FnbSale, NewFnbSale, PsMenuItem } from '$lib/server/db/schema';
-import { eq, desc, and, gte, lte } from 'drizzle-orm';
+import {
+  recordFnbSale as convexRecordFnbSale,
+  deleteFnbSale as convexDeleteFnbSale,
+  getTodayFnbSalesWithItems,
+  getFnbSales as convexGetFnbSales,
+  getFnbSalesSummary as convexGetFnbSalesSummary,
+  getFnbSaleById as convexGetFnbSaleById,
+} from '$lib/server/convex';
 
 // ===== F&B SALE TYPES =====
 
-export interface FnbSaleWithItem extends FnbSale {
-  menuItem: PsMenuItem | null;
+export interface FnbSaleWithItem {
+  _id: string;
+  menuItemId: string;
+  quantity: number;
+  priceSnapshot: number;
+  soldAt: number;
+  menuItem: {
+    _id: string;
+    name: string;
+    nameAr: string;
+    category: string;
+    price: number;
+    isAvailable: boolean;
+    sortOrder: number;
+  } | null;
 }
 
 // ===== CRUD OPERATIONS =====
@@ -14,23 +31,8 @@ export interface FnbSaleWithItem extends FnbSale {
 /**
  * Record a standalone F&B sale (not tied to PlayStation session)
  */
-export async function recordFnbSale(menuItemId: number, quantity: number = 1): Promise<FnbSale> {
-  const menuItemResults = await db.select().from(psMenuItems).where(eq(psMenuItems.id, menuItemId));
-  const menuItem = menuItemResults[0];
-  if (!menuItem) throw new Error(`Menu item ${menuItemId} not found`);
-  if (!menuItem.isAvailable) throw new Error(`Menu item ${menuItem.nameAr} is not available`);
-
-  const now = Date.now();
-  const result = await db.insert(fnbSales).values({
-    menuItemId,
-    quantity,
-    priceSnapshot: menuItem.price,
-    soldAt: now,
-    createdAt: now
-  }).returning();
-
-  syncAfterWrite();
-  return result[0];
+export async function recordFnbSale(menuItemId: string, quantity: number = 1): Promise<string> {
+  return await convexRecordFnbSale(menuItemId, quantity);
 }
 
 /**
@@ -41,47 +43,16 @@ export async function getFnbSales(options?: {
   endDate?: number;
   limit?: number;
 }): Promise<FnbSaleWithItem[]> {
-  const conditions = [];
-
-  if (options?.startDate) {
-    conditions.push(gte(fnbSales.soldAt, options.startDate));
-  }
-  if (options?.endDate) {
-    conditions.push(lte(fnbSales.soldAt, options.endDate));
-  }
-
-  let query = db.select().from(fnbSales);
-
-  if (conditions.length > 0) {
-    query = query.where(and(...conditions)) as typeof query;
-  }
-
-  const sales = await query.orderBy(desc(fnbSales.soldAt));
-
-  // Apply limit after fetching (drizzle quirk)
-  const limitedSales = options?.limit ? sales.slice(0, options.limit) : sales;
-
-  // Join with menu items
-  const salesWithItems: FnbSaleWithItem[] = [];
-  for (const sale of limitedSales) {
-    const menuItemResults = await db.select().from(psMenuItems).where(eq(psMenuItems.id, sale.menuItemId));
-    salesWithItems.push({
-      ...sale,
-      menuItem: menuItemResults[0] || null
-    });
-  }
-
-  return salesWithItems;
+  const sales = await convexGetFnbSales(options);
+  return sales as FnbSaleWithItem[];
 }
 
 /**
  * Get today's F&B sales
  */
 export async function getTodayFnbSales(): Promise<FnbSaleWithItem[]> {
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-
-  return await getFnbSales({ startDate: todayStart.getTime() });
+  const sales = await getTodayFnbSalesWithItems();
+  return sales as FnbSaleWithItem[];
 }
 
 /**
@@ -95,21 +66,15 @@ export async function getTodayFnbRevenue(): Promise<number> {
 /**
  * Delete a F&B sale (for correcting mistakes)
  */
-export async function deleteFnbSale(id: number): Promise<void> {
-  const saleResults = await db.select().from(fnbSales).where(eq(fnbSales.id, id));
-  const sale = saleResults[0];
-  if (!sale) throw new Error(`F&B sale ${id} not found`);
-
-  await db.delete(fnbSales).where(eq(fnbSales.id, id));
-  syncAfterWrite();
+export async function deleteFnbSale(id: string): Promise<void> {
+  await convexDeleteFnbSale(id);
 }
 
 /**
  * Get F&B sale by ID
  */
-export async function getFnbSaleById(id: number): Promise<FnbSale | undefined> {
-  const results = await db.select().from(fnbSales).where(eq(fnbSales.id, id));
-  return results[0];
+export async function getFnbSaleById(id: string) {
+  return await convexGetFnbSaleById(id);
 }
 
 // ===== ANALYTICS =====
@@ -122,28 +87,5 @@ export async function getFnbSalesSummary(startDate: number, endDate: number): Pr
   totalItemsSold: number;
   salesByCategory: Record<string, { count: number; revenue: number }>;
 }> {
-  const sales = await getFnbSales({ startDate, endDate });
-
-  let totalRevenue = 0;
-  let totalItemsSold = 0;
-  const salesByCategory: Record<string, { count: number; revenue: number }> = {};
-
-  for (const sale of sales) {
-    const saleTotal = sale.priceSnapshot * sale.quantity;
-    totalRevenue += saleTotal;
-    totalItemsSold += sale.quantity;
-
-    const category = sale.menuItem?.category || 'unknown';
-    if (!salesByCategory[category]) {
-      salesByCategory[category] = { count: 0, revenue: 0 };
-    }
-    salesByCategory[category].count += sale.quantity;
-    salesByCategory[category].revenue += saleTotal;
-  }
-
-  return {
-    totalRevenue,
-    totalItemsSold,
-    salesByCategory
-  };
+  return await convexGetFnbSalesSummary(startDate, endDate);
 }

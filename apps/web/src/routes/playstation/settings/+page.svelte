@@ -72,7 +72,7 @@
 
   function openEditModal(station: typeof data.stations[0]) {
     selectedStation = station;
-    formId = station.id;
+    formId = station.stationId || station._id;
     formName = station.name;
     formNameAr = station.nameAr;
     formMacAddress = station.macAddress;
@@ -347,7 +347,6 @@
       <table class="table-modern">
         <thead>
           <tr>
-            <th>المعرف</th>
             <th>الاسم</th>
             <th>MAC Address</th>
             <th>السعر/ساعة</th>
@@ -359,9 +358,6 @@
         <tbody>
           {#each data.stations as station}
             <tr>
-              <td>
-                <span class="font-mono text-primary-light">{station.id}</span>
-              </td>
               <td>
                 <div class="station-name">
                   <span>{station.name}</span>
@@ -380,11 +376,11 @@
                     <span class="monitor-ip font-mono text-sm">{station.monitorIp}</span>
                     <button
                       class="btn-icon btn-icon-success btn-icon-sm"
-                      onclick={() => testMonitorConnection(station.monitorIp!, station.monitorPort || 8080, station.id)}
-                      disabled={testingConnection === station.id}
+                      onclick={() => testMonitorConnection(station.monitorIp!, station.monitorPort || 8080, station._id)}
+                      disabled={testingConnection === station._id}
                       title="إرسال إشعار تجريبي"
                     >
-                      {#if testingConnection === station.id}
+                      {#if testingConnection === station._id}
                         <span class="loading-spinner"></span>
                       {:else}
                         <Bell class="w-3 h-3" />
@@ -687,7 +683,7 @@
           };
         }}
       >
-        <input type="hidden" name="id" value={formId} />
+        <input type="hidden" name="id" value={selectedStation?._id} />
         <div class="modal-body">
           <div class="form-grid-2col">
             <div class="form-group">
@@ -903,7 +899,7 @@
           };
         }}
       >
-        <input type="hidden" name="id" value={selectedStation.id} />
+        <input type="hidden" name="id" value={selectedStation._id} />
         <div class="modal-footer-rtl">
           <button type="submit" class="btn btn-danger">
             <Trash2 class="w-4 h-4" />

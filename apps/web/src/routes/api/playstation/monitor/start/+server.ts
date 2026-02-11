@@ -1,16 +1,12 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { startSession, getStationById } from '$lib/server/services/playstation';
-import { db } from '$lib/server/db';
-import { settings } from '$lib/server/db/schema';
-import { eq } from 'drizzle-orm';
+import { startPsSession, getPsStationById, getSetting } from '$lib/server/convex';
 
 export const POST: RequestHandler = async ({ request, url }) => {
   try {
     // Check PIN
     const pin = url.searchParams.get('pin');
-    const staffPinSetting = db.select().from(settings).where(eq(settings.key, 'staff_pin')).get();
-    const staffPin = staffPinSetting?.value || '1234'; // Default PIN
+    const staffPin = await getSetting('staff_pin') || '1234';
 
     if (pin !== staffPin) {
       return json({
@@ -29,7 +25,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
       }, { status: 400 });
     }
 
-    const station = getStationById(stationId);
+    const station = await getPsStationById(stationId);
     if (!station) {
       return json({
         success: false,
@@ -37,15 +33,15 @@ export const POST: RequestHandler = async ({ request, url }) => {
       }, { status: 404 });
     }
 
-    const session = startSession(stationId, 'manual');
+    const sessionId = await startPsSession(stationId, 'manual');
 
     return json({
       success: true,
       session: {
-        id: session.id,
-        stationId: session.stationId,
-        startedAt: session.startedAt,
-        hourlyRate: session.hourlyRateSnapshot / 100
+        id: sessionId,
+        stationId,
+        startedAt: Date.now(),
+        hourlyRate: station.hourlyRate / 100
       }
     });
   } catch (error) {

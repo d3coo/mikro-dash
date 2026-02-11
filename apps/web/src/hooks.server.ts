@@ -4,25 +4,28 @@ import { startBackgroundSync, shouldAutoStart } from '$lib/server/services/ps-ba
 // Initialize background services on server start
 let initialized = false;
 
-function initializeServices() {
+async function initializeServices() {
   if (initialized) return;
   initialized = true;
 
-  console.log('[Server] Initializing background services...');
-
-  // Start PlayStation background sync if stations are configured
-  if (shouldAutoStart()) {
-    // Small delay to ensure database is ready
-    setTimeout(() => {
-      startBackgroundSync();
-    }, 2000);
-  } else {
-    console.log('[Server] No PS stations configured, background sync will start when stations are added');
-  }
+  // Don't block server startup - fire and forget
+  // Delay 10s so the server can start serving pages first
+  setTimeout(async () => {
+    try {
+      if (await shouldAutoStart()) {
+        console.log('[Server] Starting PS background sync...');
+        startBackgroundSync();
+      } else {
+        console.log('[Server] No PS stations configured, skipping background sync');
+      }
+    } catch (err) {
+      console.error('[Server] Failed to initialize background services:', err);
+    }
+  }, 10_000);
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
-  // Initialize services on first request
+  // Initialize services on first request (non-blocking)
   initializeServices();
 
   return resolve(event);

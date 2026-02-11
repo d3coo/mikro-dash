@@ -1,12 +1,12 @@
 import { MikroTikClient } from '$lib/server/mikrotik';
-import { getSettings } from '$lib/server/config';
+import { getSettings as getConvexSettings } from '$lib/server/convex';
 
 export async function getMikroTikClient(): Promise<MikroTikClient> {
-  const settings = await getSettings();
+  const settings = await getConvexSettings();
   return new MikroTikClient({
-    host: settings.mikrotik.host,
-    username: settings.mikrotik.user,
-    password: settings.mikrotik.pass
+    host: settings['mikrotik_host'] || '192.168.1.109',
+    username: settings['mikrotik_user'] || 'admin',
+    password: settings['mikrotik_pass'] || ''
   });
 }
 

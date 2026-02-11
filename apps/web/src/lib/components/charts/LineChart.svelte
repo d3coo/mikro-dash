@@ -1,6 +1,6 @@
 <script lang="ts">
   import { browser } from '$app/environment';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
 
   interface Props {
     labels: string[];
@@ -15,66 +15,68 @@
   let canvasEl: HTMLCanvasElement;
   let chart: any = null;
 
-  onMount(async () => {
+  onMount(() => {
     if (!browser) return;
 
-    const { Chart, CategoryScale, LinearScale, PointElement, LineElement, LineController, Title, Tooltip, Legend, Filler } = await import('chart.js');
+    (async () => {
+      const { Chart, CategoryScale, LinearScale, PointElement, LineElement, LineController, Title, Tooltip, Legend, Filler } = await import('chart.js');
 
-    Chart.register(CategoryScale, LinearScale, PointElement, LineElement, LineController, Title, Tooltip, Legend, Filler);
+      Chart.register(CategoryScale, LinearScale, PointElement, LineElement, LineController, Title, Tooltip, Legend, Filler);
 
-    const ctx = canvasEl.getContext('2d');
-    if (!ctx) return;
+      const ctx = canvasEl.getContext('2d');
+      if (!ctx) return;
 
-    chart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [{
-          label,
-          data,
-          borderColor: color,
-          backgroundColor: fillColor,
-          fill: true,
-          tension: 0.4,
-          pointBackgroundColor: color,
-          pointBorderColor: color,
-          pointRadius: 4,
-          pointHoverRadius: 6
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            rtl: true,
-            backgroundColor: 'rgba(15, 23, 42, 0.9)',
-            borderColor: 'rgba(148, 163, 184, 0.2)',
-            borderWidth: 1,
-            titleColor: '#f1f5f9',
-            bodyColor: '#cbd5e1',
-            padding: 12,
-            displayColors: false
-          }
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label,
+            data,
+            borderColor: color,
+            backgroundColor: fillColor,
+            fill: true,
+            tension: 0.4,
+            pointBackgroundColor: color,
+            pointBorderColor: color,
+            pointRadius: 4,
+            pointHoverRadius: 6
+          }]
         },
-        scales: {
-          x: {
-            grid: { color: 'rgba(148, 163, 184, 0.1)' },
-            ticks: { color: '#94a3b8' }
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              rtl: true,
+              backgroundColor: 'rgba(15, 23, 42, 0.9)',
+              borderColor: 'rgba(148, 163, 184, 0.2)',
+              borderWidth: 1,
+              titleColor: '#f1f5f9',
+              bodyColor: '#cbd5e1',
+              padding: 12,
+              displayColors: false
+            }
           },
-          y: {
-            grid: { color: 'rgba(148, 163, 184, 0.1)' },
-            ticks: { color: '#94a3b8' },
-            beginAtZero: true
+          scales: {
+            x: {
+              grid: { color: 'rgba(148, 163, 184, 0.1)' },
+              ticks: { color: '#94a3b8' }
+            },
+            y: {
+              grid: { color: 'rgba(148, 163, 184, 0.1)' },
+              ticks: { color: '#94a3b8' },
+              beginAtZero: true
+            }
           }
         }
-      }
-    });
+      });
+    })();
+  });
 
-    return () => {
-      if (chart) chart.destroy();
-    };
+  onDestroy(() => {
+    if (chart) chart.destroy();
   });
 </script>
 

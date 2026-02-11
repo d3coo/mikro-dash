@@ -1,46 +1,17 @@
 const { app, BrowserWindow, shell } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
-const fs = require('fs');
 
 let mainWindow;
 let serverProcess;
-const PORT = 3001; // Different from dev server (3000) to avoid conflicts
+const PORT = 3002; // Different from dev (3000) and main branch electron (3001)
+const CONVEX_URL = 'https://optimistic-mastiff-21.convex.cloud';
 
 // Get the correct paths for packaged vs development
 const isPackaged = app.isPackaged;
 const appPath = isPackaged
 	? path.dirname(app.getPath('exe'))  // Next to the .exe
 	: path.join(__dirname, '..');        // Development: project root
-
-// Database goes in user data folder for packaged app, or project root for dev
-const databasePath = isPackaged
-	? path.join(app.getPath('userData'), 'data.db')
-	: path.join(appPath, 'data.db');
-
-// Seed database path (bundled with the app)
-const seedDatabasePath = isPackaged
-	? path.join(process.resourcesPath, 'data.db')
-	: path.join(appPath, 'data.db');
-
-// Copy seed database to user data folder if it doesn't exist
-function initializeDatabase() {
-	if (isPackaged && !fs.existsSync(databasePath)) {
-		console.log('Copying seed database to user data folder...');
-		try {
-			// Ensure the user data directory exists
-			const userDataDir = path.dirname(databasePath);
-			if (!fs.existsSync(userDataDir)) {
-				fs.mkdirSync(userDataDir, { recursive: true });
-			}
-			// Copy the seed database
-			fs.copyFileSync(seedDatabasePath, databasePath);
-			console.log('Seed database copied successfully');
-		} catch (err) {
-			console.error('Failed to copy seed database:', err);
-		}
-	}
-}
 
 // Server path - in asar when packaged
 const serverPath = isPackaged
@@ -72,8 +43,20 @@ function createWindow() {
 		mainWindow.show();
 	});
 
-	// Open external links in browser
+	// Keep local navigation inside the app, open external links in browser
+	mainWindow.webContents.on('will-navigate', (event, url) => {
+		const appUrl = `http://localhost:${PORT}`;
+		if (!url.startsWith(appUrl)) {
+			event.preventDefault();
+			shell.openExternal(url);
+		}
+	});
+
 	mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+		const appUrl = `http://localhost:${PORT}`;
+		if (url.startsWith(appUrl)) {
+			return { action: 'allow' };
+		}
 		shell.openExternal(url);
 		return { action: 'deny' };
 	});
@@ -90,7 +73,6 @@ function startServer() {
 	return new Promise((resolve, reject) => {
 		console.log('Is packaged:', isPackaged);
 		console.log('Server path:', serverPath);
-		console.log('Database path:', databasePath);
 		console.log('Node modules path:', nodeModulesPath);
 
 		// Use 'node' in dev, or Electron as Node (ELECTRON_RUN_AS_NODE) when packaged
@@ -101,8 +83,8 @@ function startServer() {
 			env: {
 				...process.env,
 				PORT: PORT.toString(),
-				DATABASE_PATH: databasePath,
 				NODE_PATH: nodeModulesPath,
+				PUBLIC_CONVEX_URL: CONVEX_URL,
 				// Tell Electron to run as Node.js
 				ELECTRON_RUN_AS_NODE: '1'
 			},
@@ -143,9 +125,6 @@ function stopServer() {
 
 app.whenReady().then(async () => {
 	try {
-		// Initialize database (copy seed if needed)
-		initializeDatabase();
-
 		console.log('Starting SvelteKit server...');
 		await startServer();
 		console.log('Server started, creating window...');

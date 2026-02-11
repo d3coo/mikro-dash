@@ -80,7 +80,7 @@ export const actions: Actions = {
     try {
       const idList = ids.split(',');
       await updateNetworkGroupSSID(idList, ssid);
-      return { success: true };
+      return { success: true, ssidUpdated: true };
     } catch (error) {
       console.error('Update SSID error:', error);
       return fail(500, { error: 'فشل في تحديث اسم الشبكة' });

@@ -1,10 +1,15 @@
-import { db } from '$lib/server/db';
-import { voucherUsage } from '$lib/server/db/schema';
-import { eq, and } from 'drizzle-orm';
+import {
+	recordVoucherUsage as convexRecordUsage,
+	getVoucherUsageHistory as convexGetHistory,
+	deleteVoucherUsageHistory as convexDeleteHistory,
+	getLastDeviceForVoucher as convexGetLastDevice,
+	getAllVoucherUsage as convexGetAll,
+	getVoucherDeviceMap as convexGetDeviceMap,
+} from '$lib/server/convex';
 import { getMikroTikClient } from './mikrotik';
 
 export interface VoucherUsageRecord {
-  id: number;
+  _id: string;
   voucherCode: string;
   macAddress: string;
   deviceName: string | null;
@@ -24,103 +29,80 @@ export async function recordVoucherUsage(
   ipAddress?: string,
   totalBytes?: number
 ): Promise<void> {
-  const now = Date.now();
-  const mac = macAddress.toUpperCase();
-
-  // Check if record exists
-  const existingResults = await db
-    .select()
-    .from(voucherUsage)
-    .where(and(
-      eq(voucherUsage.voucherCode, voucherCode),
-      eq(voucherUsage.macAddress, mac)
-    ));
-  const existing = existingResults[0];
-
-  if (existing) {
-    // Update existing record
-    await db.update(voucherUsage)
-      .set({
-        lastConnectedAt: now,
-        deviceName: deviceName || existing.deviceName,
-        ipAddress: ipAddress || existing.ipAddress,
-        totalBytes: totalBytes ?? existing.totalBytes
-      })
-      .where(eq(voucherUsage.id, existing.id));
-  } else {
-    // Create new record
-    await db.insert(voucherUsage)
-      .values({
-        voucherCode,
-        macAddress: mac,
-        deviceName: deviceName || null,
-        ipAddress: ipAddress || null,
-        firstConnectedAt: now,
-        lastConnectedAt: now,
-        totalBytes: totalBytes || 0
-      });
-  }
+  await convexRecordUsage(voucherCode, macAddress, deviceName, ipAddress, totalBytes);
 }
 
 /**
  * Get usage history for a specific voucher
  */
 export async function getVoucherUsageHistory(voucherCode: string): Promise<VoucherUsageRecord[]> {
-  return await db
-    .select()
-    .from(voucherUsage)
-    .where(eq(voucherUsage.voucherCode, voucherCode)) as unknown as VoucherUsageRecord[];
+  const records = await convexGetHistory(voucherCode);
+  return records.map((r: any) => ({
+    _id: r._id,
+    voucherCode: r.voucherCode,
+    macAddress: r.macAddress,
+    deviceName: r.deviceName ?? null,
+    ipAddress: r.ipAddress ?? null,
+    firstConnectedAt: r.firstConnectedAt,
+    lastConnectedAt: r.lastConnectedAt,
+    totalBytes: r.totalBytes,
+  }));
 }
 
 /**
  * Delete usage history for a voucher (when voucher is deleted)
  */
 export async function deleteVoucherUsageHistory(voucherCode: string): Promise<void> {
-  await db.delete(voucherUsage)
-    .where(eq(voucherUsage.voucherCode, voucherCode));
+  await convexDeleteHistory(voucherCode);
 }
 
 /**
  * Get the last device that used a voucher
  */
 export async function getLastDeviceForVoucher(voucherCode: string): Promise<VoucherUsageRecord | undefined> {
-  const records = await db
-    .select()
-    .from(voucherUsage)
-    .where(eq(voucherUsage.voucherCode, voucherCode))
-    .orderBy(voucherUsage.lastConnectedAt) as unknown as VoucherUsageRecord[];
-
-  return records[records.length - 1];
+  const record = await convexGetLastDevice(voucherCode);
+  if (!record) return undefined;
+  return {
+    _id: (record as any)._id,
+    voucherCode: (record as any).voucherCode,
+    macAddress: (record as any).macAddress,
+    deviceName: (record as any).deviceName ?? null,
+    ipAddress: (record as any).ipAddress ?? null,
+    firstConnectedAt: (record as any).firstConnectedAt,
+    lastConnectedAt: (record as any).lastConnectedAt,
+    totalBytes: (record as any).totalBytes,
+  };
 }
 
 /**
  * Get all usage records (for admin view)
  */
 export async function getAllVoucherUsage(): Promise<VoucherUsageRecord[]> {
-  return await db
-    .select()
-    .from(voucherUsage)
-    .orderBy(voucherUsage.lastConnectedAt) as unknown as VoucherUsageRecord[];
+  const records = await convexGetAll();
+  return records.map((r: any) => ({
+    _id: r._id,
+    voucherCode: r.voucherCode,
+    macAddress: r.macAddress,
+    deviceName: r.deviceName ?? null,
+    ipAddress: r.ipAddress ?? null,
+    firstConnectedAt: r.firstConnectedAt,
+    lastConnectedAt: r.lastConnectedAt,
+    totalBytes: r.totalBytes,
+  }));
 }
 
 /**
  * Build a map of voucher code -> device info from stored history
  */
 export async function getVoucherDeviceMap(): Promise<Map<string, { macAddress: string; deviceName: string | null }>> {
-  const records = await getAllVoucherUsage();
+  const entries = await convexGetDeviceMap();
   const map = new Map<string, { macAddress: string; deviceName: string | null }>();
-
-  for (const record of records) {
-    // Only keep the most recent device per voucher
-    const existing = map.get(record.voucherCode);
-    if (!existing || record.lastConnectedAt > (existing as any).lastConnectedAt) {
-      map.set(record.voucherCode, {
-        macAddress: record.macAddress,
-        deviceName: record.deviceName
-      });
-    }
+  for (const entry of entries) {
+    map.set(entry.voucherCode, {
+      macAddress: entry.macAddress,
+      deviceName: entry.deviceName ?? null,
+    });
   }
-
   return map;
 }
 

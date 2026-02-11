@@ -1,114 +1,37 @@
 import type { PageServerLoad, Actions } from './$types';
 import {
-  getStationStatuses,
-  syncStationStatus,
-  startSession,
-  endSession,
-  updateSessionStartTime,
-  getPsAnalytics,
-  getStations,
-  getStationById,
-  getMenuItems,
-  getSessionOrders,
-  addOrderToSession,
-  removeOrderFromSession,
-  setSessionTimer,
-  getTimerAlerts,
-  markTimerNotified,
-  getStationEarnings,
-  addCharge,
-  updateCharge,
-  deleteCharge,
-  getSessionCharges,
-  transferSession,
-  getSessionTransfers,
-  switchMode,
-  getSessionSegments,
-  getActiveSessions,
-  calculateSessionCostWithSegments,
-  switchStation
-} from '$lib/server/services/playstation';
+  startPsSession,
+  endPsSession,
+  updatePsSessionStartTime,
+  getPsStationById,
+  addPsSessionOrder,
+  removePsSessionOrder,
+  updatePsSessionTimer,
+  addPsSessionCharge,
+  updatePsSessionCharge,
+  deletePsSessionCharge,
+  transferPsSession,
+  switchPsSessionMode,
+  switchPsStation,
+} from '$lib/server/convex';
+import { syncStationStatus } from '$lib/server/services/playstation';
 import * as monitorControl from '$lib/server/services/monitor-control';
 import { fail } from '@sveltejs/kit';
 
+/**
+ * Load returns empty initial data.
+ * Client-side Convex subscriptions (convex-state.svelte.ts) provide
+ * real-time data via WebSocket — no slow HTTP round-trips needed.
+ */
 export const load: PageServerLoad = async () => {
-  // Run all initial queries in parallel
-  const [stationStatuses, analytics, stations, menuItems, timerAlerts, stationEarnings, activeSessions] = await Promise.all([
-    getStationStatuses(),
-    getPsAnalytics('today'),
-    getStations(),
-    getMenuItems(),
-    getTimerAlerts(),
-    getStationEarnings(),
-    getActiveSessions()
-  ]);
-
-  // Get orders, charges, transfers, and segments for active session or last session
-  // Run all queries in parallel for each station
-  const sessionsWithExtras = await Promise.all(stationStatuses.map(async (status) => {
-    if (status.activeSession) {
-      const [orders, charges, transfers, segments, costBreakdown] = await Promise.all([
-        getSessionOrders(status.activeSession.id),
-        getSessionCharges(status.activeSession.id),
-        getSessionTransfers(status.activeSession.id),
-        getSessionSegments(status.activeSession.id),
-        calculateSessionCostWithSegments(status.activeSession)
-      ]);
-      return {
-        ...status,
-        orders,
-        charges,
-        transfers,
-        segments,
-        costBreakdown,
-        lastSessionOrders: [],
-        lastSessionCharges: [],
-        lastSessionTransfers: [],
-        lastSessionSegments: []
-      };
-    }
-    if (status.lastSession) {
-      const [lastSessionOrders, lastSessionCharges, lastSessionTransfers, lastSessionSegments] = await Promise.all([
-        getSessionOrders(status.lastSession.id),
-        getSessionCharges(status.lastSession.id),
-        getSessionTransfers(status.lastSession.id),
-        getSessionSegments(status.lastSession.id)
-      ]);
-      return {
-        ...status,
-        orders: [],
-        charges: [],
-        transfers: [],
-        segments: [],
-        costBreakdown: null,
-        lastSessionOrders,
-        lastSessionCharges,
-        lastSessionTransfers,
-        lastSessionSegments
-      };
-    }
-    return {
-      ...status,
-      orders: [],
-      charges: [],
-      transfers: [],
-      segments: [],
-      costBreakdown: null,
-      lastSessionOrders: [],
-      lastSessionCharges: [],
-      lastSessionTransfers: [],
-      lastSessionSegments: []
-    };
-  }));
-
   return {
-    stationStatuses: sessionsWithExtras,
-    analytics,
-    stationCount: stations.length,
-    menuItems,
-    timerAlerts,
-    stationEarnings,
-    activeSessions
+    stationStatuses: [] as any[],
+    analytics: { totalSessions: 0, totalMinutes: 0, totalRevenue: 0 },
+    stationCount: 0,
+    menuItems: [] as any[],
+    timerAlerts: [] as any[],
+    stationEarnings: [] as any[],
+    activeSessions: [] as any[]
   };
 };
 
@@ -126,14 +49,14 @@ export const actions: Actions = {
 
     try {
       const timer = timerMinutes ? parseInt(timerMinutes, 10) : undefined;
-      const costLimitPiasters = costLimit ? parseInt(costLimit, 10) * 100 : undefined; // Convert EGP to piasters
+      const costLimitPiasters = costLimit ? parseInt(costLimit, 10) * 100 : undefined;
       const startTime = customStartTime ? parseInt(customStartTime, 10) : undefined;
-      await startSession(stationId, 'manual', timer, costLimitPiasters, startTime);
+      await startPsSession(stationId, 'manual', timer, costLimitPiasters, startTime);
 
       // Send notification to monitor (async, don't wait)
-      const station = await getStationById(stationId);
+      const station = await getPsStationById(stationId);
       if (station?.monitorIp) {
-        monitorControl.onSessionStart(station, timer)
+        monitorControl.onSessionStart(station as any, timer)
           .catch(err => console.error('[MonitorControl] Session start failed:', err));
       }
 
@@ -153,7 +76,7 @@ export const actions: Actions = {
     }
 
     try {
-      await updateSessionStartTime(parseInt(sessionId, 10), parseInt(newStartTime, 10));
+      await updatePsSessionStartTime(sessionId, parseInt(newStartTime, 10));
       return { success: true };
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : 'Failed to update start time' });
@@ -169,18 +92,18 @@ export const actions: Actions = {
     }
 
     try {
-      const session = await endSession(parseInt(sessionId, 10));
-      const ordersCost = session.ordersCost || 0;
-      const totalCost = (session.totalCost || 0) + ordersCost;
+      const result = await endPsSession(sessionId);
+      const ordersCost = result.ordersCost || 0;
+      const totalCost = (result.totalCost || 0) + ordersCost;
 
       // Send notification to monitor (async, don't wait)
-      const station = await getStationById(session.stationId);
+      const station = await getPsStationById(result.stationId);
       if (station?.monitorIp) {
-        monitorControl.onSessionEnd(station)
+        monitorControl.onSessionEnd(station as any)
           .catch(err => console.error('[MonitorControl] Session end failed:', err));
       }
 
-      return { success: true, totalCost, gamingCost: session.totalCost, ordersCost };
+      return { success: true, totalCost, gamingCost: result.totalCost, ordersCost };
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : 'Failed to end session' });
     }
@@ -197,18 +120,18 @@ export const actions: Actions = {
 
     try {
       const customCost = finalAmount ? parseInt(finalAmount, 10) : undefined;
-      const session = await endSession(parseInt(sessionId, 10), undefined, customCost);
-      const ordersCost = session.ordersCost || 0;
-      const totalCost = customCost !== undefined ? customCost : (session.totalCost || 0) + ordersCost;
+      const result = await endPsSession(sessionId, undefined, customCost);
+      const ordersCost = result.ordersCost || 0;
+      const totalCost = customCost !== undefined ? customCost : (result.totalCost || 0) + ordersCost;
 
       // Send notification to monitor (async, don't wait)
-      const station = await getStationById(session.stationId);
+      const station = await getPsStationById(result.stationId);
       if (station?.monitorIp) {
-        monitorControl.onSessionEnd(station)
+        monitorControl.onSessionEnd(station as any)
           .catch(err => console.error('[MonitorControl] Session end failed:', err));
       }
 
-      return { success: true, totalCost, gamingCost: session.totalCost, ordersCost };
+      return { success: true, totalCost, gamingCost: result.totalCost, ordersCost };
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : 'Failed to end session' });
     }
@@ -238,11 +161,7 @@ export const actions: Actions = {
     }
 
     try {
-      await addOrderToSession(
-        parseInt(sessionId, 10),
-        parseInt(menuItemId, 10),
-        quantity ? parseInt(quantity, 10) : 1
-      );
+      await addPsSessionOrder(sessionId, menuItemId, quantity ? parseInt(quantity, 10) : 1);
       return { success: true };
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : 'Failed to add order' });
@@ -259,19 +178,14 @@ export const actions: Actions = {
     }
 
     try {
-      const items = JSON.parse(itemsJson) as Array<{ menuItemId: number; quantity: number }>;
+      const items = JSON.parse(itemsJson) as Array<{ menuItemId: string; quantity: number }>;
 
       if (!Array.isArray(items) || items.length === 0) {
         return fail(400, { error: 'At least one item is required' });
       }
 
-      // Add all items to the session
       for (const item of items) {
-        await addOrderToSession(
-          parseInt(sessionId, 10),
-          item.menuItemId,
-          item.quantity
-        );
+        await addPsSessionOrder(sessionId, item.menuItemId, item.quantity);
       }
 
       return { success: true, count: items.length };
@@ -289,7 +203,7 @@ export const actions: Actions = {
     }
 
     try {
-      await removeOrderFromSession(parseInt(orderId, 10));
+      await removePsSessionOrder(orderId);
       return { success: true };
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : 'Failed to remove order' });
@@ -306,8 +220,8 @@ export const actions: Actions = {
     }
 
     try {
-      const timer = timerMinutes ? parseInt(timerMinutes, 10) : null;
-      await setSessionTimer(parseInt(sessionId, 10), timer);
+      const timer = timerMinutes ? parseInt(timerMinutes, 10) : undefined;
+      await updatePsSessionTimer(sessionId, timer);
       return { success: true };
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : 'Failed to set timer' });
@@ -323,7 +237,7 @@ export const actions: Actions = {
     }
 
     try {
-      await markTimerNotified(parseInt(sessionId, 10));
+      await updatePsSessionTimer(sessionId, undefined, true);
       return { success: true };
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : 'Failed to dismiss alert' });
@@ -343,8 +257,8 @@ export const actions: Actions = {
     }
 
     try {
-      const amountPiasters = Math.round(parseFloat(amount) * 100); // Convert EGP to piasters
-      await addCharge(parseInt(sessionId, 10), amountPiasters, reason || undefined);
+      const amountPiasters = Math.round(parseFloat(amount) * 100);
+      await addPsSessionCharge(sessionId, amountPiasters, reason || undefined);
       return { success: true };
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : 'Failed to add charge' });
@@ -363,7 +277,7 @@ export const actions: Actions = {
 
     try {
       const amountPiasters = Math.round(parseFloat(amount) * 100);
-      await updateCharge(parseInt(chargeId, 10), amountPiasters, reason);
+      await updatePsSessionCharge(chargeId, amountPiasters, reason);
       return { success: true };
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : 'Failed to update charge' });
@@ -379,7 +293,7 @@ export const actions: Actions = {
     }
 
     try {
-      await deleteCharge(parseInt(chargeId, 10));
+      await deletePsSessionCharge(chargeId);
       return { success: true };
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : 'Failed to delete charge' });
@@ -399,11 +313,7 @@ export const actions: Actions = {
     }
 
     try {
-      const transfer = await transferSession(
-        parseInt(fromSessionId, 10),
-        parseInt(toSessionId, 10),
-        includeOrders
-      );
+      const transfer = await transferPsSession(fromSessionId, toSessionId, includeOrders);
       return { success: true, transfer };
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : 'Failed to transfer session' });
@@ -426,7 +336,7 @@ export const actions: Actions = {
     }
 
     try {
-      await switchMode(parseInt(sessionId, 10), mode);
+      await switchPsSessionMode(sessionId, mode);
       return { success: true };
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : 'Failed to switch mode' });
@@ -445,7 +355,7 @@ export const actions: Actions = {
     }
 
     try {
-      await switchStation(parseInt(sessionId, 10), newStationId);
+      await switchPsStation(sessionId, newStationId);
       return { success: true };
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : 'Failed to switch station' });

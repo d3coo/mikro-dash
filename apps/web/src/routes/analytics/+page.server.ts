@@ -154,12 +154,12 @@ export const actions: Actions = {
 
   updateExpense: async ({ request }) => {
     const formData = await request.formData();
-    const id = parseInt(formData.get('id') as string, 10);
+    const id = formData.get('id') as string;
     const amount = parseFloat(formData.get('amount') as string);
     const category = formData.get('category') as ExpenseCategory | null;
     const isActive = formData.get('isActive') === 'true';
 
-    if (isNaN(id)) {
+    if (!id) {
       return fail(400, { error: 'معرف المصروف غير صالح' });
     }
 
@@ -169,14 +169,14 @@ export const actions: Actions = {
     }
 
     try {
-      const updates: Partial<{ amount: number; category: ExpenseCategory; isActive: number }> = {};
+      const updates: Partial<{ amount: number; category: ExpenseCategory; isActive: boolean }> = {};
       if (!isNaN(amount)) {
         updates.amount = Math.round(amount * 100); // Convert to piasters
       }
       if (category) {
         updates.category = category;
       }
-      updates.isActive = isActive ? 1 : 0;
+      updates.isActive = isActive;
 
       await updateExpense(id, updates);
       return { success: true, message: 'تم تحديث المصروف بنجاح' };
@@ -188,9 +188,9 @@ export const actions: Actions = {
 
   deleteExpense: async ({ request }) => {
     const formData = await request.formData();
-    const id = parseInt(formData.get('id') as string, 10);
+    const id = formData.get('id') as string;
 
-    if (isNaN(id)) {
+    if (!id) {
       return fail(400, { error: 'معرف المصروف غير صالح' });
     }
 

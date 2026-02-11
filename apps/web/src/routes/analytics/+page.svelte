@@ -181,7 +181,7 @@
   });
 
   function startEditExpense(expense: any) {
-    editingExpense = expense.id;
+    editingExpense = expense._id;
     editAmount = expense.amount / 100;
     editCategory = expense.category || 'general';
   }
@@ -433,9 +433,9 @@
               </td>
               <td>{expense.nameAr}</td>
               <td>
-                {#if editingExpense === expense.id}
+                {#if editingExpense === expense._id}
                   <form method="POST" action="?/updateExpense" use:enhance>
-                    <input type="hidden" name="id" value={expense.id} />
+                    <input type="hidden" name="id" value={expense._id} />
                     <input type="hidden" name="isActive" value={expense.isActive ? 'true' : 'false'} />
                     <input type="hidden" name="category" value={editCategory} />
                     <div class="flex items-center gap-2">
@@ -467,7 +467,7 @@
               </td>
               <td>
                 <form method="POST" action="?/updateExpense" use:enhance>
-                  <input type="hidden" name="id" value={expense.id} />
+                  <input type="hidden" name="id" value={expense._id} />
                   <input type="hidden" name="amount" value={expense.amount / 100} />
                   <input type="hidden" name="category" value={expense.category || 'general'} />
                   <input type="hidden" name="isActive" value={expense.isActive ? 'false' : 'true'} />
@@ -486,7 +486,7 @@
                     <Edit2 class="w-4 h-4" />
                   </button>
                   <form method="POST" action="?/deleteExpense" use:enhance>
-                    <input type="hidden" name="id" value={expense.id} />
+                    <input type="hidden" name="id" value={expense._id} />
                     <button type="submit" class="btn-icon btn-danger" title="حذف">
                       <Trash2 class="w-4 h-4" />
                     </button>

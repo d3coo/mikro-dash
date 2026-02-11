@@ -2,7 +2,7 @@ import { getMikroTikClient } from './mikrotik';
 import { getVouchersWithFallback, type Voucher } from './vouchers';
 import { getActiveSessions, type ActiveSession } from './sessions';
 import { getSettings } from '$lib/server/config';
-import { getTodayPsRevenue, getStations, getActiveSessions as getPsActiveSessions } from './playstation';
+import { getPsStations, getActivePsSessions, getTodayPsAnalytics } from '$lib/server/convex';
 import { getCachedSessions } from './voucher-cache';
 
 export interface RouterHealth {
@@ -116,12 +116,12 @@ export async function getDashboardData(): Promise<DashboardData> {
   let psTodayRevenueValue = 0;
 
   try {
-    const psStations = await getStations();
-    const psActiveSessions = await getPsActiveSessions();
-    const psTodayRevenue = await getTodayPsRevenue();
+    const psStations = await getPsStations();
+    const psActiveSessions = await getActivePsSessions();
+    const psAnalytics = await getTodayPsAnalytics();
     psStationsCount = psStations.length;
     psActiveSessionsCount = psActiveSessions.length;
-    psTodayRevenueValue = psTodayRevenue;
+    psTodayRevenueValue = psAnalytics.totalRevenue;
   } catch (error) {
     console.error('Failed to get PlayStation stats:', error);
   }
