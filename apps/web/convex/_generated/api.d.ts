@@ -10,6 +10,7 @@
 
 import type * as expenses from "../expenses.js";
 import type * as fnbSales from "../fnbSales.js";
+import type * as lib_dateUtils from "../lib/dateUtils.js";
 import type * as migrations_importFromSqlite from "../migrations/importFromSqlite.js";
 import type * as packages from "../packages.js";
 import type * as printTracking from "../printTracking.js";
@@ -30,6 +31,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   expenses: typeof expenses;
   fnbSales: typeof fnbSales;
+  "lib/dateUtils": typeof lib_dateUtils;
   "migrations/importFromSqlite": typeof migrations_importFromSqlite;
   packages: typeof packages;
   printTracking: typeof printTracking;

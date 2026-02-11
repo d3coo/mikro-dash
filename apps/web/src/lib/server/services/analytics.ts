@@ -12,6 +12,7 @@ import {
 } from '$lib/server/convex';
 import { getVouchers } from './vouchers';
 import { getPackages } from '$lib/server/config';
+import { getBusinessDayDate, getBusinessDayStartMs, getBusinessDayEndMs, getBusinessDayDaysAgo } from './date-utils';
 
 // ===== EXPENSE MANAGEMENT =====
 
@@ -127,19 +128,17 @@ export async function getMonthlyFixedCosts(): Promise<number> {
 // ===== DAILY STATS =====
 
 /**
- * Get today's date in YYYY-MM-DD format
+ * Get today's business day date in YYYY-MM-DD format (Cairo time, 10 AM reset)
  */
 function getTodayDate(): string {
-  return new Date().toISOString().split('T')[0];
+  return getBusinessDayDate();
 }
 
 /**
- * Get date N days ago in YYYY-MM-DD format
+ * Get business day date N days ago in YYYY-MM-DD format
  */
 function getDateDaysAgo(days: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() - days);
-  return date.toISOString().split('T')[0];
+  return getBusinessDayDaysAgo(days);
 }
 
 /**
@@ -171,8 +170,8 @@ export async function getStatsRange(startDate: string, endDate: string): Promise
  */
 export async function aggregateTodayStats(): Promise<ConvexUnifiedDailyStat | null> {
   const today = getTodayDate();
-  const todayStart = new Date(today).getTime();
-  const todayEnd = todayStart + 24 * 60 * 60 * 1000;
+  const todayStart = getBusinessDayStartMs();
+  const todayEnd = getBusinessDayEndMs(today);
 
   const vouchers = await getVouchers();
 
@@ -229,8 +228,8 @@ async function calculateSummary(
   daysInPeriod: number
 ): Promise<AnalyticsSummary> {
   const vouchers = await getVouchers();
-  const startMs = new Date(startDate).getTime();
-  const endMs = new Date(endDate).getTime() + 24 * 60 * 60 * 1000; // End of day
+  const startMs = getBusinessDayEndMs(startDate) - 24 * 60 * 60 * 1000; // Start of business day
+  const endMs = getBusinessDayEndMs(endDate); // End of business day
 
   // Filter vouchers created in this period
   const periodVouchers = vouchers.filter(v => {
@@ -339,8 +338,8 @@ export async function getRevenueChartData(days: number): Promise<ChartDataPoint[
 
   for (let i = days - 1; i >= 0; i--) {
     const date = getDateDaysAgo(i);
-    const dayStart = new Date(date).getTime();
-    const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+    const dayStart = getBusinessDayEndMs(date) - 24 * 60 * 60 * 1000;
+    const dayEnd = getBusinessDayEndMs(date);
 
     const dayVouchers = vouchers.filter(v => {
       const createdAt = parseCreatedAt(v.comment);
@@ -350,8 +349,8 @@ export async function getRevenueChartData(days: number): Promise<ChartDataPoint[
     const revenue = dayVouchers.reduce((sum, v) => sum + v.priceLE, 0);
 
     // Format date label in Arabic style (day/month)
-    const d = new Date(date);
-    const label = `${d.getDate()}/${d.getMonth() + 1}`;
+    const [y, m, d] = date.split('-').map(Number);
+    const label = `${d}/${m}`;
 
     data.push({ date, label, value: revenue });
   }
@@ -371,8 +370,8 @@ export async function getProfitChartData(days: number): Promise<ChartDataPoint[]
 
   for (let i = days - 1; i >= 0; i--) {
     const date = getDateDaysAgo(i);
-    const dayStart = new Date(date).getTime();
-    const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+    const dayStart = getBusinessDayEndMs(date) - 24 * 60 * 60 * 1000;
+    const dayEnd = getBusinessDayEndMs(date);
 
     const dayVouchers = vouchers.filter(v => {
       const createdAt = parseCreatedAt(v.comment);
@@ -385,8 +384,8 @@ export async function getProfitChartData(days: number): Promise<ChartDataPoint[]
     const dataCost = dataSoldGB * costPerGb;
     const netProfit = revenue - dataCost - dailyFixed;
 
-    const d = new Date(date);
-    const label = `${d.getDate()}/${d.getMonth() + 1}`;
+    const [y, m, d] = date.split('-').map(Number);
+    const label = `${d}/${m}`;
 
     data.push({ date, label, value: Math.round(netProfit * 100) / 100 });
   }
@@ -441,8 +440,8 @@ export async function getDataUsageComparison(days: number): Promise<DataUsagePoi
 
   for (let i = days - 1; i >= 0; i--) {
     const date = getDateDaysAgo(i);
-    const dayStart = new Date(date).getTime();
-    const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+    const dayStart = getBusinessDayEndMs(date) - 24 * 60 * 60 * 1000;
+    const dayEnd = getBusinessDayEndMs(date);
 
     const dayVouchers = vouchers.filter(v => {
       const createdAt = parseCreatedAt(v.comment);
@@ -452,8 +451,8 @@ export async function getDataUsageComparison(days: number): Promise<DataUsagePoi
     const dataSoldBytes = dayVouchers.reduce((sum, v) => sum + v.bytesLimit, 0);
     const dataUsedBytes = dayVouchers.reduce((sum, v) => sum + v.bytesTotal, 0);
 
-    const d = new Date(date);
-    const label = `${d.getDate()}/${d.getMonth() + 1}`;
+    const [y, m, d] = date.split('-').map(Number);
+    const label = `${d}/${m}`;
 
     data.push({
       date,

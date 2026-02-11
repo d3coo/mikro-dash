@@ -4,6 +4,7 @@
 
 import { query, mutation } from './_generated/server';
 import { v } from 'convex/values';
+import { getBusinessDayStartMs } from './lib/dateUtils';
 
 /**
  * List all F&B sales
@@ -38,9 +39,7 @@ export const getByDateRange = query({
 export const getTodaySalesWithItems = query({
   args: {},
   handler: async (ctx) => {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayMs = todayStart.getTime();
+    const todayMs = getBusinessDayStartMs();
 
     const sales = await ctx.db
       .query('fnbSales')

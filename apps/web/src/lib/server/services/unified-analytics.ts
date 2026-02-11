@@ -9,6 +9,7 @@ import {
 } from '$lib/server/convex';
 import { getVouchers } from './vouchers';
 import { getFnbSalesSummary } from './fnb-sales';
+import { getBusinessDayDate, getBusinessDayStartMs, getBusinessDayEndMs, getBusinessDayDaysAgo } from './date-utils';
 
 // ===== TYPES =====
 
@@ -64,13 +65,11 @@ export interface UnifiedAnalyticsSummary {
 // ===== HELPER FUNCTIONS =====
 
 function getTodayDate(): string {
-  return new Date().toISOString().split('T')[0];
+  return getBusinessDayDate();
 }
 
 function getDateDaysAgo(days: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() - days);
-  return date.toISOString().split('T')[0];
+  return getBusinessDayDaysAgo(days);
 }
 
 function daysBetween(start: string, end: string): number {
@@ -188,8 +187,8 @@ export async function getUnifiedAnalytics(
   }
 
   const daysInPeriod = daysBetween(startDate, endDate);
-  const startMs = new Date(startDate).getTime();
-  const endMs = new Date(endDate).getTime() + 24 * 60 * 60 * 1000 - 1; // End of day
+  const startMs = getBusinessDayEndMs(startDate) - 24 * 60 * 60 * 1000; // Business day start
+  const endMs = getBusinessDayEndMs(endDate) - 1; // End of business day
 
   // ===== WIFI SEGMENT =====
   const vouchers = await getVouchers();
@@ -344,8 +343,8 @@ export async function getUnifiedAnalytics(
  * This should be called periodically (end of day, or on page load for today)
  */
 export async function aggregateUnifiedDailyStats(date: string): Promise<ConvexUnifiedDailyStat | null> {
-  const startMs = new Date(date).getTime();
-  const endMs = startMs + 24 * 60 * 60 * 1000 - 1;
+  const startMs = getBusinessDayEndMs(date) - 24 * 60 * 60 * 1000;
+  const endMs = getBusinessDayEndMs(date) - 1;
   const today = getTodayDate();
   const isToday = date === today;
 
@@ -438,14 +437,15 @@ export async function getRevenueBySegmentChart(days: number): Promise<UnifiedCha
   const today = getTodayDate();
 
   // Batch fetch: get all PS history for the full range at once
-  const rangeStart = new Date(getDateDaysAgo(days - 1)).getTime();
-  const rangeEnd = new Date(today).getTime() + 24 * 60 * 60 * 1000 - 1;
+  const rangeStartDate = getDateDaysAgo(days - 1);
+  const rangeStart = getBusinessDayEndMs(rangeStartDate) - 24 * 60 * 60 * 1000;
+  const rangeEnd = getBusinessDayEndMs(today) - 1;
   const allPsHistory = await getPsSessionHistory({ startDate: rangeStart, endDate: rangeEnd });
 
   for (let i = days - 1; i >= 0; i--) {
     const date = getDateDaysAgo(i);
-    const dayStart = new Date(date).getTime();
-    const dayEnd = dayStart + 24 * 60 * 60 * 1000 - 1;
+    const dayStart = getBusinessDayEndMs(date) - 24 * 60 * 60 * 1000;
+    const dayEnd = getBusinessDayEndMs(date) - 1;
     const isToday = date === today;
 
     // WiFi revenue - filter by creation date or include legacy vouchers for today
@@ -508,8 +508,8 @@ export async function getProfitBySegmentChart(days: number): Promise<UnifiedChar
 
   return revenueData.map(point => {
     // Calculate WiFi data cost for that day
-    const dayStart = new Date(point.date).getTime();
-    const dayEnd = dayStart + 24 * 60 * 60 * 1000 - 1;
+    const dayStart = getBusinessDayEndMs(point.date) - 24 * 60 * 60 * 1000;
+    const dayEnd = getBusinessDayEndMs(point.date) - 1;
     const isToday = point.date === today;
 
     const dayVouchers = vouchers.filter(v => {

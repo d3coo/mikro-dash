@@ -5,6 +5,7 @@
 import { query, mutation } from './_generated/server';
 import { v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
+import { getBusinessDayStartMs } from './lib/dateUtils';
 
 // ============= COMPREHENSIVE QUERIES FOR PS PAGE =============
 
@@ -152,9 +153,7 @@ export const getStationStatuses = query({
 export const getTodayAnalytics = query({
   args: {},
   handler: async (ctx) => {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayMs = todayStart.getTime();
+    const todayMs = getBusinessDayStartMs();
 
     // Get all sessions that started today
     const sessions = await ctx.db.query('psSessions').collect();
@@ -978,9 +977,7 @@ export const getStationEarnings = query({
     const stations = await ctx.db.query('psStations').collect();
     const sortedStations = stations.sort((a, b) => a.sortOrder - b.sortOrder);
 
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayMs = todayStart.getTime();
+    const todayMs = getBusinessDayStartMs();
     const now = Date.now();
 
     // Get all sessions that started today
@@ -1113,9 +1110,7 @@ export const getAnalytics = query({
     let startDate: number;
 
     if (period === 'today') {
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
-      startDate = todayStart.getTime();
+      startDate = getBusinessDayStartMs();
     } else if (period === 'week') {
       startDate = now - 7 * 24 * 60 * 60 * 1000;
     } else {
