@@ -159,6 +159,20 @@ export const bulkUpdateOnlineStatus = mutation({
 });
 
 /**
+ * Update internet access status for a station
+ */
+export const updateInternetAccess = mutation({
+  args: {
+    id: v.id('psStations'),
+    hasInternet: v.boolean(),
+  },
+  handler: async (ctx, { id, hasInternet }) => {
+    await ctx.db.patch(id, { hasInternet });
+    return id;
+  },
+});
+
+/**
  * Delete a PlayStation station
  */
 export const remove = mutation({

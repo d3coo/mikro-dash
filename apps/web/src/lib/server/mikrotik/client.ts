@@ -537,6 +537,48 @@ export class MikroTikClient {
     });
   }
 
+  // Firewall NAT Rules (for DNS redirection)
+  async getNatRules(): Promise<Array<{
+    '.id': string;
+    chain: string;
+    action: string;
+    'src-address'?: string;
+    protocol?: string;
+    'dst-port'?: string;
+    'to-addresses'?: string;
+    comment?: string;
+    disabled?: string;
+  }>> {
+    return this.request('/ip/firewall/nat');
+  }
+
+  async addNatRule(options: {
+    chain: string;
+    action: string;
+    srcAddress?: string;
+    protocol?: string;
+    dstPort?: string;
+    toAddresses?: string;
+    comment?: string;
+  }): Promise<void> {
+    const body: Record<string, unknown> = {
+      chain: options.chain,
+      action: options.action
+    };
+    if (options.srcAddress) body['src-address'] = options.srcAddress;
+    if (options.protocol) body['protocol'] = options.protocol;
+    if (options.dstPort) body['dst-port'] = options.dstPort;
+    if (options.toAddresses) body['to-addresses'] = options.toAddresses;
+    if (options.comment) body['comment'] = options.comment;
+    await this.request('/ip/firewall/nat/add', 'POST', body);
+  }
+
+  async removeNatRule(id: string): Promise<void> {
+    await this.request('/ip/firewall/nat/remove', 'POST', {
+      '.id': id
+    });
+  }
+
   // Add IP binding by IP address (for monitors without MAC)
   async addIpBindingByAddress(
     address: string,

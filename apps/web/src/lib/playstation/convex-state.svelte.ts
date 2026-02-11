@@ -30,6 +30,7 @@ export interface StationStatus {
 		timerEndAction: string;
 		hdmiInput: number;
 		sortOrder: number;
+		hasInternet?: boolean;
 	};
 	activeSession: {
 		id: string | number;

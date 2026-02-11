@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Gamepad2, Play, Square, Clock, Settings, RefreshCw, Timer, Banknote, Activity, Wifi, WifiOff, AlertTriangle, History, TrendingUp, UtensilsCrossed, Plus, Minus, X, Bell, Coffee, Radio, Power, Volume2, Monitor, Tv, MonitorOff, Users, User, ArrowRightLeft, DollarSign, Pencil, Trash2, Repeat } from 'lucide-svelte';
+  import { Gamepad2, Play, Square, Clock, Settings, RefreshCw, Timer, Banknote, Activity, Wifi, WifiOff, AlertTriangle, History, TrendingUp, UtensilsCrossed, Plus, Minus, X, Bell, Coffee, Radio, Power, Volume2, Monitor, Tv, MonitorOff, Users, User, ArrowRightLeft, DollarSign, Pencil, Trash2, Repeat, Globe } from 'lucide-svelte';
   import { onMount, onDestroy } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { invalidateAll } from '$app/navigation';
@@ -55,6 +55,32 @@
       toast.error('Failed to control monitor');
     } finally {
       monitorControlLoading = null;
+    }
+  }
+
+  // ===== INTERNET ACCESS TOGGLE =====
+  let internetToggleLoading = $state<string | null>(null);
+
+  async function toggleInternet(stationId: string, currentState: boolean) {
+    internetToggleLoading = stationId;
+    try {
+      const response = await fetch('/api/playstation/internet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stationId, enable: !currentState })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success(result.enabled ? 'تم تفعيل الإنترنت' : 'تم إيقاف الإنترنت');
+      } else {
+        toast.error(`فشل: ${result.error || 'خطأ غير معروف'}`);
+      }
+    } catch (err) {
+      toast.error('فشل في تبديل الإنترنت');
+    } finally {
+      internetToggleLoading = null;
     }
   }
 
@@ -1089,6 +1115,18 @@
                     <WifiOff class="w-4 h-4" />
                   {/if}
                 </div>
+                <button
+                  class="internet-toggle" class:active={status.station.hasInternet}
+                  onclick={() => toggleInternet(status.station.id, !!status.station.hasInternet)}
+                  disabled={internetToggleLoading === status.station.id}
+                  title={status.station.hasInternet ? 'إيقاف الإنترنت' : 'تفعيل الإنترنت'}
+                >
+                  {#if internetToggleLoading === status.station.id}
+                    <span class="loading-spinner-sm"></span>
+                  {:else}
+                    <Globe class="w-4 h-4" />
+                  {/if}
+                </button>
               </div>
             </div>
 
@@ -2806,6 +2844,37 @@
   .online-indicator.online {
     background: rgba(16, 185, 129, 0.15);
     color: #34d399;
+  }
+
+  .internet-toggle {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--color-text-secondary, #9ca3af);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .internet-toggle:hover {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    border-color: rgba(59, 130, 246, 0.3);
+  }
+
+  .internet-toggle.active {
+    background: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
+    border-color: rgba(59, 130, 246, 0.4);
+  }
+
+  .internet-toggle:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   /* Session Info */

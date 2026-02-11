@@ -124,6 +124,8 @@ export type PsStation = {
 	timerEndAction: string;
 	hdmiInput: number;
 	sortOrder: number;
+	isOnline?: boolean;
+	hasInternet?: boolean;
 };
 
 export async function getPsStations(): Promise<PsStation[]> {
@@ -175,6 +177,11 @@ export async function updatePsStation(
 export async function deletePsStation(id: string): Promise<void> {
 	const client = getConvexClient();
 	await client.mutation(api.psStations.remove, { id: id as any });
+}
+
+export async function updatePsStationInternet(id: string, hasInternet: boolean): Promise<void> {
+	const client = getConvexClient();
+	await client.mutation(api.psStations.updateInternetAccess, { id: id as any, hasInternet });
 }
 
 export async function bulkUpdateStationOnlineStatus(updates: Array<{ id: string; isOnline: boolean }>): Promise<void> {

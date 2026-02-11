@@ -36,6 +36,7 @@ export default defineSchema({
     hdmiInput: v.number(),
     sortOrder: v.number(),
     isOnline: v.optional(v.boolean()),
+    hasInternet: v.optional(v.boolean()),
   }),
 
   // PlayStation sessions
