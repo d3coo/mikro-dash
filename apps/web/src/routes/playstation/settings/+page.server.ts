@@ -1,14 +1,22 @@
 import type { PageServerLoad, Actions } from './$types';
 import {
   getPsStations,
+  getPsStationById,
   createPsStation,
   updatePsStation,
   deletePsStation,
+  updatePsStationInternet,
 } from '$lib/server/convex';
 import { fail } from '@sveltejs/kit';
+import { getMikroTikClient } from '$lib/server/services/mikrotik';
+import { syncPsRouterRules, normalizeMac } from '$lib/server/services/playstation';
 
 export const load: PageServerLoad = async () => {
   const stations = await getPsStations();
+
+  // Sync all PS router rules in background (non-blocking)
+  syncPsRouterRules().catch(() => {});
+
   return { stations };
 };
 
@@ -32,13 +40,11 @@ export const actions: Actions = {
       return fail(400, { error: 'جميع الحقول مطلوبة' });
     }
 
-    // Validate MAC address format
     const macRegex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
     if (!macRegex.test(macAddress)) {
       return fail(400, { error: 'صيغة MAC Address غير صحيحة' });
     }
 
-    // Validate IP address format if provided
     if (monitorIp) {
       const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
       if (!ipRegex.test(monitorIp)) {
@@ -53,7 +59,7 @@ export const actions: Actions = {
         name,
         nameAr,
         macAddress,
-        hourlyRate: hourlyRate * 100, // Store in piasters
+        hourlyRate: hourlyRate * 100,
         hourlyRateMulti: hourlyRateMulti ? hourlyRateMulti * 100 : undefined,
         monitorIp,
         monitorPort,
@@ -62,6 +68,24 @@ export const actions: Actions = {
         hdmiInput,
         sortOrder: stations.length,
       });
+
+      // Add router rules for the new station
+      try {
+        const client = await getMikroTikClient();
+        const mac = normalizeMac(macAddress);
+
+        await client.allowPsStationMac(macAddress, name);
+        await client.addIpBinding(mac, 'bypassed', `ps-bypass:${name}`);
+        await client.addFirewallFilterRule({
+          chain: 'forward',
+          action: 'drop',
+          srcMacAddress: mac,
+          comment: `ps-internet:${name}`,
+        });
+      } catch (e) {
+        console.error('[PS Settings] Failed to add router rules:', e);
+      }
+
       return { success: true };
     } catch (error) {
       return fail(500, { error: error instanceof Error ? error.message : 'حدث خطأ' });
@@ -88,7 +112,6 @@ export const actions: Actions = {
       return fail(400, { error: 'معرف الجهاز مطلوب' });
     }
 
-    // Validate MAC address format if provided
     if (macAddress) {
       const macRegex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
       if (!macRegex.test(macAddress)) {
@@ -96,7 +119,6 @@ export const actions: Actions = {
       }
     }
 
-    // Validate IP address format if provided
     if (monitorIp) {
       const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
       if (!ipRegex.test(monitorIp)) {
@@ -118,6 +140,48 @@ export const actions: Actions = {
       if (timerEndAction) updates.timerEndAction = timerEndAction;
       if (hdmiInput) updates.hdmiInput = hdmiInput;
 
+      // If MAC changed, update all router rules
+      if (macAddress) {
+        try {
+          const client = await getMikroTikClient();
+          const station = await getPsStationById(id);
+          if (station && normalizeMac(station.macAddress) !== normalizeMac(macAddress)) {
+            const oldName = station.name;
+            const newName = name || station.name;
+            const newMac = normalizeMac(macAddress);
+
+            const [acl, fwRules, ipBindings] = await Promise.all([
+              client.getWirelessAccessList(),
+              client.getFirewallFilterRules(),
+              client.getIpBindings(),
+            ]);
+
+            const oldAcl = acl.find((e) => e.comment === `ps-station:${oldName}`);
+            if (oldAcl) await client.removeFromWirelessAccessList(oldAcl['.id']);
+
+            const oldBypass = ipBindings.find((b) => b.comment === `ps-bypass:${oldName}`);
+            if (oldBypass) await client.removeIpBinding(oldBypass['.id']);
+
+            const oldFw = fwRules.find((r) => r.comment === `ps-internet:${oldName}`);
+            if (oldFw) await client.removeFirewallFilterRule(oldFw['.id']);
+
+            // Add new rules with new MAC
+            await client.allowPsStationMac(macAddress, newName);
+            await client.addIpBinding(newMac, 'bypassed', `ps-bypass:${newName}`);
+            await client.addFirewallFilterRule({
+              chain: 'forward',
+              action: 'drop',
+              srcMacAddress: newMac,
+              comment: `ps-internet:${newName}`,
+            });
+
+            await updatePsStationInternet(id, false);
+          }
+        } catch (e) {
+          console.error('[PS Settings] Failed to update router rules:', e);
+        }
+      }
+
       await updatePsStation(id, updates);
       return { success: true };
     } catch (error) {
@@ -134,6 +198,30 @@ export const actions: Actions = {
     }
 
     try {
+      try {
+        const station = await getPsStationById(id);
+        if (station) {
+          const client = await getMikroTikClient();
+
+          const [acl, fwRules, ipBindings] = await Promise.all([
+            client.getWirelessAccessList(),
+            client.getFirewallFilterRules(),
+            client.getIpBindings(),
+          ]);
+
+          const aclEntry = acl.find((e) => e.comment === `ps-station:${station.name}`);
+          if (aclEntry) await client.removeFromWirelessAccessList(aclEntry['.id']);
+
+          const bypassEntry = ipBindings.find((b) => b.comment === `ps-bypass:${station.name}`);
+          if (bypassEntry) await client.removeIpBinding(bypassEntry['.id']);
+
+          const fwRule = fwRules.find((r) => r.comment === `ps-internet:${station.name}`);
+          if (fwRule) await client.removeFirewallFilterRule(fwRule['.id']);
+        }
+      } catch (e) {
+        console.error('[PS Settings] Failed to remove router rules:', e);
+      }
+
       await deletePsStation(id);
       return { success: true };
     } catch (error) {

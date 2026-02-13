@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>مسح كود QR</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="qr_packed.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      height: 100%;
+      font-family: 'Cairo', sans-serif;
+      background: #000;
+      color: #fff;
+    }
+
+    #container {
+      text-align: center;
+      padding: 20px;
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    h1 {
+      color: #22d3ee;
+      font-size: 24px;
+      margin-bottom: 10px;
+    }
+
+    .instructions {
+      color: #94a3b8;
+      font-size: 14px;
+      margin-bottom: 20px;
+      max-width: 300px;
+    }
+
+    #btn-scan-qr {
+      cursor: pointer;
+      display: inline-block;
+      padding: 20px;
+      background: rgba(8, 145, 178, 0.2);
+      border: 2px solid #0891b2;
+      border-radius: 20px;
+      margin: 20px 0;
+      transition: all 0.3s ease;
+    }
+
+    #btn-scan-qr:hover {
+      background: rgba(8, 145, 178, 0.3);
+      transform: scale(1.05);
+    }
+
+    #btn-scan-qr img {
+      height: 120px;
+      width: 120px;
+    }
+
+    #qr-canvas {
+      margin: auto;
+      width: calc(100% - 20px);
+      max-width: 400px;
+      border-radius: 12px;
+      background: #111;
+    }
+
+    #qr-result {
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      border-radius: 16px;
+      padding: 24px;
+      margin: 20px auto;
+      max-width: 350px;
+    }
+
+    #qr-result button {
+      width: 100%;
+      padding: 14px 24px;
+      background: linear-gradient(135deg, #0891b2, #22d3ee);
+      border: none;
+      border-radius: 12px;
+      color: white;
+      font-family: inherit;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    #qr-result button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 20px rgba(8, 145, 178, 0.4);
+    }
+
+    .result-text {
+      color: #10b981;
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    .result-code {
+      background: rgba(0,0,0,0.3);
+      padding: 12px;
+      border-radius: 8px;
+      font-family: monospace;
+      color: #22d3ee;
+      font-size: 16px;
+      margin-bottom: 16px;
+      word-break: break-all;
+    }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #94a3b8;
+      text-decoration: none;
+      padding: 12px 24px;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 10px;
+      margin-top: 20px;
+      transition: all 0.2s ease;
+    }
+
+    .back-link:hover {
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+    }
+
+    .error-msg {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: 12px;
+      padding: 16px;
+      color: #f87171;
+      margin: 20px auto;
+      max-width: 350px;
+      display: none;
+    }
+
+    .scanning-text {
+      color: #22d3ee;
+      font-size: 14px;
+      margin-top: 12px;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <h1>مسح كود QR</h1>
+    <p class="instructions">اضغط على الأيقونة لتشغيل الكاميرا، ثم وجّه الكاميرا نحو كود QR</p>
+
+    <a id="btn-scan-qr">
+      <img src="qr_icon.svg" alt="مسح QR">
+    </a>
+
+    <canvas hidden id="qr-canvas"></canvas>
+    <p class="scanning-text" id="scanning-text" hidden>جاري البحث عن كود QR...</p>
+
+    <div id="qr-result" hidden>
+      <p class="result-text">تم مسح الكود بنجاح!</p>
+      <div class="result-code" id="result-display"></div>
+      <button onclick="doLogin()">تسجيل الدخول</button>
+    </div>
+
+    <div class="error-msg" id="error-msg">
+      <strong>خطأ:</strong> <span id="error-text"></span>
+    </div>
+
+    <span id="outputData" hidden></span>
+
+    <a href="login" class="back-link">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="19" y1="12" x2="5" y2="12"/>
+        <polyline points="12 19 5 12 12 5"/>
+      </svg>
+      رجوع لصفحة الدخول
+    </a>
+  </div>
+
+  <script>
+    const video = document.createElement("video");
+    const canvasElement = document.getElementById("qr-canvas");
+    const canvas = canvasElement.getContext("2d");
+    const qrResult = document.getElementById("qr-result");
+    const outputData = document.getElementById("outputData");
+    const btnScanQR = document.getElementById("btn-scan-qr");
+    const scanningText = document.getElementById("scanning-text");
+    const resultDisplay = document.getElementById("result-display");
+    const errorMsg = document.getElementById("error-msg");
+    const errorText = document.getElementById("error-text");
+
+    let scanning = false;
+
+    // QR code callback when detected
+    qrcode.callback = function(res) {
+      if (res) {
+        outputData.innerText = res;
+        scanning = false;
+
+        // Stop camera
+        if (video.srcObject) {
+          video.srcObject.getTracks().forEach(track => track.stop());
+        }
+
+        // Parse result for display
+        let displayText = res;
+        if (res.startsWith('http') && res.includes('username=')) {
+          try {
+            const url = new URL(res);
+            displayText = url.searchParams.get('username') || res;
+          } catch(e) {}
+        }
+
+        resultDisplay.innerText = displayText;
+        qrResult.hidden = false;
+        canvasElement.hidden = true;
+        btnScanQR.hidden = false;
+        scanningText.hidden = true;
+      }
+    };
+
+    // Start scanning when button clicked
+    btnScanQR.onclick = function() {
+      errorMsg.style.display = 'none';
+
+      navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" }
+      })
+      .then(function(stream) {
+        scanning = true;
+        qrResult.hidden = true;
+        btnScanQR.hidden = true;
+        canvasElement.hidden = false;
+        scanningText.hidden = false;
+
+        video.setAttribute("playsinline", true);
+        video.srcObject = stream;
+        video.play();
+        tick();
+        scan();
+      })
+      .catch(function(err) {
+        console.error("Camera error:", err);
+        showError(err);
+      });
+    };
+
+    function tick() {
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        canvasElement.height = video.videoHeight;
+        canvasElement.width = video.videoWidth;
+        canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
+      }
+      if (scanning) {
+        requestAnimationFrame(tick);
+      }
+    }
+
+    function scan() {
+      if (!scanning) return;
+      try {
+        qrcode.decode();
+      } catch (e) {
+        setTimeout(scan, 300);
+      }
+    }
+
+    function showError(err) {
+      let msg = 'فشل في تشغيل الكاميرا';
+      if (err.name === 'NotAllowedError') {
+        msg = 'تم رفض صلاحية الكاميرا. يرجى السماح بالوصول للكاميرا.';
+      } else if (err.name === 'NotFoundError') {
+        msg = 'لا توجد كاميرا متاحة على هذا الجهاز.';
+      } else if (err.name === 'NotReadableError') {
+        msg = 'الكاميرا مستخدمة من تطبيق آخر.';
+      } else if (err.message && err.message.includes('secure')) {
+        msg = 'الكاميرا تتطلب اتصال HTTPS آمن.';
+      }
+      errorText.innerText = msg;
+      errorMsg.style.display = 'block';
+    }
+
+    function doLogin() {
+      const data = outputData.innerText;
+
+      // If it's already a login URL, redirect directly
+      if (data.startsWith('http') && data.includes('/login')) {
+        window.location.href = data;
+        return;
+      }
+
+      // Otherwise, construct login URL
+      const username = data;
+      const password = data;
+      window.location.href = 'login?username=' + encodeURIComponent(username) +
+                            '&password=' + encodeURIComponent(password) +
+                            '&dst=' + encodeURIComponent('http://google.com');
+    }
+  </script>
+</body>
+</html>

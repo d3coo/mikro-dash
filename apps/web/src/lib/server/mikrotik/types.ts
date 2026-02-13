@@ -24,41 +24,64 @@ export interface ActiveSession {
   'session-time-left'?: string;
 }
 
-export interface WirelessInterface {
+export interface WifiInterface {
   '.id': string;
   name: string;
   'default-name'?: string;
-  ssid: string;
-  band?: string;
+  configuration?: string;
+  'configuration.ssid'?: string;
+  'configuration.country'?: string;
+  'datapath.bridge'?: string;
+  'security.authentication-types'?: string;
+  'security.passphrase'?: string;
+  channel?: string;
+  'channel.width'?: string;
   disabled: string;
   running: string;
-  'security-profile': string;
+  inactive: string;
+  bound: string;
+  master: string;
   'master-interface'?: string;
-  'interface-type': string;
   'mac-address': string;
-  mode: string;
-  frequency?: string;
+  'radio-mac'?: string;
+  'l2mtu'?: string;
+  'arp-timeout'?: string;
 }
 
-export interface WirelessRegistration {
+/** @deprecated Use WifiInterface - kept for backward compatibility */
+export type WirelessInterface = WifiInterface;
+
+export interface WifiRegistration {
   '.id': string;
   interface: string;
   'mac-address': string;
-  'last-ip'?: string;
+  signal: string;
+  band?: string;
+  ssid?: string;
+  authorized: string;
   uptime: string;
-  'signal-strength': string;
   'tx-rate': string;
   'rx-rate': string;
+  'tx-bits-per-second'?: string;
+  'rx-bits-per-second'?: string;
   bytes: string; // "in,out" format
   packets: string;
+  'auth-type'?: string;
+  'last-activity'?: string;
 }
 
-export interface SecurityProfile {
+/** @deprecated Use WifiRegistration - kept for backward compatibility */
+export type WirelessRegistration = WifiRegistration;
+
+export interface WifiSecurityProfile {
   '.id': string;
   name: string;
-  mode: string;
-  'wpa2-pre-shared-key'?: string;
+  'authentication-types'?: string;
+  passphrase?: string;
 }
+
+/** @deprecated Use WifiSecurityProfile - kept for backward compatibility */
+export type SecurityProfile = WifiSecurityProfile;
 
 export interface SystemResource {
   uptime: string;
@@ -141,12 +164,33 @@ export interface DhcpLease {
   'last-seen'?: string;
 }
 
-export interface WirelessAccessEntry {
+export interface WifiAccessEntry {
   '.id': string;
   'mac-address': string;
   interface?: string;
-  authentication: string;
-  forwarding: string;
+  action?: string; // 'accept' | 'reject'
+  'signal-range'?: string;
   comment?: string;
-  disabled: string;
+  disabled?: string;
+}
+
+/** @deprecated Use WifiAccessEntry - kept for backward compatibility */
+export type WirelessAccessEntry = WifiAccessEntry;
+
+export interface WifiConfiguration {
+  '.id': string;
+  name: string;
+  ssid?: string;
+  country?: string;
+  security?: string;
+  'security.authentication-types'?: string;
+  'security.passphrase'?: string;
+  datapath?: string;
+  'datapath.bridge'?: string;
+}
+
+export interface WifiDatapath {
+  '.id': string;
+  name: string;
+  bridge?: string;
 }

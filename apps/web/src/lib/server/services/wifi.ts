@@ -70,11 +70,11 @@ export async function getAccessPoints(): Promise<AccessPoint[]> {
   return interfaces.map(iface => ({
     id: iface['.id'],
     name: iface.name,
-    ssid: iface.ssid,
-    band: iface.band,
-    frequency: iface.frequency,
-    securityProfile: iface['security-profile'],
-    isVirtual: iface['interface-type'] === 'virtual',
+    ssid: iface['configuration.ssid'] || iface.name,
+    band: undefined, // band is per-registration in wifi-qcom-ac, not per-interface
+    frequency: undefined,
+    securityProfile: iface['security.authentication-types'] || iface.configuration || 'none',
+    isVirtual: iface.master !== 'true',
     masterInterface: iface['master-interface'],
     macAddress: iface['mac-address'],
     disabled: iface.disabled === 'true',
@@ -100,10 +100,10 @@ export async function getNetworkGroups(): Promise<NetworkGroup[]> {
   // Convert to array and calculate totals
   const result: NetworkGroup[] = [];
   for (const [ssid, interfaces] of groups) {
-    // Sort interfaces: 2.4GHz first, then 5GHz
+    // Sort interfaces: 2.4GHz (wifi1) first, then 5GHz (wifi2)
     interfaces.sort((a, b) => {
-      const aIs24 = a.band?.includes('2ghz') || a.name.includes('wlan1');
-      const bIs24 = b.band?.includes('2ghz') || b.name.includes('wlan1');
+      const aIs24 = a.name.includes('wifi1');
+      const bIs24 = b.name.includes('wifi1');
       if (aIs24 && !bIs24) return -1;
       if (!aIs24 && bIs24) return 1;
       return a.name.localeCompare(b.name);
@@ -147,6 +147,7 @@ export async function getWirelessClients(): Promise<WirelessClient[]> {
   const dhcpMap = new Map(dhcpLeases.map(l => [l['mac-address'].toUpperCase(), l]));
   const sessionMap = new Map(activeSessions.map(s => [s['mac-address'].toUpperCase(), s]));
   const interfaceMap = new Map(interfaces.map(i => [i.name, i]));
+  // Note: wifi-qcom-ac uses 'configuration.ssid' instead of 'ssid'
 
   return registrations.map(reg => {
     const macUpper = reg['mac-address'].toUpperCase();
@@ -160,18 +161,18 @@ export async function getWirelessClients(): Promise<WirelessClient[]> {
     return {
       id: reg['.id'],
       interface: reg.interface,
-      interfaceName: iface?.ssid || reg.interface,
+      interfaceName: reg.ssid || iface?.['configuration.ssid'] || reg.interface,
       macAddress: reg['mac-address'],
-      ipAddress: reg['last-ip'] || dhcp?.address,
+      ipAddress: dhcp?.address,
       deviceName: dhcp?.['host-name']?.replace(/-/g, ' '),
-      signalStrength: reg['signal-strength'],
+      signalStrength: reg.signal || '',
       txRate: reg['tx-rate'],
       rxRate: reg['rx-rate'],
       bytesIn,
       bytesOut,
       uptime: reg.uptime,
       hotspotUser: session?.user,
-      hotspotProfile: undefined // Could fetch from hotspot user if needed
+      hotspotProfile: undefined
     };
   });
 }
@@ -186,8 +187,8 @@ export async function getSecurityProfiles(): Promise<SecurityProfileInfo[]> {
   return profiles.map(p => ({
     id: p['.id'],
     name: p.name,
-    mode: p.mode,
-    hasPassword: !!(p['wpa2-pre-shared-key'] && p['wpa2-pre-shared-key'].length > 0)
+    mode: p['authentication-types'] || 'none',
+    hasPassword: !!(p.passphrase && p.passphrase.length > 0)
   }));
 }
 

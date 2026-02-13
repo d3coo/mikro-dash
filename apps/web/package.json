@@ -1,6 +1,6 @@
 {
 	"name": "mikro-dash",
-	"version": "0.1.0",
+	"version": "2.0.0",
 	"description": "MikroTik WiFi Management Dashboard",
 	"private": true,
 	"type": "module",
@@ -40,7 +40,8 @@
 			"electron/**/*",
 			"static",
 			"static/**/*",
-			"package.json"
+			"package.json",
+			"!**/node_modules"
 		],
 		"extraResources": [
 			{

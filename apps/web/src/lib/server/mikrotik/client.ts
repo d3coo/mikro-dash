@@ -2,9 +2,11 @@ import type {
   MikroTikConfig,
   HotspotUser,
   ActiveSession,
-  WirelessInterface,
-  WirelessRegistration,
-  SecurityProfile,
+  WifiInterface,
+  WifiRegistration,
+  WifiSecurityProfile,
+  WifiConfiguration,
+  WifiDatapath,
   SystemResource,
   MikroTikFile,
   HotspotServerProfile,
@@ -12,7 +14,7 @@ import type {
   HotspotUserProfile,
   HotspotCookie,
   DhcpLease,
-  WirelessAccessEntry
+  WifiAccessEntry
 } from './types';
 
 export class MikroTikClient {
@@ -66,6 +68,32 @@ export class MikroTikClient {
     } finally {
       clearTimeout(timeoutId);
     }
+  }
+
+  // IP Addresses (for adding alias IPs on interfaces)
+  async getIpAddresses(): Promise<Array<{
+    '.id': string;
+    address: string;
+    network: string;
+    interface: string;
+    comment?: string;
+    disabled?: string;
+  }>> {
+    return this.request('/ip/address');
+  }
+
+  async addIpAddress(address: string, iface: string, comment?: string): Promise<void> {
+    await this.request('/ip/address/add', 'POST', {
+      address,
+      interface: iface,
+      comment: comment || 'Added from dashboard'
+    });
+  }
+
+  async removeIpAddress(id: string): Promise<void> {
+    await this.request('/ip/address/remove', 'POST', {
+      '.id': id
+    });
   }
 
   // System
@@ -155,56 +183,78 @@ export class MikroTikClient {
     });
   }
 
-  // WiFi
-  async getWirelessInterfaces(): Promise<WirelessInterface[]> {
-    return this.request<WirelessInterface[]>('/interface/wireless');
+  // WiFi (wifi-qcom-ac driver - /interface/wifi endpoints)
+  async getWirelessInterfaces(): Promise<WifiInterface[]> {
+    return this.request<WifiInterface[]>('/interface/wifi');
   }
 
   async updateWirelessSSID(id: string, ssid: string): Promise<void> {
-    await this.request(`/interface/wireless/${id}`, 'PATCH', { ssid });
+    // New wifi driver: SSID is set via configuration profile
+    // We need to find the interface's configuration and update it
+    const ifaces = await this.getWirelessInterfaces();
+    const iface = ifaces.find(i => i['.id'] === id);
+    if (iface?.configuration) {
+      await this.request(`/interface/wifi/configuration/${iface.configuration}`, 'PATCH', { ssid });
+    } else {
+      // Fallback: set directly on interface (works for master interfaces)
+      await this.request(`/interface/wifi/${id}`, 'PATCH', {
+        'configuration.ssid': ssid
+      });
+    }
   }
 
   async toggleWirelessInterface(id: string, disabled: boolean): Promise<void> {
-    await this.request(`/interface/wireless/${id}`, 'PATCH', {
+    await this.request(`/interface/wifi/${id}`, 'PATCH', {
       disabled: disabled ? 'true' : 'false'
     });
   }
 
-  async getSecurityProfiles(): Promise<SecurityProfile[]> {
-    return this.request<SecurityProfile[]>('/interface/wireless/security-profiles');
+  async getSecurityProfiles(): Promise<WifiSecurityProfile[]> {
+    return this.request<WifiSecurityProfile[]>('/interface/wifi/security');
   }
 
   async updateSecurityPassword(id: string, password: string): Promise<void> {
-    await this.request(`/interface/wireless/security-profiles/${id}`, 'PATCH', {
-      'wpa2-pre-shared-key': password
+    await this.request(`/interface/wifi/security/${id}`, 'PATCH', {
+      passphrase: password
     });
   }
 
-  // Wireless Registration Table (connected clients)
-  async getWirelessRegistrations(): Promise<WirelessRegistration[]> {
-    return this.request<WirelessRegistration[]>('/interface/wireless/registration-table');
+  // WiFi Configuration profiles
+  async getWifiConfigurations(): Promise<WifiConfiguration[]> {
+    return this.request<WifiConfiguration[]>('/interface/wifi/configuration');
   }
 
-  // Create Virtual AP
+  // WiFi Datapath profiles
+  async getWifiDatapaths(): Promise<WifiDatapath[]> {
+    return this.request<WifiDatapath[]>('/interface/wifi/datapath');
+  }
+
+  // WiFi Registration Table (connected clients)
+  async getWirelessRegistrations(): Promise<WifiRegistration[]> {
+    return this.request<WifiRegistration[]>('/interface/wifi/registration-table');
+  }
+
+  // Create Virtual AP (wifi-qcom-ac driver)
   async createVirtualAP(
     masterInterface: string,
     ssid: string,
     securityProfile: string,
     name?: string
   ): Promise<void> {
+    // New wifi driver uses configuration + master-interface
     const body: Record<string, unknown> = {
       'master-interface': masterInterface,
-      ssid,
-      'security-profile': securityProfile,
+      'configuration.ssid': ssid,
+      'security': securityProfile,
       disabled: 'false'
     };
     if (name) body.name = name;
-    await this.request('/interface/wireless/add', 'POST', body);
+    await this.request('/interface/wifi/add', 'POST', body);
   }
 
-  // Delete Wireless Interface
+  // Delete WiFi Interface
   async deleteWirelessInterface(id: string): Promise<void> {
-    await this.request('/interface/wireless/remove', 'POST', { '.id': id });
+    await this.request('/interface/wifi/remove', 'POST', { '.id': id });
   }
 
   // File Management
@@ -465,32 +515,53 @@ export class MikroTikClient {
 
   // Disconnect wireless client from registration table
   async disconnectWirelessClient(id: string): Promise<void> {
-    await this.request('/interface/wireless/registration-table/remove', 'POST', {
+    await this.request('/interface/wifi/registration-table/remove', 'POST', {
       '.id': id
     });
   }
 
-  // Wireless Access List (for MAC blocking)
-  async getWirelessAccessList(): Promise<WirelessAccessEntry[]> {
-    return this.request<WirelessAccessEntry[]>('/interface/wireless/access-list');
+  // WiFi Access List (for MAC blocking and PS whitelisting)
+  async getWirelessAccessList(): Promise<WifiAccessEntry[]> {
+    return this.request<WifiAccessEntry[]>('/interface/wifi/access-list');
   }
 
   async addToWirelessAccessList(
     macAddress: string,
     comment?: string
   ): Promise<void> {
-    await this.request('/interface/wireless/access-list/add', 'POST', {
+    await this.request('/interface/wifi/access-list/add', 'POST', {
       'mac-address': macAddress,
-      authentication: 'no',
-      forwarding: 'no',
+      action: 'reject',
       comment: comment || 'Blocked from dashboard'
     });
   }
 
+  // Allow a PS station MAC on the PlayStation AP (open AP with MAC filtering)
+  async allowPsStationMac(macAddress: string, stationName: string): Promise<void> {
+    await this.request('/interface/wifi/access-list/add', 'POST', {
+      'mac-address': macAddress,
+      action: 'accept',
+      comment: `ps-station:${stationName}`
+    });
+  }
+
   async removeFromWirelessAccessList(id: string): Promise<void> {
-    await this.request('/interface/wireless/access-list/remove', 'POST', {
+    await this.request('/interface/wifi/access-list/remove', 'POST', {
       '.id': id
     });
+  }
+
+  // ARP Table (for finding device IPs by MAC on LAN)
+  async getArpTable(): Promise<Array<{
+    '.id': string;
+    address: string;
+    'mac-address': string;
+    interface: string;
+    dynamic?: string;
+    complete?: string;
+    status?: string;
+  }>> {
+    return this.request('/ip/arp');
   }
 
   // Firewall Filter Rules
@@ -500,6 +571,8 @@ export class MikroTikClient {
     action: string;
     'src-address'?: string;
     'dst-address'?: string;
+    'src-mac-address'?: string;
+    'in-interface'?: string;
     protocol?: string;
     comment?: string;
     disabled?: string;
@@ -512,7 +585,9 @@ export class MikroTikClient {
     action: string;
     srcAddress?: string;
     dstAddress?: string;
+    srcMacAddress?: string;
     protocol?: string;
+    dstPort?: string;
     comment?: string;
     place?: 'before' | 'after';
     placeId?: string;
@@ -523,7 +598,9 @@ export class MikroTikClient {
     };
     if (options.srcAddress) body['src-address'] = options.srcAddress;
     if (options.dstAddress) body['dst-address'] = options.dstAddress;
+    if (options.srcMacAddress) body['src-mac-address'] = options.srcMacAddress;
     if (options.protocol) body['protocol'] = options.protocol;
+    if (options.dstPort) body['dst-port'] = options.dstPort;
     if (options.comment) body['comment'] = options.comment;
     if (options.place && options.placeId) {
       body[`place-${options.place}`] = options.placeId;
@@ -543,6 +620,7 @@ export class MikroTikClient {
     chain: string;
     action: string;
     'src-address'?: string;
+    'src-mac-address'?: string;
     protocol?: string;
     'dst-port'?: string;
     'to-addresses'?: string;
@@ -556,6 +634,8 @@ export class MikroTikClient {
     chain: string;
     action: string;
     srcAddress?: string;
+    srcMacAddress?: string;
+    dstAddress?: string;
     protocol?: string;
     dstPort?: string;
     toAddresses?: string;
@@ -566,6 +646,8 @@ export class MikroTikClient {
       action: options.action
     };
     if (options.srcAddress) body['src-address'] = options.srcAddress;
+    if (options.srcMacAddress) body['src-mac-address'] = options.srcMacAddress;
+    if (options.dstAddress) body['dst-address'] = options.dstAddress;
     if (options.protocol) body['protocol'] = options.protocol;
     if (options.dstPort) body['dst-port'] = options.dstPort;
     if (options.toAddresses) body['to-addresses'] = options.toAddresses;
@@ -591,4 +673,8 @@ export class MikroTikClient {
       comment: comment || `Added from dashboard`
     });
   }
+
+  // Note: Bridge filter rules were previously used for PS WiFi internet control
+  // but are no longer needed after wifi-qcom-ac migration.
+  // PS internet is controlled via IP firewall forward rules (ps-internet:* comments).
 }

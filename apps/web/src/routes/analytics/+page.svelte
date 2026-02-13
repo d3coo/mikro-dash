@@ -25,7 +25,7 @@
   let showAddExpense = $state(false);
   let newExpenseType = $state<'per_gb' | 'fixed_monthly'>('fixed_monthly');
   let newExpenseCategory = $state<ExpenseCategory>('general');
-  let editingExpense = $state<number | null>(null);
+  let editingExpense = $state<string | null>(null);
   let editAmount = $state(0);
   let editCategory = $state<ExpenseCategory>('general');
 

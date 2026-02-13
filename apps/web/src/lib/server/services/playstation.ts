@@ -1,6 +1,7 @@
 /**
  * PlayStation service - MikroTik detection + in-memory state only
  * All session/station CRUD is handled by Convex (see $lib/server/convex.ts)
+ * Uses wifi-qcom-ac driver (/interface/wifi endpoints) for wireless operations
  */
 
 import { getMikroTikClient } from './mikrotik';
@@ -11,6 +12,7 @@ import {
 	pausePsSession,
 	resumePsSession,
 	bulkUpdateStationOnlineStatus,
+	updatePsStationInternet,
 } from '$lib/server/convex';
 
 // PlayStation MAC address prefixes (common OUI prefixes for Sony PlayStation)
@@ -24,10 +26,17 @@ export const PS_MAC_PREFIXES = [
 ];
 
 /**
+ * Normalize MAC address to uppercase colon-separated format
+ */
+export function normalizeMac(mac: string): string {
+	return mac.toUpperCase().replace(/-/g, ':');
+}
+
+/**
  * Check if a MAC address belongs to a PlayStation device
  */
 export function isPlayStationMac(mac: string): boolean {
-	const normalizedMac = mac.toUpperCase().replace(/-/g, ':');
+	const normalizedMac = normalizeMac(mac);
 	const prefix = normalizedMac.substring(0, 8);
 	return PS_MAC_PREFIXES.includes(prefix);
 }
@@ -50,12 +59,12 @@ let cachedOnlineMapTime = 0;
 const ONLINE_CACHE_TTL_MS = 10000; // 10 seconds
 
 export function getStationOnlineState(mac: string): 'up' | 'down' | undefined {
-	const normalizedMac = mac.toUpperCase().replace(/-/g, ':');
+	const normalizedMac = normalizeMac(mac);
 	return stationOnlineStates.get(normalizedMac);
 }
 
 export function setStationOnlineState(mac: string, state: 'up' | 'down'): void {
-	const normalizedMac = mac.toUpperCase().replace(/-/g, ':');
+	const normalizedMac = normalizeMac(mac);
 	stationOnlineStates.set(normalizedMac, state);
 	console.log(`[State] ${normalizedMac} -> ${state}`);
 }
@@ -89,7 +98,8 @@ export function clearManualEndCooldown(stationId: string): void {
 // ===== MikroTik DETECTION =====
 
 /**
- * Detect which PS stations are online by checking router's wireless registration table
+ * Detect which PS stations are online by checking router's wifi registration table
+ * (wifi-qcom-ac driver: /interface/wifi/registration-table)
  * Returns Map<stationConvexId, boolean>
  */
 export async function detectOnlineStations(forceRefresh = false): Promise<Map<string, boolean>> {
@@ -107,13 +117,12 @@ export async function detectOnlineStations(forceRefresh = false): Promise<Map<st
 
 		const onlineMap = new Map<string, boolean>();
 		const connectedMacs = new Set(
-			registrations.map((r: { 'mac-address': string }) => r['mac-address'].toUpperCase().replace(/-/g, ':'))
+			registrations.map((r: { 'mac-address': string }) => normalizeMac(r['mac-address']))
 		);
 
 		for (const station of stations) {
-			const normalizedMac = station.macAddress.toUpperCase().replace(/-/g, ':');
-			// Use Convex _id as the key
-			onlineMap.set(station._id, connectedMacs.has(normalizedMac));
+			const mac = normalizeMac(station.macAddress);
+			onlineMap.set(station._id, connectedMacs.has(mac));
 		}
 
 		cachedOnlineMap = onlineMap;
@@ -129,11 +138,116 @@ export async function detectOnlineStations(forceRefresh = false): Promise<Map<st
 	}
 }
 
+// ===== ROUTER RULES SYNC =====
+
+/**
+ * Sync MikroTik router rules for all PS stations:
+ * 1. WiFi access list entries (MAC allow on PS AP, wifi-qcom-ac driver)
+ * 2. Hotspot IP binding bypass (so hotspot doesn't intercept PS traffic)
+ * 3. IP firewall forward DROP/ACCEPT rule (internet control)
+ *
+ * Self-healing: creates missing rules for existing stations.
+ */
+export async function syncPsRouterRules(): Promise<void> {
+	try {
+		const client = await getMikroTikClient();
+		const stations = await getPsStations();
+
+		const [acl, fwRules, ipBindings] = await Promise.all([
+			client.getWirelessAccessList(),
+			client.getFirewallFilterRules(),
+			client.getIpBindings(),
+		]);
+
+		// Index existing rules
+		const psAclEntries = acl.filter((e) => e.comment?.startsWith('ps-station:'));
+		const existingAclMacs = new Set(psAclEntries.map((e) => normalizeMac(e['mac-address'])));
+
+		const psBindings = ipBindings.filter((b) => b.comment?.startsWith('ps-bypass:'));
+		const existingBypassMacs = new Set(
+			psBindings
+				.filter((b) => b['mac-address'])
+				.map((b) => normalizeMac(b['mac-address']!))
+		);
+
+		const psFwRules = fwRules.filter((r) => r.comment?.startsWith('ps-internet:'));
+		const existingFwRuleMap = new Map(psFwRules.map((r) => [r.comment, r]));
+
+		// Ensure each station has all rule types
+		for (const station of stations) {
+			const mac = normalizeMac(station.macAddress);
+			const fwComment = `ps-internet:${station.name}`;
+			const desiredAction = station.hasInternet ? 'accept' : 'drop';
+
+			// 1. Wireless ACL
+			if (!existingAclMacs.has(mac)) {
+				await client.allowPsStationMac(station.macAddress, station.name);
+				console.log(`[PS Sync] Added ACL for ${station.name} (${mac})`);
+			}
+
+			// 2. Hotspot IP binding bypass
+			if (!existingBypassMacs.has(mac)) {
+				await client.addIpBinding(mac, 'bypassed', `ps-bypass:${station.name}`);
+				console.log(`[PS Sync] Added hotspot bypass for ${station.name} (${mac})`);
+			}
+
+			// 3. Firewall internet rule (DROP when blocked, ACCEPT when enabled)
+			const existingFw = existingFwRuleMap.get(fwComment);
+			if (!existingFw) {
+				await client.addFirewallFilterRule({
+					chain: 'forward',
+					action: desiredAction,
+					srcMacAddress: mac,
+					comment: fwComment,
+				});
+				console.log(`[PS Sync] Added firewall ${desiredAction.toUpperCase()} for ${station.name} (${mac})`);
+			} else if (existingFw.action !== desiredAction) {
+				await client.removeFirewallFilterRule(existingFw['.id']);
+				await client.addFirewallFilterRule({
+					chain: 'forward',
+					action: desiredAction,
+					srcMacAddress: mac,
+					comment: fwComment,
+				});
+				console.log(`[PS Sync] Swapped firewall to ${desiredAction.toUpperCase()} for ${station.name} (${mac})`);
+			}
+		}
+
+		// Remove stale ACL entries
+		const stationMacs = new Set(stations.map((s) => normalizeMac(s.macAddress)));
+		for (const entry of psAclEntries) {
+			if (!stationMacs.has(normalizeMac(entry['mac-address']))) {
+				await client.removeFromWirelessAccessList(entry['.id']);
+				console.log(`[PS Sync] Removed stale ACL entry ${entry['mac-address']}`);
+			}
+		}
+
+		// Remove stale firewall rules
+		const stationFwComments = new Set(stations.map((s) => `ps-internet:${s.name}`));
+		for (const rule of psFwRules) {
+			if (rule.comment && !stationFwComments.has(rule.comment)) {
+				await client.removeFirewallFilterRule(rule['.id']);
+				console.log(`[PS Sync] Removed stale firewall rule ${rule.comment}`);
+			}
+		}
+
+		// Remove stale IP binding bypass entries
+		for (const binding of psBindings) {
+			if (binding['mac-address'] && !stationMacs.has(normalizeMac(binding['mac-address']))) {
+				await client.removeIpBinding(binding['.id']);
+				console.log(`[PS Sync] Removed stale bypass binding ${binding['mac-address']}`);
+			}
+		}
+	} catch (e) {
+		console.error('[PS Sync] Router rules sync failed:', e);
+	}
+}
+
 // ===== SYNC =====
 
 /**
  * Sync station status with router and auto-start/pause sessions
- * Called by background sync service every 5 seconds
+ * Called by background sync service every 30 seconds
  */
 export async function syncStationStatus(): Promise<{
 	started: string[];
@@ -154,25 +268,25 @@ export async function syncStationStatus(): Promise<{
 	const started: string[] = [];
 	const ended: string[] = [];
 
+	const client = await getMikroTikClient();
+
 	for (const station of stations) {
 		if (station.status === 'maintenance') continue;
 
 		const isOnline = onlineMap.get(station._id) ?? false;
 		const activeSession = activeSessionMap.get(station._id);
 
-		const normalizedMac = station.macAddress.toUpperCase().replace(/-/g, ':');
-		const previousState = stationOnlineStates.get(normalizedMac);
+		const mac = normalizeMac(station.macAddress);
+		const previousState = stationOnlineStates.get(mac);
 
-		// Use stationId (user-facing) for cooldown tracking, _id for session operations
 		const displayId = station.stationId || station.name;
 
 		if (isOnline) {
 			gracePeriodTracker.delete(station._id);
 
 			const isFirstConnect = previousState !== 'up';
-			stationOnlineStates.set(normalizedMac, 'up');
+			stationOnlineStates.set(mac, 'up');
 
-			// Resume paused session if exists
 			if (activeSession && activeSession.pausedAt) {
 				try {
 					await resumePsSession(activeSession._id);
@@ -182,7 +296,6 @@ export async function syncStationStatus(): Promise<{
 				}
 			}
 
-			// Auto-start only on first connect and not in cooldown
 			if (!activeSession && isFirstConnect) {
 				if (isInManualEndCooldown(station._id)) {
 					console.log(`[Sync] Station ${displayId} in cooldown - not auto-starting`);
@@ -197,10 +310,9 @@ export async function syncStationStatus(): Promise<{
 				}
 			}
 		} else {
-			stationOnlineStates.set(normalizedMac, 'down');
+			stationOnlineStates.set(mac, 'down');
 			clearManualEndCooldown(station._id);
 
-			// Pause session when PS goes offline
 			if (activeSession && !activeSession.pausedAt) {
 				try {
 					await pausePsSession(activeSession._id);
@@ -209,10 +321,31 @@ export async function syncStationStatus(): Promise<{
 					console.error(`Failed to pause session for ${displayId}:`, e);
 				}
 			}
+
+			// Reset internet when PS goes offline: swap to DROP
+			if (station.hasInternet) {
+				try {
+					const fwComment = `ps-internet:${station.name}`;
+					const rules = await client.getFirewallFilterRules();
+					const existing = rules.find((r) => r.comment === fwComment);
+					if (existing) {
+						await client.removeFirewallFilterRule(existing['.id']);
+					}
+					await client.addFirewallFilterRule({
+						chain: 'forward',
+						action: 'drop',
+						srcMacAddress: mac,
+						comment: fwComment,
+					});
+					await updatePsStationInternet(station._id, false);
+					console.log(`[Sync] Reset internet for ${displayId} - PS went offline`);
+				} catch (e) {
+					console.error(`Failed to reset internet for ${displayId}:`, e);
+				}
+			}
 		}
 	}
 
-	// Update online status in Convex so the UI gets real-time updates
 	const onlineUpdates = stations.map(station => ({
 		id: station._id,
 		isOnline: onlineMap.get(station._id) ?? false,

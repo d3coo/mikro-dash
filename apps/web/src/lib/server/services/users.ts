@@ -121,7 +121,7 @@ export async function getUsersPageData(): Promise<UsersPageData> {
     dhcpLeases.map(l => [l['mac-address'].toUpperCase(), l])
   );
   const interfaceByName = new Map(
-    wirelessInterfaces.map(i => [i.name, i])
+    wirelessInterfaces.map(i => [i.name, { ...i, ssid: i['configuration.ssid'] || i.name }])
   );
 
   const voucherUsers: VoucherUser[] = [];
@@ -179,21 +179,21 @@ export async function getUsersPageData(): Promise<UsersPageData> {
         packageName: pkg?.nameAr || user?.profile || 'غير محدد',
         priceLE: pkg?.priceLE || 0,
         deviceName: dhcp?.['host-name']?.replace(/-/g, ' '),
-        signalStrength: reg['signal-strength'],
-        interfaceName: iface?.ssid || reg.interface
+        signalStrength: reg.signal || '',
+        interfaceName: reg.ssid || iface?.ssid || reg.interface
       });
     } else {
       // No active session - this is a WiFi-only client
       wifiOnlyClients.push({
         id: reg['.id'],
         macAddress: reg['mac-address'],
-        ipAddress: reg['last-ip'] || dhcp?.address,
+        ipAddress: dhcp?.address,
         deviceName: dhcp?.['host-name']?.replace(/-/g, ' '),
-        signalStrength: reg['signal-strength'],
+        signalStrength: reg.signal || '',
         bytesIn,
         bytesOut,
         uptime: reg.uptime,
-        interfaceName: iface?.ssid || reg.interface
+        interfaceName: reg.ssid || iface?.ssid || reg.interface
       });
     }
   }

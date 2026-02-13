@@ -5,7 +5,7 @@ const { spawn } = require('child_process');
 let mainWindow;
 let serverProcess;
 const PORT = 3002; // Different from dev (3000) and main branch electron (3001)
-const CONVEX_URL = 'https://optimistic-mastiff-21.convex.cloud';
+const CONVEX_URL = 'https://api.mikro.j-ask.com';
 
 // Get the correct paths for packaged vs development
 const isPackaged = app.isPackaged;
