@@ -223,15 +223,10 @@
   }
 
   // Auto-refresh state
-  let refreshInterval: ReturnType<typeof setInterval> | null = null;
   let timerInterval: ReturnType<typeof setInterval> | null = null;
   let syncStatusInterval: ReturnType<typeof setInterval> | null = null;
-  let webhookPollInterval: ReturnType<typeof setInterval> | null = null;
-  let isRefreshing = $state(false);
   let isSyncing = $state(false);
-  let lastRefresh = $state(new Date());
   let currentTime = $state(Date.now());
-  let lastWebhookUpdate = $state(0);
 
   // Modal states
   let showOrderModal = $state(false);
@@ -310,24 +305,6 @@
     }
   }
 
-  // Poll webhook for instant updates
-  async function pollWebhook() {
-    try {
-      const res = await fetch('/api/playstation/webhook');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.lastUpdate > lastWebhookUpdate) {
-          lastWebhookUpdate = data.lastUpdate;
-          // Refresh UI after 300ms delay
-          setTimeout(() => {
-            refreshData();
-          }, 300);
-        }
-      }
-    } catch (e) {
-      // Silently fail - webhook polling is optional enhancement
-    }
-  }
 
   // Toggle background sync
   async function toggleBackgroundSync() {
@@ -355,7 +332,6 @@
   onMount(() => {
     // Fetch initial sync status
     fetchSyncStatus();
-    pollWebhook();
 
     // Initialize audio context on first user interaction
     const initAudio = () => {
@@ -376,15 +352,8 @@
       });
     }
 
-    // Poll webhook every 500ms for instant updates when MikroTik triggers
-    webhookPollInterval = setInterval(() => {
-      pollWebhook();
-    }, 500);
-
-    // Fallback: Refresh data every 10 seconds if webhook isn't being used
-    refreshInterval = setInterval(() => {
-      refreshData();
-    }, 10000);
+    // Convex handles real-time updates via WebSocket - no need for polling/invalidateAll.
+    // Only keep timer countdown and sync status polling.
 
     // Update timers every second
     timerInterval = setInterval(() => {
@@ -392,17 +361,15 @@
       checkForExpiredTimers(); // Check for newly expired timers
     }, 1000);
 
-    // Update sync status every 5 seconds
+    // Update sync status every 30 seconds (just for the status indicator)
     syncStatusInterval = setInterval(() => {
       fetchSyncStatus();
-    }, 5000);
+    }, 30000);
   });
 
   onDestroy(() => {
-    if (refreshInterval) clearInterval(refreshInterval);
     if (timerInterval) clearInterval(timerInterval);
     if (syncStatusInterval) clearInterval(syncStatusInterval);
-    if (webhookPollInterval) clearInterval(webhookPollInterval);
   });
 
   // Check for timers that just expired during live countdown
@@ -451,15 +418,6 @@
     }
   }
 
-  async function refreshData() {
-    isRefreshing = true;
-    try {
-      await invalidateAll();
-      lastRefresh = new Date();
-    } finally {
-      isRefreshing = false;
-    }
-  }
 
   // Format elapsed time (accounting for paused time)
   function formatElapsed(session: { startedAt: number; pausedAt?: number | null; totalPausedMs?: number | null }): string {
@@ -913,7 +871,7 @@
         {/if}
         <div class="hidden md:flex items-center gap-2 text-sm text-text-secondary">
           <Activity class="w-4 h-4" />
-          <span>آخر تحديث: {lastRefresh.toLocaleTimeString('ar-EG')}</span>
+          <span>{isConvexReady ? 'متصل مباشرة' : 'جاري الاتصال...'}</span>
         </div>
         <form
           method="POST"
@@ -1124,8 +1082,9 @@
                   {#if internetToggleLoading === status.station.id}
                     <span class="loading-spinner-sm"></span>
                   {:else}
-                    <Globe class="w-4 h-4" />
+                    <Globe class="w-3.5 h-3.5" />
                   {/if}
+                  <span class="internet-label">{status.station.hasInternet ? 'متصل' : 'مقطوع'}</span>
                 </button>
               </div>
             </div>
@@ -2847,34 +2806,44 @@
   }
 
   .internet-toggle {
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
+    height: 26px;
+    padding: 0 8px;
+    border-radius: 13px;
     display: flex;
     align-items: center;
-    justify-content: center;
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--color-text-secondary, #9ca3af);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    gap: 4px;
+    background: rgba(239, 68, 68, 0.12);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.25);
     cursor: pointer;
     transition: all 0.2s;
+    font-size: 11px;
+    font-weight: 600;
   }
 
   .internet-toggle:hover {
-    background: rgba(59, 130, 246, 0.15);
-    color: #60a5fa;
-    border-color: rgba(59, 130, 246, 0.3);
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.4);
   }
 
   .internet-toggle.active {
-    background: rgba(59, 130, 246, 0.2);
-    color: #60a5fa;
-    border-color: rgba(59, 130, 246, 0.4);
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+    border-color: rgba(34, 197, 94, 0.3);
+  }
+
+  .internet-toggle.active:hover {
+    background: rgba(34, 197, 94, 0.25);
+    border-color: rgba(34, 197, 94, 0.45);
   }
 
   .internet-toggle:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .internet-label {
+    white-space: nowrap;
   }
 
   /* Session Info */

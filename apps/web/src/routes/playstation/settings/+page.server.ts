@@ -9,7 +9,7 @@ import {
 } from '$lib/server/convex';
 import { fail } from '@sveltejs/kit';
 import { getMikroTikClient } from '$lib/server/services/mikrotik';
-import { syncPsRouterRules, normalizeMac } from '$lib/server/services/playstation';
+import { syncPsRouterRules, normalizeMac, setInternetRules } from '$lib/server/services/playstation';
 
 export const load: PageServerLoad = async () => {
   const stations = await getPsStations();
@@ -76,12 +76,9 @@ export const actions: Actions = {
 
         await client.allowPsStationMac(macAddress, name);
         await client.addIpBinding(mac, 'bypassed', `ps-bypass:${name}`);
-        await client.addFirewallFilterRule({
-          chain: 'forward',
-          action: 'drop',
-          srcMacAddress: mac,
-          comment: `ps-internet:${name}`,
-        });
+
+        // Firewall rules: reject forward + block DNS (internet OFF by default)
+        await setInternetRules(mac, name, false);
       } catch (e) {
         console.error('[PS Settings] Failed to add router rules:', e);
       }
@@ -164,17 +161,15 @@ export const actions: Actions = {
 
             const oldFw = fwRules.find((r) => r.comment === `ps-internet:${oldName}`);
             if (oldFw) await client.removeFirewallFilterRule(oldFw['.id']);
+            const oldDns = fwRules.find((r) => r.comment === `ps-dns:${oldName}`);
+            if (oldDns) await client.removeFirewallFilterRule(oldDns['.id']);
 
             // Add new rules with new MAC
             await client.allowPsStationMac(macAddress, newName);
             await client.addIpBinding(newMac, 'bypassed', `ps-bypass:${newName}`);
-            await client.addFirewallFilterRule({
-              chain: 'forward',
-              action: 'drop',
-              srcMacAddress: newMac,
-              comment: `ps-internet:${newName}`,
-            });
 
+            // Firewall rules: reject forward + block DNS (internet OFF)
+            await setInternetRules(newMac, newName, false);
             await updatePsStationInternet(id, false);
           }
         } catch (e) {
@@ -217,6 +212,9 @@ export const actions: Actions = {
 
           const fwRule = fwRules.find((r) => r.comment === `ps-internet:${station.name}`);
           if (fwRule) await client.removeFirewallFilterRule(fwRule['.id']);
+
+          const dnsRule = fwRules.find((r) => r.comment === `ps-dns:${station.name}`);
+          if (dnsRule) await client.removeFirewallFilterRule(dnsRule['.id']);
         }
       } catch (e) {
         console.error('[PS Settings] Failed to remove router rules:', e);

@@ -1,8 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getPsStationById, updatePsStationInternet } from '$lib/server/convex';
-import { getMikroTikClient } from '$lib/server/services/mikrotik';
-import { normalizeMac } from '$lib/server/services/playstation';
+import { normalizeMac, setInternetRules } from '$lib/server/services/playstation';
 
 /**
  * POST /api/playstation/internet
@@ -10,12 +9,9 @@ import { normalizeMac } from '$lib/server/services/playstation';
  *
  * Body: { stationId: string, enable: boolean }
  *
- * Uses IP firewall filter rules with src-mac-address matching in the forward chain.
- * There is always exactly one rule per station (comment: ps-internet:{name}):
- *   - Internet OFF: rule action = drop
- *   - Internet ON:  rule action = accept
- *
- * Toggle swaps the rule by removing the old one and adding the new action.
+ * Manages TWO firewall rules per station:
+ *   - FORWARD chain (ps-internet:{name}): reject/accept actual internet traffic
+ *   - INPUT chain (ps-dns:{name}): drop DNS when internet OFF for instant detection
  */
 export const POST: RequestHandler = async ({ request }) => {
 	try {
@@ -30,26 +26,9 @@ export const POST: RequestHandler = async ({ request }) => {
 			return json({ success: false, error: 'Station not found' }, { status: 404 });
 		}
 
-		const client = await getMikroTikClient();
-		const comment = `ps-internet:${station.name}`;
 		const mac = normalizeMac(station.macAddress);
-
-		// Remove existing rule (whether ACCEPT or DROP)
-		const rules = await client.getFirewallFilterRules();
-		const existing = rules.find((r) => r.comment === comment);
-		if (existing) {
-			await client.removeFirewallFilterRule(existing['.id']);
-		}
-
-		// Add new rule with the desired action
-		const action = enable ? 'accept' : 'drop';
-		await client.addFirewallFilterRule({
-			chain: 'forward',
-			action,
-			srcMacAddress: mac,
-			comment,
-		});
-		console.log(`[PS Internet] Set firewall ${action.toUpperCase()} for ${station.name} (${mac})`);
+		await setInternetRules(mac, station.name, enable);
+		console.log(`[PS Internet] Set internet ${enable ? 'ON' : 'OFF'} for ${station.name} (${mac})`);
 
 		await updatePsStationInternet(stationId, enable);
 

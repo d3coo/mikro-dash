@@ -98,33 +98,9 @@ export const getStationStatuses = query({
         lastSessionSegments = allSegments.filter(s => s.sessionId === lastSession._id);
       }
 
-      // Calculate elapsed time and current cost for active session
-      const now = Date.now();
-      let elapsedMinutes = 0;
-      let currentCost = 0;
-
-      if (activeSession) {
-        let elapsedMs = now - activeSession.startedAt;
-        const totalPausedMs = activeSession.totalPausedMs || 0;
-        const currentlyPausedMs = activeSession.pausedAt ? (now - activeSession.pausedAt) : 0;
-        elapsedMs -= (totalPausedMs + currentlyPausedMs);
-        if (elapsedMs < 0) elapsedMs = 0;
-
-        elapsedMinutes = Math.floor(elapsedMs / (1000 * 60));
-        // Calculate cost using segments or simple calculation
-        if (segments.length > 0) {
-          for (const segment of segments) {
-            const segmentEnd = segment.endedAt ?? now;
-            const segmentMs = segmentEnd - segment.startedAt;
-            const segmentMinutes = Math.ceil(segmentMs / (1000 * 60));
-            currentCost += Math.round((segment.hourlyRateSnapshot * segmentMinutes) / 60);
-          }
-        } else {
-          const minutes = Math.ceil(elapsedMs / (1000 * 60));
-          currentCost = Math.round((activeSession.hourlyRateSnapshot * minutes) / 60);
-        }
-      }
-
+      // Don't compute elapsed/cost here - Date.now() makes the query return
+      // different values every time, causing the subscription to fire constantly.
+      // The client computes these from session.startedAt + currentTime instead.
       result.push({
         station,
         activeSession,
@@ -137,8 +113,8 @@ export const getStationStatuses = query({
         lastSessionCharges,
         lastSessionTransfers,
         lastSessionSegments,
-        elapsedMinutes,
-        currentCost,
+        elapsedMinutes: 0,
+        currentCost: 0,
         isPaused: !!activeSession?.pausedAt,
       });
     }

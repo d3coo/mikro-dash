@@ -4,16 +4,45 @@ import {
   getPsStations,
   getStationStatuses,
   startPsSession,
+  pausePsSession,
+  resumePsSession,
+  updatePsStationInternet,
+  bulkUpdateStationOnlineStatus,
 } from '$lib/server/convex';
 import {
   getStationOnlineState,
   setStationOnlineState,
   isInManualEndCooldown,
-  clearManualEndCooldown
+  clearManualEndCooldown,
+  normalizeMac,
+  setInternetRules,
 } from '$lib/server/services/playstation';
 
 // Track last webhook update time (for UI refresh)
 let lastWebhookUpdate = Date.now();
+
+// Grace period for disconnect events.
+// Each PS has TWO netwatch entries (LAN + guest). Brief ping failures can cause
+// spurious disconnect events. We wait 30 seconds before pausing the session.
+const DISCONNECT_GRACE_PERIOD_MS = 30_000;
+const disconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * Reset internet to OFF for a station (reject forward + block DNS).
+ * Called on connect and disconnect to ensure PS always starts with internet blocked.
+ */
+async function resetInternetToOff(station: { _id: string; name: string; macAddress: string; hasInternet?: boolean }) {
+  if (!station.hasInternet) return; // Already off
+
+  try {
+    const mac = normalizeMac(station.macAddress);
+    await setInternetRules(mac, station.name, false);
+    await updatePsStationInternet(station._id, false);
+    console.log(`[Webhook] Reset internet for ${station.name} (${mac})`);
+  } catch (e) {
+    console.error(`[Webhook] Failed to reset internet for ${station.name}:`, e);
+  }
+}
 
 /**
  * POST /api/playstation/webhook
@@ -89,6 +118,33 @@ export const POST: RequestHandler = async ({ request, url }) => {
       const isFirstConnect = previousState !== 'up';
       setStationOnlineState(normalizedMac, 'up');
 
+      // Cancel any pending disconnect grace period timer
+      const pendingTimer = disconnectTimers.get(station._id);
+      if (pendingTimer) {
+        clearTimeout(pendingTimer);
+        disconnectTimers.delete(station._id);
+        console.log(`[Webhook] Cancelled disconnect timer for ${station.name} (device back online)`);
+      }
+
+      // Update Convex isOnline immediately (instant dashboard update)
+      await bulkUpdateStationOnlineStatus([{ id: station._id, isOnline: true }]);
+
+      // Always block internet when PS comes online
+      if (isFirstConnect) {
+        await resetInternetToOff(station);
+      }
+
+      // Resume paused session if device came back online
+      if (activeSession && activeSession.pausedAt) {
+        try {
+          await resumePsSession(activeSession._id);
+          console.log(`[Webhook] Resumed session for ${station.name} - device back online`);
+          lastWebhookUpdate = Date.now();
+        } catch (e) {
+          console.error(`[Webhook] Failed to resume session for ${station.name}:`, e);
+        }
+      }
+
       if (!activeSession && isFirstConnect) {
         // Check if station is in manual-end cooldown
         if (isInManualEndCooldown(station._id)) {
@@ -96,9 +152,10 @@ export const POST: RequestHandler = async ({ request, url }) => {
           return json({ success: true, message: 'Station in manual-end cooldown, no auto-start' });
         }
 
-        // Auto-start session only on first connect
-        console.log(`[Webhook] Auto-starting session for ${station._id} (${station.nameAr}) - first connect`);
-        const sessionId = await startPsSession(station._id, 'auto');
+        // Auto-start session with +1 minute delay (PS boot time before actual play)
+        const delayedStart = Date.now() + 60_000;
+        console.log(`[Webhook] Auto-starting session for ${station._id} (${station.nameAr}) - start time +1min`);
+        const sessionId = await startPsSession(station._id, 'auto', undefined, undefined, delayedStart);
         lastWebhookUpdate = Date.now();
         return json({ success: true, action: 'started', sessionId });
       }
@@ -112,17 +169,49 @@ export const POST: RequestHandler = async ({ request, url }) => {
     if (action === 'disconnect' || action === 'down') {
       setStationOnlineState(normalizedMac, 'down');
 
+      // Update Convex isOnline immediately (instant dashboard update)
+      await bulkUpdateStationOnlineStatus([{ id: station._id, isOnline: false }]);
+
       // Clear manual-end cooldown since device actually disconnected
       clearManualEndCooldown(station._id);
 
-      // Never auto-end sessions - admin must end them manually with price selection
-      if (activeSession) {
-        console.log(`[Webhook] Device disconnected for ${station._id} - session stays open for admin to end with price selection`);
-        lastWebhookUpdate = Date.now();
-        return json({ success: true, message: 'Device disconnected - session stays open for manual end' });
+      // Reset internet to OFF when PS disconnects
+      await resetInternetToOff(station);
+
+      // Pause active session with grace period (don't pause on brief ping failures)
+      if (activeSession && !activeSession.pausedAt) {
+        // Only start a timer if one isn't already running
+        if (!disconnectTimers.has(station._id)) {
+          const stationId = station._id;
+          const stationName = station.name;
+          const sessionId = activeSession._id;
+
+          console.log(`[Webhook] Starting ${DISCONNECT_GRACE_PERIOD_MS / 1000}s disconnect grace period for ${stationName}`);
+
+          const timer = setTimeout(async () => {
+            disconnectTimers.delete(stationId);
+            // Re-check: is the device still offline?
+            const currentState = getStationOnlineState(normalizedMac);
+            if (currentState !== 'up') {
+              try {
+                await pausePsSession(sessionId);
+                console.log(`[Webhook] Paused session for ${stationName} - offline for ${DISCONNECT_GRACE_PERIOD_MS / 1000}s`);
+                lastWebhookUpdate = Date.now();
+              } catch (e) {
+                console.error(`[Webhook] Failed to pause session for ${stationName}:`, e);
+              }
+            } else {
+              console.log(`[Webhook] Grace period expired but ${stationName} is back online - not pausing`);
+            }
+          }, DISCONNECT_GRACE_PERIOD_MS);
+
+          disconnectTimers.set(stationId, timer);
+        }
+
+        return json({ success: true, message: 'Disconnect received - grace period started before pausing session' });
       }
 
-      return json({ success: true, message: 'No active session' });
+      return json({ success: true, message: activeSession ? 'Session already paused' : 'No active session' });
     }
 
     return json({ success: false, error: 'Invalid action. Use "connect/up" or "disconnect/down"' }, { status: 400 });

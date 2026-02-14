@@ -5,11 +5,11 @@
  * and automatically starts/ends sessions based on WiFi connection status.
  */
 
-import { syncStationStatus } from './playstation';
+import { syncStationStatus, syncPsRouterRules } from './playstation';
 import { getPsStations } from '$lib/server/convex';
 
 // Configuration
-const POLL_INTERVAL_MS = 30 * 1000; // Poll every 30 seconds (was 5s - too aggressive)
+const POLL_INTERVAL_MS = 10 * 1000; // Poll every 10 seconds for responsive PS detection
 const MAX_CONSECUTIVE_ERRORS = 10; // More tolerance for errors
 
 // State
@@ -44,6 +44,11 @@ export async function startBackgroundSync(): Promise<void> {
 
   isRunning = true;
   consecutiveErrors = 0;
+
+  // Ensure router rules (ACL, firewall, IP bindings) exist on startup
+  syncPsRouterRules().catch((e) => {
+    console.error('[PS-Sync] Router rules sync failed on startup:', e);
+  });
 
   // Run immediately on start
   runSync();

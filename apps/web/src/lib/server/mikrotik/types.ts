@@ -162,6 +162,9 @@ export interface DhcpLease {
   'host-name'?: string;
   status?: string;
   'last-seen'?: string;
+  comment?: string;
+  server?: string;
+  dynamic?: string;
 }
 
 export interface WifiAccessEntry {

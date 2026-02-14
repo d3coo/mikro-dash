@@ -142,7 +142,9 @@ export const updateStatus = mutation({
 
 /**
  * Bulk update online status for stations
- * Called by background sync after checking router's wireless registrations
+ * Called by background sync after checking router's wireless registrations.
+ * Only patches stations whose isOnline value actually changed to avoid
+ * unnecessary subscription triggers and UI flickering.
  */
 export const bulkUpdateOnlineStatus = mutation({
   args: {
@@ -153,7 +155,10 @@ export const bulkUpdateOnlineStatus = mutation({
   },
   handler: async (ctx, { updates }) => {
     for (const { id, isOnline } of updates) {
-      await ctx.db.patch(id, { isOnline });
+      const station = await ctx.db.get(id);
+      if (station && station.isOnline !== isOnline) {
+        await ctx.db.patch(id, { isOnline });
+      }
     }
   },
 });

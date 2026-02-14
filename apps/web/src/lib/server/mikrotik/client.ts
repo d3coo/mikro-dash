@@ -252,6 +252,11 @@ export class MikroTikClient {
     await this.request('/interface/wifi/add', 'POST', body);
   }
 
+  // Update WiFi interface configuration profile
+  async updateWifiInterfaceConfiguration(id: string, configuration: string): Promise<void> {
+    await this.request(`/interface/wifi/${id}`, 'PATCH', { configuration });
+  }
+
   // Delete WiFi Interface
   async deleteWirelessInterface(id: string): Promise<void> {
     await this.request('/interface/wifi/remove', 'POST', { '.id': id });
@@ -588,6 +593,7 @@ export class MikroTikClient {
     srcMacAddress?: string;
     protocol?: string;
     dstPort?: string;
+    rejectWith?: string;
     comment?: string;
     place?: 'before' | 'after';
     placeId?: string;
@@ -601,6 +607,7 @@ export class MikroTikClient {
     if (options.srcMacAddress) body['src-mac-address'] = options.srcMacAddress;
     if (options.protocol) body['protocol'] = options.protocol;
     if (options.dstPort) body['dst-port'] = options.dstPort;
+    if (options.rejectWith) body['reject-with'] = options.rejectWith;
     if (options.comment) body['comment'] = options.comment;
     if (options.place && options.placeId) {
       body[`place-${options.place}`] = options.placeId;
@@ -674,7 +681,57 @@ export class MikroTikClient {
     });
   }
 
-  // Note: Bridge filter rules were previously used for PS WiFi internet control
-  // but are no longer needed after wifi-qcom-ac migration.
-  // PS internet is controlled via IP firewall forward rules (ps-internet:* comments).
+  // Static DHCP Leases (for PS station fixed IPs)
+  async addDhcpLease(macAddress: string, address: string, server: string, comment: string): Promise<void> {
+    await this.request('/ip/dhcp-server/lease/add', 'POST', {
+      'mac-address': macAddress,
+      address,
+      server,
+      comment
+    });
+  }
+
+  async removeDhcpLease(id: string): Promise<void> {
+    await this.request('/ip/dhcp-server/lease/remove', 'POST', { '.id': id });
+  }
+
+  // Netwatch (ICMP ping monitoring for PS online detection)
+  async getNetwatchEntries(): Promise<Array<{
+    '.id': string;
+    host: string;
+    type: string;
+    interval: string;
+    timeout?: string;
+    status: string;
+    'up-script'?: string;
+    'down-script'?: string;
+    comment?: string;
+    disabled?: string;
+  }>> {
+    return this.request('/tool/netwatch');
+  }
+
+  async addNetwatchEntry(options: {
+    host: string;
+    type?: string;
+    interval?: string;
+    timeout?: string;
+    upScript: string;
+    downScript: string;
+    comment: string;
+  }): Promise<void> {
+    await this.request('/tool/netwatch/add', 'POST', {
+      host: options.host,
+      type: options.type || 'icmp',
+      interval: options.interval || '5s',
+      timeout: options.timeout || '3s',
+      'up-script': options.upScript,
+      'down-script': options.downScript,
+      comment: options.comment,
+    });
+  }
+
+  async removeNetwatchEntry(id: string): Promise<void> {
+    await this.request('/tool/netwatch/remove', 'POST', { '.id': id });
+  }
 }

@@ -1,0 +1,1 @@
+[{".id":"*1","HTTPS":"false","address-pool":"guest-pool","addresses-per-mac":"2","disabled":"false","idle-timeout":"5m","interface":"bridge-guest","invalid":"false","ip-of-dns-name":"10.10.10.1","keepalive-timeout":"none","login-timeout":"none","name":"guest-hotspot","profile":"guest-profile","proxy-status":"running"}]
