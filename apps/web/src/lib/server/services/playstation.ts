@@ -310,18 +310,19 @@ export async function setInternetRules(
 			...(placeBeforeForward && { place: 'before' as const, placeId: placeBeforeForward }),
 		});
 	} else {
-		// Internet OFF: Allow DDP probe responses only, reject everything else.
-		// DDP accept MUST come before the reject-all rule.
+		// Internet OFF: Allow LAN UDP only (for DDP probe responses), reject everything else.
+		// LAN UDP accept MUST come before the reject-all rule.
+		// Only UDP to LAN is allowed — TCP LAN traffic (service discovery) caused "slow internet".
 		await client.addFirewallFilterRule({
 			chain: 'forward',
 			action: 'accept',
 			srcMacAddress: mac,
 			protocol: 'udp',
-			srcPort: '987',
+			dstAddress: '192.168.1.0/24',
 			comment: ddpComment,
 			...(placeBeforeForward && { place: 'before' as const, placeId: placeBeforeForward }),
 		});
-		// Reject ALL forward traffic (no LAN exception — LAN traffic made PS feel "slow internet")
+		// Reject ALL other forward traffic
 		await client.addFirewallFilterRule({
 			chain: 'forward',
 			action: 'reject',
@@ -615,17 +616,17 @@ export async function syncPsRouterRules(): Promise<void> {
 				console.log(`[PS Sync] ${reason} firewall ${desiredAction.toUpperCase()} for ${station.name} (${mac})`);
 			}
 
-			// 3a. DDP accept rule (FORWARD chain, allow DDP probe responses when internet OFF)
+			// 3a. LAN UDP accept rule (FORWARD chain, allow DDP probe responses when internet OFF)
 			const ddpComment = `ps-ddp:${station.name}`;
 			const existingDdp = existingDdpRuleMap.get(ddpComment);
 			if (!station.hasInternet && !existingDdp) {
-				// Internet OFF but no DDP accept → add it (MUST be before reject-all rule)
+				// Internet OFF but no LAN UDP accept → add it (MUST be before reject-all rule)
 				await client.addFirewallFilterRule({
 					chain: 'forward',
 					action: 'accept',
 					srcMacAddress: mac,
 					protocol: 'udp',
-					srcPort: '987',
+					dstAddress: '192.168.1.0/24',
 					comment: ddpComment,
 					...(placeBeforeForward && { place: 'before' as const, placeId: placeBeforeForward }),
 				});
