@@ -66,7 +66,9 @@
     goto(`/playstation/history?${params.toString()}`);
   }
 
+  // svelte-ignore state_referenced_locally
   let selectedStation = $state(data.filters.stationId || '');
+  // svelte-ignore state_referenced_locally
   let selectedPeriod = $state(data.filters.period || 'week');
 </script>
 

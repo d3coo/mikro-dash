@@ -1088,6 +1088,7 @@
                 </button>
               </div>
             </div>
+            <div class="station-net-info">{status.station.macAddress} · 192.168.1.{230 + (parseInt(status.station.name.replace(/\D/g, '')) || 0)}</div>
 
             <!-- Monitor Controls (if monitor configured) -->
             {#if status.station.monitorIp}
@@ -1429,7 +1430,9 @@
 
 <!-- Duration Selection Modal (for starting session) -->
 {#if showDurationModal && activeStationForStart}
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div class="modal-overlay" onclick={closeDurationModal}>
+    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div class="modal-box modal-lg modal-rtl" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <button class="modal-close" onclick={closeDurationModal}>
@@ -1530,7 +1533,9 @@
 
 <!-- Add Order Modal -->
 {#if showOrderModal && activeStationForOrder}
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div class="modal-overlay" onclick={closeOrderModal}>
+    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div class="modal-box modal-lg modal-rtl" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <button class="modal-close" onclick={closeOrderModal}>
@@ -1682,7 +1687,9 @@
 
 <!-- Set Timer Modal (for active sessions) -->
 {#if showTimerModal && activeSessionForTimer}
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div class="modal-overlay" onclick={closeTimerModal}>
+    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div class="modal-box modal-rtl" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <button class="modal-close" onclick={closeTimerModal}>
@@ -1740,7 +1747,9 @@
   {@const finalCost = getFinalCost()}
   {@const hasOtherSessions = data.activeSessions && data.activeSessions.filter(s => s.id !== activeSessionForEnd!.sessionId).length > 0}
 
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div class="modal-overlay" onclick={closeEndSessionModal}>
+    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div class="modal-box modal-lg modal-rtl" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <button class="modal-close" onclick={closeEndSessionModal}>
@@ -1861,6 +1870,7 @@
               <span class="option-desc">أدخل المبلغ يدوياً</span>
             </div>
             {#if endSessionMode === 'custom'}
+              <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
               <div class="custom-input-wrapper" onclick={(e) => e.stopPropagation()}>
                 <input
                   type="number"
@@ -1928,7 +1938,9 @@
 
 <!-- Zero Amount Confirmation Modal -->
 {#if showZeroConfirmModal && activeSessionForEnd}
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div class="modal-overlay" onclick={() => showZeroConfirmModal = false}>
+    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div class="modal-box modal-rtl" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <button class="modal-close" onclick={() => showZeroConfirmModal = false}>
@@ -1977,7 +1989,9 @@
 
 <!-- Add/Edit Charge Modal -->
 {#if showChargeModal && activeSessionForCharge}
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div class="modal-overlay" onclick={closeChargeModal}>
+    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div class="modal-box modal-rtl" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <button class="modal-close" onclick={closeChargeModal}>
@@ -2049,7 +2063,9 @@
   {@const otherSessions = getOtherActiveSessions(activeSessionForTransfer.sessionId)}
   {@const transferAmount = activeSessionForTransfer.gamingCost + (transferIncludeOrders ? activeSessionForTransfer.ordersCost : 0)}
 
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div class="modal-overlay" onclick={closeTransferModal}>
+    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div class="modal-box modal-lg modal-rtl" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <button class="modal-close" onclick={closeTransferModal}>
@@ -2069,6 +2085,7 @@
             <span>{formatRevenue(activeSessionForTransfer.gamingCost)} ج.م</span>
           </div>
           {#if activeSessionForTransfer.ordersCost > 0}
+            <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
             <div class="transfer-summary-row" onclick={(e) => e.stopPropagation()}>
               <label class="transfer-checkbox-label">
                 <input type="checkbox" bind:checked={transferIncludeOrders} onclick={(e) => e.stopPropagation()} />
@@ -2084,6 +2101,7 @@
 
         <!-- Target Session Selection -->
         <div class="target-session-selection">
+          <!-- svelte-ignore a11y_label_has_associated_control -->
           <label>اختر الجهاز المستهدف:</label>
           <div class="target-sessions-grid">
             {#each otherSessions as session}
@@ -2135,7 +2153,9 @@
 {#if showSwitchStationModal && activeSessionForSwitch}
   {@const availableStations = getAvailableStations(activeSessionForSwitch.currentStationId)}
 
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div class="modal-overlay" onclick={closeSwitchStationModal}>
+    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div class="modal-box modal-lg modal-rtl" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <button class="modal-close" onclick={closeSwitchStationModal}>
@@ -2156,7 +2176,8 @@
           </div>
         {:else}
           <div class="target-session-selection">
-            <label>اختر الجهاز المستهدف:</label>
+            <!-- svelte-ignore a11y_label_has_associated_control -->
+          <label>اختر الجهاز المستهدف:</label>
             <div class="target-sessions-grid">
               {#each availableStations as station}
                 <button
@@ -2204,7 +2225,9 @@
 
 <!-- Edit Start Time Modal -->
 {#if showEditStartTimeModal && editStartTimeSessionId}
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div class="modal-overlay" onclick={closeEditStartTimeModal}>
+    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div class="modal-box modal-time-edit modal-rtl" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <button class="modal-close" onclick={closeEditStartTimeModal}>
@@ -2749,6 +2772,13 @@
     font-size: 12px;
     font-family: monospace;
     color: var(--color-text-muted);
+  }
+
+  .station-net-info {
+    font-size: 11px;
+    font-family: monospace;
+    color: var(--color-text-muted);
+    opacity: 0.6;
   }
 
   .station-status {
@@ -3317,11 +3347,6 @@
     border-color: var(--color-primary);
   }
 
-  .timer-dropdown option {
-    background: var(--color-bg-card);
-    color: var(--color-text-primary);
-  }
-
   /* Session Start Time - BIGGER */
   .session-start-time {
     display: flex;
@@ -3363,15 +3388,6 @@
     transform: scale(1.1);
   }
 
-  .custom-start-time-input {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .custom-start-time-input input {
-    flex: 1;
-  }
 
   .limit-hint {
     font-size: 12px;
@@ -4508,10 +4524,6 @@
   }
 
   /* Multi mode button active state - purple */
-  .mode-btn.active:has(+ .mode-btn) {
-    /* Single mode active - keep cyan */
-  }
-
   .mode-btn:last-child.active {
     background: rgba(168, 85, 247, 0.2);
     border-color: rgba(168, 85, 247, 0.5);

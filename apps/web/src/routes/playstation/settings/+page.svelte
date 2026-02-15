@@ -447,7 +447,9 @@
 
 <!-- Add Station Modal -->
 {#if showAddModal}
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div class="modal-overlay" onclick={closeModals}>
+    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div class="modal-box modal-lg modal-rtl" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <button class="modal-close" onclick={closeModals}>
@@ -586,6 +588,7 @@
               />
             </div>
             <div class="form-group">
+              <!-- svelte-ignore a11y_label_has_associated_control -->
               <label>&nbsp;</label>
               <button
                 type="button"
@@ -657,7 +660,9 @@
 
 <!-- Edit Station Modal -->
 {#if showEditModal}
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div class="modal-overlay" onclick={closeModals}>
+    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div class="modal-box modal-lg modal-rtl" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <button class="modal-close" onclick={closeModals}>
@@ -762,6 +767,7 @@
               <option value="available">متاح</option>
               <option value="maintenance">صيانة</option>
             </select>
+            </div>
           </div>
 
           <!-- Monitor Settings Section -->
@@ -795,6 +801,7 @@
               />
             </div>
             <div class="form-group">
+              <!-- svelte-ignore a11y_label_has_associated_control -->
               <label>&nbsp;</label>
               <button
                 type="button"
@@ -866,7 +873,9 @@
 
 <!-- Delete Confirmation Modal -->
 {#if showDeleteModal && selectedStation}
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div class="modal-overlay" onclick={closeModals}>
+    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div class="modal-box modal-rtl" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <button class="modal-close" onclick={closeModals}>
@@ -914,7 +923,9 @@
 
 <!-- Setup Wizard Modal -->
 {#if showSetupModal}
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
   <div class="modal-overlay" onclick={closeSetupModal}>
+    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div class="modal-box modal-lg modal-rtl" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <button class="modal-close" onclick={closeSetupModal}>

@@ -1,6 +1,5 @@
 <script lang="ts">
   import { Wifi, Gamepad2, Coffee, TrendingUp, TrendingDown } from 'lucide-svelte';
-  import type { Component as SvelteComponent } from 'svelte';
 
   type SegmentType = 'wifi' | 'playstation' | 'fnb';
 
@@ -50,6 +49,7 @@
   };
 
   const config = $derived(segmentConfig[segment]);
+  const Icon = $derived(config.icon);
   const isProfit = $derived(profit >= 0);
 </script>
 
@@ -57,7 +57,7 @@
   <!-- Header -->
   <div class="segment-header">
     <div class="segment-icon">
-      <svelte:component this={config.icon} class="w-5 h-5" style="color: {config.color}" />
+      <Icon class="w-5 h-5" style="color: {config.color}" />
     </div>
     <div class="segment-info">
       <h3 class="segment-name">{config.name}</h3>

@@ -22,8 +22,11 @@
     }
   });
 
+  // svelte-ignore state_referenced_locally
   let searchQuery = $state(data.search || '');
+  // svelte-ignore state_referenced_locally
   let selectedProfile = $state(data.filterProfile || '');
+  // svelte-ignore state_referenced_locally
   let selectedServer = $state(data.filterServer || '');
   let isDeleting = $state<string | null>(null);
   let showDeleteModal = $state(false);

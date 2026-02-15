@@ -49,7 +49,9 @@
   let isEnablingHttps = $state(false);
   let isDisablingHttps = $state(false);
   let isDeletingCert = $state(false);
+  // svelte-ignore state_referenced_locally
   let selectedDirectory = $state(data.currentDirectory);
+  // svelte-ignore state_referenced_locally
   let selectedCertificate = $state(data.certificates[0]?.name || '');
   let newCertName = $state('hotspot-cert');
   let newCertCommonName = $state('hotspot');
@@ -539,7 +541,9 @@
 
 <!-- FTP Info Modal -->
 {#if showFtpModal && form?.ftpInfo}
+  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div class="modal-overlay" onclick={() => showFtpModal = false}>
+    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
     <div class="modal-content" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <h3>رفع الملفات عبر FTP</h3>
@@ -582,7 +586,9 @@
 
 <!-- Create Certificate Modal -->
 {#if showCertModal}
+  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div class="modal-overlay" onclick={() => showCertModal = false}>
+    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
     <div class="modal-content" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <h3>إنشاء شهادة SSL</h3>
@@ -1219,10 +1225,6 @@
     margin-top: 6px;
     font-size: 12px;
     color: var(--color-text-muted);
-  }
-
-  .text-danger {
-    color: var(--color-danger);
   }
 
   .info-box code {

@@ -5,6 +5,7 @@
 
   let { data, form } = $props();
 
+  // svelte-ignore state_referenced_locally
   let settings = $state({ ...data.settings });
   let activeTab = $state<'general' | 'packages' | 'profiles'>('general');
 
@@ -627,10 +628,6 @@
     justify-content: flex-end;
   }
 
-  .text-primary-light {
-    color: var(--color-primary-light);
-  }
-
   /* Tabs */
   .tabs-container {
     display: flex;
@@ -735,7 +732,4 @@
     font-size: 14px;
   }
 
-  .mr-auto {
-    margin-inline-start: auto;
-  }
 </style>

@@ -52,6 +52,7 @@
   <div
     class="modal-overlay"
     onclick={handleBackdropClick}
+    onkeydown={handleKeydown}
     role="dialog"
     aria-modal="true"
     tabindex="-1"

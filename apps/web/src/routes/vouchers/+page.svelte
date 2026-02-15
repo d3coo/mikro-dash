@@ -37,8 +37,8 @@
   let isCleaning = $state(false);
   let showDeleteModal = $state(false);
   let showCleanupModal = $state(false);
-  let deleteFormEl: HTMLFormElement;
-  let cleanupFormEl: HTMLFormElement;
+  let deleteFormEl = $state<HTMLFormElement>(undefined!);
+  let cleanupFormEl = $state<HTMLFormElement>(undefined!);
 
   // QR Code Modal State
   let showQrModal = $state(false);
@@ -532,7 +532,7 @@
               <td>
                 <div class="status-cell">
                   <span class="badge {config.class}">
-                    <svelte:component this={config.icon} class="w-3 h-3" />
+                    <config.icon class="w-3 h-3" />
                     {config.label}
                   </span>
                   {#if voucher.isPrinted}
@@ -804,9 +804,6 @@
     opacity: 1;
   }
 
-  .clickable-cell:hover .qr-hint-icon {
-    color: var(--color-primary-light);
-  }
 
   /* QR Modal Body */
   .qr-modal-body {

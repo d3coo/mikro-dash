@@ -282,12 +282,19 @@ export async function setInternetRules(
 		}
 	}
 
-	// Find the "accept established,related" rule to place PS rules before it.
-	// PS rules must come before established accept so they block even existing connections.
-	const establishedRule = rules.find(
-		(r) => r.chain === 'forward' && r.action === 'accept' && r.comment?.includes('established')
+	// Find the fasttrack rule in FORWARD chain — PS rules must come before it
+	// so connections aren't accelerated past our reject rules.
+	const fasttrackRule = rules.find(
+		(r) => r.chain === 'forward' && r.action === 'fasttrack-connection'
 	);
-	const placeBefore = establishedRule?.['.id'];
+	const placeBeforeForward = fasttrackRule?.['.id'] ||
+		rules.find((r) => r.chain === 'forward' && r.action === 'accept' && r.comment?.includes('established'))?.['.id'];
+
+	// Find the "accept established,related" rule in INPUT chain for DNS rules.
+	const inputEstablishedRule = rules.find(
+		(r) => r.chain === 'input' && r.action === 'accept' && r.comment?.includes('established')
+	);
+	const placeBeforeInput = inputEstablishedRule?.['.id'];
 
 	if (enable) {
 		// Internet ON: ACCEPT in forward, no DNS block
@@ -296,7 +303,7 @@ export async function setInternetRules(
 			action: 'accept',
 			srcMacAddress: mac,
 			comment: fwComment,
-			...(placeBefore && { place: 'before' as const, placeId: placeBefore }),
+			...(placeBeforeForward && { place: 'before' as const, placeId: placeBeforeForward }),
 		});
 	} else {
 		// Internet OFF: REJECT only non-LAN traffic (allows DDP probe responses + local services)
@@ -307,7 +314,7 @@ export async function setInternetRules(
 			dstAddress: '!192.168.1.0/24',
 			rejectWith: 'icmp-network-unreachable',
 			comment: fwComment,
-			...(placeBefore && { place: 'before' as const, placeId: placeBefore }),
+			...(placeBeforeForward && { place: 'before' as const, placeId: placeBeforeForward }),
 		});
 		// DROP DNS to router for instant "no internet" detection on PS
 		await client.addFirewallFilterRule({
@@ -317,7 +324,7 @@ export async function setInternetRules(
 			protocol: 'udp',
 			dstPort: '53',
 			comment: dnsComment,
-			...(placeBefore && { place: 'before' as const, placeId: placeBefore }),
+			...(placeBeforeInput && { place: 'before' as const, placeId: placeBeforeInput }),
 		});
 	}
 }
@@ -519,11 +526,18 @@ export async function syncPsRouterRules(): Promise<void> {
 		const psDnsRules = fwRules.filter((r) => r.comment?.startsWith('ps-dns:'));
 		const existingDnsRuleMap = new Map(psDnsRules.map((r) => [r.comment, r]));
 
-		// Find the "accept established" rule for proper placement
-		const establishedRule = fwRules.find(
-			(r) => r.chain === 'forward' && r.action === 'accept' && r.comment?.includes('established')
+		// Find fasttrack rule in FORWARD chain — PS rules must come before it
+		const fasttrackRule = fwRules.find(
+			(r) => r.chain === 'forward' && r.action === 'fasttrack-connection'
 		);
-		const placeBefore = establishedRule?.['.id'];
+		const placeBeforeForward = fasttrackRule?.['.id'] ||
+			fwRules.find((r) => r.chain === 'forward' && r.action === 'accept' && r.comment?.includes('established'))?.['.id'];
+
+		// Find "accept established" in INPUT chain for DNS rules
+		const inputEstablishedRule = fwRules.find(
+			(r) => r.chain === 'input' && r.action === 'accept' && r.comment?.includes('established')
+		);
+		const placeBeforeInput = inputEstablishedRule?.['.id'];
 
 		// Index existing DHCP leases by comment
 		const psLeases = dhcpLeases.filter((l) => l.comment?.startsWith('ps-static:'));
@@ -576,7 +590,7 @@ export async function syncPsRouterRules(): Promise<void> {
 						dstAddress: '!192.168.1.0/24',
 					}),
 					comment: fwComment,
-					...(placeBefore && { place: 'before' as const, placeId: placeBefore }),
+					...(placeBeforeForward && { place: 'before' as const, placeId: placeBeforeForward }),
 				});
 				const reason = !existingFw ? 'Added' : 'Updated';
 				console.log(`[PS Sync] ${reason} firewall ${desiredAction.toUpperCase()} for ${station.name} (${mac})`);
@@ -594,7 +608,7 @@ export async function syncPsRouterRules(): Promise<void> {
 					protocol: 'udp',
 					dstPort: '53',
 					comment: dnsComment,
-					...(placeBefore && { place: 'before' as const, placeId: placeBefore }),
+					...(placeBeforeInput && { place: 'before' as const, placeId: placeBeforeInput }),
 				});
 				console.log(`[PS Sync] Added DNS block for ${station.name} (${mac})`);
 			} else if (station.hasInternet && existingDns) {

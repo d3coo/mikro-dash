@@ -803,16 +803,6 @@
     background: rgba(8, 145, 178, 0.1);
   }
 
-  .voucher-cell .qr-hint-icon {
-    color: var(--color-text-muted);
-    opacity: 0;
-    transition: opacity var(--animation-duration-normal);
-  }
-
-  .voucher-cell:hover .qr-hint-icon {
-    opacity: 1;
-    color: var(--color-primary-light);
-  }
 
   /* QR Modal */
   .qr-modal-body {

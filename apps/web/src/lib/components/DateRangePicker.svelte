@@ -87,16 +87,18 @@
       <div class="custom-range-content">
         <div class="date-inputs">
           <div class="date-field">
-            <label>من</label>
+            <label for="custom-start">من</label>
             <input
+              id="custom-start"
               type="date"
               bind:value={customStart}
               class="date-input"
             />
           </div>
           <div class="date-field">
-            <label>إلى</label>
+            <label for="custom-end">إلى</label>
             <input
+              id="custom-end"
               type="date"
               bind:value={customEnd}
               class="date-input"

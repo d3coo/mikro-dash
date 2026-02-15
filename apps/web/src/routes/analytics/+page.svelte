@@ -16,9 +16,13 @@
   type TimePeriod = 'today' | 'week' | 'month' | 'custom';
   type ExpenseCategory = 'wifi' | 'playstation' | 'fnb' | 'general';
 
+  // svelte-ignore state_referenced_locally
   let currentPeriod = $state(data.period as TimePeriod);
+  // svelte-ignore state_referenced_locally
   let customStart = $state(data.startDate || '');
+  // svelte-ignore state_referenced_locally
   let customEnd = $state(data.endDate || '');
+  // svelte-ignore state_referenced_locally
   let selectedCategory = $state<ExpenseCategory | 'all'>(data.categoryFilter || 'all');
 
   // Add expense modal
@@ -509,13 +513,15 @@
 
 <!-- Add Expense Modal -->
 {#if showAddExpense}
+  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div class="modal-overlay" onclick={() => showAddExpense = false}>
+    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
     <div class="modal-content glass-card" onclick={(e) => e.stopPropagation()}>
       <h3 class="modal-title">إضافة مصروف جديد</h3>
       <form method="POST" action="?/addExpense" use:enhance>
         <div class="form-group">
-          <label class="form-label">فئة المصروف</label>
-          <select name="category" bind:value={newExpenseCategory} class="select-modern">
+          <label class="form-label" for="expense-category">فئة المصروف</label>
+          <select id="expense-category" name="category" bind:value={newExpenseCategory} class="select-modern">
             <option value="wifi">WiFi</option>
             <option value="playstation">PlayStation</option>
             <option value="fnb">مأكولات ومشروبات</option>
@@ -524,25 +530,25 @@
         </div>
 
         <div class="form-group">
-          <label class="form-label">نوع المصروف</label>
-          <select name="type" bind:value={newExpenseType} class="select-modern">
+          <label class="form-label" for="expense-type">نوع المصروف</label>
+          <select id="expense-type" name="type" bind:value={newExpenseType} class="select-modern">
             <option value="per_gb">تكلفة لكل جيجا</option>
             <option value="fixed_monthly">مصروف شهري ثابت</option>
           </select>
         </div>
 
         <div class="form-group">
-          <label class="form-label">الاسم (إنجليزي)</label>
-          <input type="text" name="name" required class="input-modern" placeholder="e.g., Electricity" />
+          <label class="form-label" for="expense-name">الاسم (إنجليزي)</label>
+          <input id="expense-name" type="text" name="name" required class="input-modern" placeholder="e.g., Electricity" />
         </div>
 
         <div class="form-group">
-          <label class="form-label">الاسم (عربي)</label>
-          <input type="text" name="nameAr" required class="input-modern" placeholder="مثال: الكهرباء" />
+          <label class="form-label" for="expense-nameAr">الاسم (عربي)</label>
+          <input id="expense-nameAr" type="text" name="nameAr" required class="input-modern" placeholder="مثال: الكهرباء" />
         </div>
 
         <div class="form-group">
-          <label class="form-label">
+          <label class="form-label" for="expense-amount">
             المبلغ (ج.م)
             {#if newExpenseType === 'per_gb'}
               <span class="text-text-secondary text-sm">- لكل جيجا</span>
@@ -550,7 +556,7 @@
               <span class="text-text-secondary text-sm">- شهرياً</span>
             {/if}
           </label>
-          <input type="number" name="amount" required step="0.01" min="0" class="input-modern" placeholder="0.00" />
+          <input id="expense-amount" type="number" name="amount" required step="0.01" min="0" class="input-modern" placeholder="0.00" />
         </div>
 
         <div class="modal-actions">

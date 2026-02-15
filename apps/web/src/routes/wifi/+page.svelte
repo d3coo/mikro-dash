@@ -208,7 +208,6 @@
                           name="ssid"
                           bind:value={editSSIDValue}
                           class="input-modern ssid-input"
-                          autofocus
                         />
                         <button type="submit" class="icon-btn icon-btn-md icon-btn-success" disabled={isUpdatingSSID !== null}>
                           {#if isUpdatingSSID}
