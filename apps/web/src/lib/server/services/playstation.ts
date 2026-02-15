@@ -253,15 +253,14 @@ function hasActiveTraffic(mac: string, currentBytes: number): boolean {
 
 /**
  * Set internet firewall rules for a PS station.
- * When internet OFF, manages THREE rules:
- *   1. FORWARD accept: DDP responses only (UDP src-port 987) for online detection
- *   2. FORWARD reject: ALL other traffic (reject-all, no LAN exception)
- *   3. INPUT reject: DNS (UDP 53) to router for instant "no internet" on PS
+ * When internet OFF, manages TWO rules:
+ *   1. FORWARD reject: non-LAN traffic (dst != 192.168.1.0/24), allows DDP probes
+ *   2. INPUT reject: DNS (UDP 53) to router for instant "no internet" on PS
  * When internet ON, manages ONE rule:
  *   1. FORWARD accept: all traffic
  *
- * Reject-all (no LAN exception) is critical: allowing LAN traffic made PS
- * perceive "slow internet" instead of "no internet" due to LAN service discovery.
+ * DNS must use reject (not drop!) — drop causes silent timeout making PS
+ * perceive "slow internet" instead of instant "no internet".
  *
  * @param mac - Normalized MAC address (AA:BB:CC:DD:EE:FF)
  * @param name - Station name (e.g., "ps-01")
@@ -274,14 +273,13 @@ export async function setInternetRules(
 ): Promise<void> {
 	const client = await getMikroTikClient();
 	const fwComment = `ps-internet:${name}`;
-	const ddpComment = `ps-ddp:${name}`;
 	const dnsComment = `ps-dns:${name}`;
 
 	const rules = await client.getFirewallFilterRules();
 
-	// Remove existing forward + DDP + DNS rules
+	// Remove existing forward + DNS rules (also clean up legacy ps-ddp rules)
 	for (const r of rules) {
-		if (r.comment === fwComment || r.comment === ddpComment || r.comment === dnsComment) {
+		if (r.comment === fwComment || r.comment === `ps-ddp:${name}` || r.comment === dnsComment) {
 			await client.removeFirewallFilterRule(r['.id']);
 		}
 	}
@@ -310,23 +308,12 @@ export async function setInternetRules(
 			...(placeBeforeForward && { place: 'before' as const, placeId: placeBeforeForward }),
 		});
 	} else {
-		// Internet OFF: Allow LAN UDP only (for DDP probe responses), reject everything else.
-		// LAN UDP accept MUST come before the reject-all rule.
-		// Only UDP to LAN is allowed — TCP LAN traffic (service discovery) caused "slow internet".
-		await client.addFirewallFilterRule({
-			chain: 'forward',
-			action: 'accept',
-			srcMacAddress: mac,
-			protocol: 'udp',
-			dstAddress: '192.168.1.0/24',
-			comment: ddpComment,
-			...(placeBeforeForward && { place: 'before' as const, placeId: placeBeforeForward }),
-		});
-		// Reject ALL other forward traffic
+		// Internet OFF: REJECT non-LAN traffic (allows DDP probe responses + local services)
 		await client.addFirewallFilterRule({
 			chain: 'forward',
 			action: 'reject',
 			srcMacAddress: mac,
+			dstAddress: '!192.168.1.0/24',
 			rejectWith: 'icmp-network-unreachable',
 			comment: fwComment,
 			...(placeBeforeForward && { place: 'before' as const, placeId: placeBeforeForward }),
@@ -538,10 +525,6 @@ export async function syncPsRouterRules(): Promise<void> {
 		const psFwRules = fwRules.filter((r) => r.comment?.startsWith('ps-internet:'));
 		const existingFwRuleMap = new Map(psFwRules.map((r) => [r.comment, r]));
 
-		// Index existing DDP accept rules (FORWARD chain, comment: ps-ddp:{name})
-		const psDdpRules = fwRules.filter((r) => r.comment?.startsWith('ps-ddp:'));
-		const existingDdpRuleMap = new Map(psDdpRules.map((r) => [r.comment, r]));
-
 		// Index existing DNS blocking rules (INPUT chain, comment: ps-dns:{name})
 		const psDnsRules = fwRules.filter((r) => r.comment?.startsWith('ps-dns:'));
 		const existingDnsRuleMap = new Map(psDnsRules.map((r) => [r.comment, r]));
@@ -592,10 +575,9 @@ export async function syncPsRouterRules(): Promise<void> {
 			// 3. Firewall internet rule (REJECT when blocked, ACCEPT when enabled)
 			//    Placed before "accept established" rule so it blocks even existing connections
 			const existingFw = existingFwRuleMap.get(fwComment);
-			// Replace if action wrong OR if old-style reject with LAN exception (should be reject-all now)
 			const needsReplace = existingFw && (
 				existingFw.action !== desiredAction ||
-				(existingFw.action === 'reject' && existingFw['dst-address'])
+				(existingFw.action === 'reject' && existingFw['dst-address'] !== '!192.168.1.0/24')
 			);
 
 			if (!existingFw || needsReplace) {
@@ -608,6 +590,7 @@ export async function syncPsRouterRules(): Promise<void> {
 					srcMacAddress: mac,
 					...(desiredAction === 'reject' && {
 						rejectWith: 'icmp-network-unreachable',
+						dstAddress: '!192.168.1.0/24',
 					}),
 					comment: fwComment,
 					...(placeBeforeForward && { place: 'before' as const, placeId: placeBeforeForward }),
@@ -616,25 +599,12 @@ export async function syncPsRouterRules(): Promise<void> {
 				console.log(`[PS Sync] ${reason} firewall ${desiredAction.toUpperCase()} for ${station.name} (${mac})`);
 			}
 
-			// 3a. LAN UDP accept rule (FORWARD chain, allow DDP probe responses when internet OFF)
+			// Clean up legacy ps-ddp rules if present
 			const ddpComment = `ps-ddp:${station.name}`;
-			const existingDdp = existingDdpRuleMap.get(ddpComment);
-			if (!station.hasInternet && !existingDdp) {
-				// Internet OFF but no LAN UDP accept → add it (MUST be before reject-all rule)
-				await client.addFirewallFilterRule({
-					chain: 'forward',
-					action: 'accept',
-					srcMacAddress: mac,
-					protocol: 'udp',
-					dstAddress: '192.168.1.0/24',
-					comment: ddpComment,
-					...(placeBeforeForward && { place: 'before' as const, placeId: placeBeforeForward }),
-				});
-				console.log(`[PS Sync] Added DDP accept for ${station.name} (${mac})`);
-			} else if (station.hasInternet && existingDdp) {
-				// Internet ON but DDP accept exists → remove it (not needed when accept-all)
-				await client.removeFirewallFilterRule(existingDdp['.id']);
-				console.log(`[PS Sync] Removed DDP accept for ${station.name} (internet enabled)`);
+			const legacyDdp = fwRules.find((r) => r.comment === ddpComment);
+			if (legacyDdp) {
+				await client.removeFirewallFilterRule(legacyDdp['.id']);
+				console.log(`[PS Sync] Removed legacy DDP rule for ${station.name}`);
 			}
 
 			// 3b. DNS blocking rule (INPUT chain, reject UDP 53 when internet OFF)
