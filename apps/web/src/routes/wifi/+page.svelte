@@ -792,4 +792,17 @@
   .inline {
     display: inline;
   }
+
+  @media (max-width: 768px) {
+    .ssid-edit-form,
+    .password-form {
+      flex-wrap: wrap;
+    }
+
+    .ssid-input,
+    .password-input {
+      width: 100%;
+      flex: 1;
+    }
+  }
 </style>

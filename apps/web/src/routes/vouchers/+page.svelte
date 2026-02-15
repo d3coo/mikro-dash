@@ -780,7 +780,7 @@
   }
 
   .table-modern {
-    min-width: 800px;
+    min-width: 600px;
   }
 
   /* Clickable voucher cell */
@@ -942,6 +942,21 @@
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+
+  @media (max-width: 768px) {
+    .list-actions {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .filter-group {
+      width: 100%;
+    }
+
+    .filter-group .select-modern {
+      flex: 1;
+    }
   }
 
   /* Cleanup button styling */

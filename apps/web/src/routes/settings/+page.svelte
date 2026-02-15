@@ -633,6 +633,13 @@
     display: flex;
     gap: 8px;
     padding: 12px 16px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .tabs-container::-webkit-scrollbar {
+    display: none;
   }
 
   .tab-btn {
@@ -648,6 +655,8 @@
     font-weight: 500;
     cursor: pointer;
     transition: all var(--animation-duration-normal);
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .tab-btn:hover {

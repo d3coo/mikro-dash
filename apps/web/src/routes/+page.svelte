@@ -683,8 +683,15 @@
 
   .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 20px;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 16px;
+  }
+
+  @media (min-width: 769px) {
+    .stats-grid {
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px;
+    }
   }
 
   .stat-card {
@@ -767,6 +774,25 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 16px;
+  }
+
+  @media (max-width: 768px) {
+    .actions-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .stat-card {
+      padding: 16px;
+      gap: 10px;
+    }
+
+    .stat-value {
+      font-size: 28px;
+    }
+
+    .health-grid {
+      grid-template-columns: 1fr;
+    }
   }
 
   .action-card {

@@ -9,7 +9,7 @@
 		"dev": "concurrently -n convex,check,app -c blue,yellow,green npm:dev:convex npm:dev:check npm:dev:app",
 		"dev:convex": "npx convex dev",
 		"dev:check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-		"dev:app": "vite dev --port 3000",
+		"dev:app": "vite dev --port 3000 --host",
 		"build": "vite build",
 		"start": "node build/index.js",
 		"preview": "vite preview",

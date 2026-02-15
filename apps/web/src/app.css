@@ -1300,3 +1300,103 @@ body {
 .hidden {
   display: none !important;
 }
+
+/* ============================================
+   Mobile Responsive
+   ============================================ */
+
+/* Touch targets */
+@media (max-width: 768px) {
+  .btn {
+    min-height: 44px;
+  }
+
+  .input-modern,
+  .select-modern {
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  .table-modern thead th {
+    padding: 12px 10px;
+    font-size: 12px;
+  }
+
+  .table-modern tbody td {
+    padding: 12px 10px;
+    font-size: 13px;
+  }
+
+  .page-title {
+    font-size: 24px;
+  }
+
+  .page-subtitle {
+    font-size: 13px;
+  }
+
+  .sidebar {
+    display: none;
+  }
+
+  .sidebar.sidebar-open {
+    display: flex;
+  }
+
+  .list-header {
+    padding: 16px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .list-actions {
+    flex-wrap: wrap;
+  }
+
+  .modal-box {
+    margin: 16px;
+    max-height: calc(100vh - 32px);
+  }
+}
+
+/* Gate hover effects behind hover capability */
+@media (hover: hover) {
+  .glass-card:hover {
+    border-color: var(--color-glass-border-hover);
+    box-shadow: 0 0 40px rgba(8, 145, 178, 0.1);
+  }
+
+  .stat-card:hover::before {
+    opacity: 1;
+  }
+
+  .stat-card:hover .stat-icon {
+    transform: scale(1.1);
+    filter: drop-shadow(0 0 8px currentColor);
+  }
+}
+
+@media (hover: none) {
+  .glass-card:hover {
+    border-color: var(--color-glass-border);
+    box-shadow: none;
+  }
+
+  .stat-card:hover::before {
+    opacity: 0;
+  }
+
+  .stat-card:hover .stat-icon {
+    transform: none;
+    filter: none;
+  }
+
+  .btn-primary:hover,
+  .btn-danger:hover {
+    transform: none;
+  }
+
+  .action-card:hover {
+    transform: none;
+  }
+}

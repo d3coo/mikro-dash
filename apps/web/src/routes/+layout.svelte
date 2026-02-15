@@ -1,6 +1,8 @@
 <script lang="ts">
 	import '../app.css';
 	import Sidebar from '$lib/components/sidebar.svelte';
+	import MobileHeader from '$lib/components/mobile-header.svelte';
+	import BottomNav from '$lib/components/bottom-nav.svelte';
 	import { Toaster } from 'svelte-sonner';
 	import { navigating } from '$app/stores';
 	import { browser } from '$app/environment';
@@ -187,6 +189,9 @@
 		</div>
 	{/if}
 
+	<!-- Mobile Header -->
+	<MobileHeader />
+
 	<div class="app-layout">
 		<!-- Sidebar (on right for RTL) -->
 		<Sidebar />
@@ -198,6 +203,9 @@
 			</div>
 		</main>
 	</div>
+
+	<!-- Mobile Bottom Navigation -->
+	<BottomNav />
 </div>
 
 <Toaster
@@ -626,6 +634,7 @@
 	@media (max-width: 768px) {
 		.nav-loading-skeleton {
 			right: 0;
+			top: 56px;
 			padding: 20px;
 		}
 
@@ -668,8 +677,13 @@
 	}
 
 	@media (max-width: 768px) {
+		.main-content {
+			padding-top: 56px;
+			padding-bottom: 64px;
+		}
+
 		.content-container {
-			padding: 20px;
+			padding: 16px;
 		}
 	}
 

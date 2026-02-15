@@ -729,7 +729,7 @@
   }
 
   .table-modern {
-    min-width: 900px;
+    min-width: 650px;
   }
 
   /* Package Info */
