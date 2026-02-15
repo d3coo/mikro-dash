@@ -592,6 +592,7 @@ export class MikroTikClient {
     dstAddress?: string;
     srcMacAddress?: string;
     protocol?: string;
+    srcPort?: string;
     dstPort?: string;
     rejectWith?: string;
     comment?: string;
@@ -606,6 +607,7 @@ export class MikroTikClient {
     if (options.dstAddress) body['dst-address'] = options.dstAddress;
     if (options.srcMacAddress) body['src-mac-address'] = options.srcMacAddress;
     if (options.protocol) body['protocol'] = options.protocol;
+    if (options.srcPort) body['src-port'] = options.srcPort;
     if (options.dstPort) body['dst-port'] = options.dstPort;
     if (options.rejectWith) body['reject-with'] = options.rejectWith;
     if (options.comment) body['comment'] = options.comment;
