@@ -18,7 +18,15 @@
       "Bash(pm2 startup:*)",
       "Bash(pm2-startup:*)",
       "Bash(pm2 list:*)",
-      "Bash(powershell -Command \"Invoke-RestMethod -Uri ''http://192.168.1.109/rest/ip/hotspot/user/profile'' -Credential \\(New-Object PSCredential\\(''admin'', \\(ConvertTo-SecureString ''need4speed'' -AsPlainText -Force\\)\\)\\) | ConvertTo-Json -Depth 10\")"
+      "Bash(powershell -Command \"Invoke-RestMethod -Uri ''http://192.168.1.109/rest/ip/hotspot/user/profile'' -Credential \\(New-Object PSCredential\\(''admin'', \\(ConvertTo-SecureString ''need4speed'' -AsPlainText -Force\\)\\)\\) | ConvertTo-Json -Depth 10\")",
+      "WebFetch(domain:help.mikrotik.com)",
+      "Bash(npx tsc:*)",
+      "Bash(python:*)",
+      "Bash(node -e \"const d=JSON.parse\\(require\\(''fs''\\).readFileSync\\(0,''utf8''\\)\\);d.filter\\(r=>r.comment&&r.comment.startsWith\\(''ps-''\\)\\).forEach\\(r=>console.log\\(r.comment,r[''mac-address''],r.interface,r.ssid,''bytes=''+r.bytes\\)\\)\")",
+      "Bash(node -e:*)",
+      "Bash(timeout:*)",
+      "Bash(git clean:*)",
+      "Bash(python3:*)"
     ]
   }
 }

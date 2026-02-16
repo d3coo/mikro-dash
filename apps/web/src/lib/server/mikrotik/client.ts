@@ -550,6 +550,21 @@ export class MikroTikClient {
     });
   }
 
+  async addToWirelessAccessListWithInterface(
+    macAddress: string,
+    iface: string | undefined,
+    action: 'accept' | 'reject',
+    comment: string,
+  ): Promise<void> {
+    const body: Record<string, string> = {
+      'mac-address': macAddress,
+      action,
+      comment,
+    };
+    if (iface) body.interface = iface;
+    await this.request('/interface/wifi/access-list/add', 'POST', body);
+  }
+
   async removeFromWirelessAccessList(id: string): Promise<void> {
     await this.request('/interface/wifi/access-list/remove', 'POST', {
       '.id': id
@@ -731,6 +746,22 @@ export class MikroTikClient {
       'down-script': options.downScript,
       comment: options.comment,
     });
+  }
+
+  async updateNetwatchEntry(id: string, options: {
+    host?: string;
+    upScript?: string;
+    downScript?: string;
+    interval?: string;
+    timeout?: string;
+  }): Promise<void> {
+    const body: Record<string, string> = { '.id': id };
+    if (options.host !== undefined) body.host = options.host;
+    if (options.upScript !== undefined) body['up-script'] = options.upScript;
+    if (options.downScript !== undefined) body['down-script'] = options.downScript;
+    if (options.interval !== undefined) body.interval = options.interval;
+    if (options.timeout !== undefined) body.timeout = options.timeout;
+    await this.request('/tool/netwatch/set', 'POST', body);
   }
 
   async removeNetwatchEntry(id: string): Promise<void> {
