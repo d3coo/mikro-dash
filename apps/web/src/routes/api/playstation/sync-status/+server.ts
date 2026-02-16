@@ -1,52 +1,37 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import {
-  getBackgroundSyncStatus,
-  startBackgroundSync,
-  stopBackgroundSync,
-  forceSync
-} from '$lib/server/services/ps-background-sync';
+import { syncPsRouterRules } from '$lib/server/services/playstation';
 
 /**
  * GET /api/playstation/sync-status
- * Get the current status of the background sync service
+ * Returns service status info.
+ * Online detection is handled by netwatch webhooks (see webhook/+server.ts).
  */
 export const GET: RequestHandler = async () => {
-  const status = getBackgroundSyncStatus();
-  return json(status);
+  return json({
+    mode: 'webhook',
+    message: 'Online detection handled by netwatch webhooks. No background polling.',
+    timestamp: Date.now()
+  });
 };
 
 /**
  * POST /api/playstation/sync-status
- * Control the background sync service
+ * Control actions: only 'sync-rules' to re-sync router rules.
  *
- * Body: { action: 'start' | 'stop' | 'force' }
+ * Body: { action: 'sync-rules' }
  */
 export const POST: RequestHandler = async ({ request }) => {
   try {
     const body = await request.json();
     const action = body.action as string;
 
-    switch (action) {
-      case 'start':
-        startBackgroundSync();
-        return json({ success: true, message: 'Background sync started' });
-
-      case 'stop':
-        stopBackgroundSync();
-        return json({ success: true, message: 'Background sync stopped' });
-
-      case 'force':
-        const result = await forceSync();
-        return json({
-          success: true,
-          message: 'Force sync completed',
-          result
-        });
-
-      default:
-        return json({ success: false, error: 'Invalid action' }, { status: 400 });
+    if (action === 'sync-rules') {
+      await syncPsRouterRules();
+      return json({ success: true, message: 'Router rules synced' });
     }
+
+    return json({ success: false, error: 'Invalid action. Use: sync-rules' }, { status: 400 });
   } catch (error) {
     return json({
       success: false,

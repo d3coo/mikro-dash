@@ -329,7 +329,7 @@ function buildState(client: ConvexClient) {
 	}
 
 	async function pauseSession(sessionId: string) {
-		return runMutation(api.psSessions.pause, { id: sessionId as any }, 'تم إيقاف الجلسة مؤقتاً', 'فشل في إيقاف الجلسة');
+		return runMutation(api.psSessions.pause, { id: sessionId as any, source: 'ui-manual' }, 'تم إيقاف الجلسة مؤقتاً', 'فشل في إيقاف الجلسة');
 	}
 
 	async function resumeSession(sessionId: string) {

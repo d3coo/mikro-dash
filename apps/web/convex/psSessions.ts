@@ -441,11 +441,19 @@ export const switchMode = mutation({
 /**
  * Pause a session
  * - Sets pausedAt timestamp
+ * - REQUIRES source parameter to track callers (debug mystery auto-pausing)
  */
 export const pause = mutation({
-  args: { id: v.id('psSessions') },
-  handler: async (ctx, { id }) => {
+  args: { id: v.id('psSessions'), source: v.optional(v.string()) },
+  handler: async (ctx, { id, source }) => {
     const now = Date.now();
+
+    // REJECT calls without source — this stops the mystery auto-pausing
+    // and forces the unknown caller to reveal itself via error logs
+    if (!source) {
+      console.error(`[PAUSE BLOCKED] REJECTED pause for session ${id} at ${new Date(now).toISOString()} — NO SOURCE. Unknown caller must pass source parameter.`);
+      return { success: false, message: 'source parameter required' };
+    }
 
     const session = await ctx.db.get(id);
     if (!session) {
@@ -457,8 +465,11 @@ export const pause = mutation({
     }
 
     if (session.pausedAt) {
+      console.log(`[PAUSE DEBUG] Session ${id} already paused, skipping (source: ${source})`);
       return { success: true, message: 'Session already paused' };
     }
+
+    console.log(`[PAUSE] Pausing session ${id} for station ${session.stationId} at ${new Date(now).toISOString()} SOURCE: ${source}`);
 
     await ctx.db.patch(id, { pausedAt: now });
 

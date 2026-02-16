@@ -14,7 +14,6 @@ import {
   switchPsSessionMode,
   switchPsStation,
 } from '$lib/server/convex';
-import { syncStationStatus } from '$lib/server/services/playstation';
 import * as monitorControl from '$lib/server/services/monitor-control';
 import { fail } from '@sveltejs/kit';
 
@@ -134,19 +133,6 @@ export const actions: Actions = {
       return { success: true, totalCost, gamingCost: result.totalCost, ordersCost };
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : 'Failed to end session' });
-    }
-  },
-
-  sync: async () => {
-    try {
-      const result = await syncStationStatus();
-      return {
-        success: true,
-        started: result.started.length,
-        ended: result.ended.length
-      };
-    } catch (error) {
-      return fail(500, { error: error instanceof Error ? error.message : 'Sync failed' });
     }
   },
 

@@ -323,9 +323,9 @@ export async function switchPsSessionMode(id: string, newMode: 'single' | 'multi
 	});
 }
 
-export async function pausePsSession(id: string) {
+export async function pausePsSession(id: string, source: string = 'server') {
 	const client = getConvexClient();
-	return await client.mutation(api.psSessions.pause, { id: id as any });
+	return await client.mutation(api.psSessions.pause, { id: id as any, source });
 }
 
 export async function resumePsSession(id: string) {

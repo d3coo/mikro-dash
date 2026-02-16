@@ -1,19 +1,23 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { syncStationStatus } from '$lib/server/services/playstation';
+import { syncPsRouterRules } from '$lib/server/services/playstation';
 
+/**
+ * POST /api/playstation/sync
+ * Triggers a router rules sync (ACL, hotspot bypass, DHCP, netwatch).
+ * Online detection is handled by netwatch webhooks — not by this endpoint.
+ */
 export const POST: RequestHandler = async () => {
   try {
-    const result = await syncStationStatus();
+    await syncPsRouterRules();
 
     return json({
       success: true,
-      started: result.started,
-      ended: result.ended,
+      message: 'Router rules synced',
       timestamp: Date.now()
     });
   } catch (error) {
-    console.error('Sync error:', error);
+    console.error('Router rules sync error:', error);
     return json({
       success: false,
       error: error instanceof Error ? error.message : 'Sync failed'

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Gamepad2, Play, Square, Clock, Settings, RefreshCw, Timer, Banknote, Activity, Wifi, WifiOff, AlertTriangle, History, TrendingUp, UtensilsCrossed, Plus, Minus, X, Bell, Coffee, Radio, Power, Volume2, Monitor, Tv, MonitorOff, Users, User, ArrowRightLeft, DollarSign, Pencil, Trash2, Repeat, Globe } from 'lucide-svelte';
+  import { Gamepad2, Play, Square, Clock, Settings, RefreshCw, Timer, Banknote, Activity, Wifi, WifiOff, AlertTriangle, History, TrendingUp, UtensilsCrossed, Plus, Minus, X, Bell, Coffee, Power, Volume2, Monitor, Tv, MonitorOff, Users, User, ArrowRightLeft, DollarSign, Pencil, Trash2, Repeat, Globe } from 'lucide-svelte';
   import { onMount, onDestroy } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { invalidateAll } from '$app/navigation';
@@ -224,7 +224,6 @@
 
   // Auto-refresh state
   let timerInterval: ReturnType<typeof setInterval> | null = null;
-  let syncStatusInterval: ReturnType<typeof setInterval> | null = null;
   let isSyncing = $state(false);
   let currentTime = $state(Date.now());
 
@@ -277,62 +276,25 @@
   let activeSessionForSwitch = $state<{ sessionId: AnyId; currentStationId: string; stationName: string } | null>(null);
   let switchTargetStationId = $state<string | null>(null);
 
-  // Background sync status
-  interface SyncStatus {
-    isRunning: boolean;
-    pollIntervalMs: number;
-    lastSyncTime: number | null;
-    consecutiveErrors: number;
-    lastError: string | null;
-    stats: {
-      totalSyncs: number;
-      totalAutoStarts: number;
-      totalAutoEnds: number;
-    };
-  }
-  let syncStatus = $state<SyncStatus | null>(null);
-  let isTogglingSync = $state(false);
-
-  // Fetch sync status
-  async function fetchSyncStatus() {
+  // Sync router rules manually
+  async function syncRouterRules() {
+    isSyncing = true;
     try {
-      const res = await fetch('/api/playstation/sync-status');
+      const res = await fetch('/api/playstation/sync', { method: 'POST' });
       if (res.ok) {
-        syncStatus = await res.json();
+        toast.success('تم مزامنة قواعد الراوتر');
+      } else {
+        toast.error('فشل في المزامنة');
       }
     } catch (e) {
-      console.error('Failed to fetch sync status:', e);
-    }
-  }
-
-
-  // Toggle background sync
-  async function toggleBackgroundSync() {
-    if (!syncStatus) return;
-    isTogglingSync = true;
-    try {
-      const action = syncStatus.isRunning ? 'stop' : 'start';
-      const res = await fetch('/api/playstation/sync-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action })
-      });
-      if (res.ok) {
-        await fetchSyncStatus();
-        toast.success(syncStatus?.isRunning ? 'تم تشغيل المزامنة التلقائية' : 'تم إيقاف المزامنة التلقائية');
-      }
-    } catch (e) {
-      toast.error('فشل في تغيير حالة المزامنة');
+      toast.error('فشل في المزامنة');
     } finally {
-      isTogglingSync = false;
+      isSyncing = false;
     }
   }
 
   // Auto-refresh for fast UI updates
   onMount(() => {
-    // Fetch initial sync status
-    fetchSyncStatus();
-
     // Initialize audio context on first user interaction
     const initAudio = () => {
       initAudioContext();
@@ -361,15 +323,10 @@
       checkForExpiredTimers(); // Check for newly expired timers
     }, 1000);
 
-    // Update sync status every 30 seconds (just for the status indicator)
-    syncStatusInterval = setInterval(() => {
-      fetchSyncStatus();
-    }, 30000);
   });
 
   onDestroy(() => {
     if (timerInterval) clearInterval(timerInterval);
-    if (syncStatusInterval) clearInterval(syncStatusInterval);
   });
 
   // Check for timers that just expired during live countdown
@@ -846,61 +803,18 @@
           {/if}
         </button>
 
-        <!-- Background Sync Status -->
-        {#if syncStatus}
-          <button
-            class="sync-status-btn"
-            class:active={syncStatus.isRunning}
-            class:error={syncStatus.consecutiveErrors > 0}
-            onclick={toggleBackgroundSync}
-            disabled={isTogglingSync}
-            title={syncStatus.isRunning ? 'المزامنة التلقائية مفعلة - اضغط للإيقاف' : 'المزامنة التلقائية متوقفة - اضغط للتشغيل'}
-          >
-            <Radio class="w-4 h-4" />
-            <span class="sync-status-text">
-              {#if syncStatus.isRunning}
-                تلقائي
-              {:else}
-                يدوي
-              {/if}
-            </span>
-            {#if syncStatus.isRunning}
-              <span class="sync-pulse"></span>
-            {/if}
-          </button>
-        {/if}
         <div class="hidden md:flex items-center gap-2 text-sm text-text-secondary">
           <Activity class="w-4 h-4" />
           <span>{isConvexReady ? 'متصل مباشرة' : 'جاري الاتصال...'}</span>
         </div>
-        <form
-          method="POST"
-          action="?/sync"
-          use:enhance={() => {
-            isSyncing = true;
-            return async ({ result }) => {
-              isSyncing = false;
-              if (result.type === 'success') {
-                const data = result.data as { started?: number; ended?: number };
-                if (data?.started || data?.ended) {
-                  toast.success(`تم المزامنة: ${data.started || 0} بدأ، ${data.ended || 0} انتهى`);
-                }
-                await invalidateAll();
-              } else {
-                toast.error('فشل في المزامنة');
-              }
-            };
-          }}
+        <button
+          onclick={syncRouterRules}
+          disabled={isSyncing}
+          class="sync-btn"
+          title="مزامنة قواعد الراوتر"
         >
-          <button
-            type="submit"
-            disabled={isSyncing}
-            class="sync-btn"
-            title="مزامنة مع الراوتر"
-          >
-            <RefreshCw class="w-5 h-5 {isSyncing ? 'animate-spin' : ''}" />
-          </button>
-        </form>
+          <RefreshCw class="w-5 h-5 {isSyncing ? 'animate-spin' : ''}" />
+        </button>
         <a href="/playstation/menu" class="menu-btn" title="قائمة الطعام والمشروبات">
           <Coffee class="w-5 h-5" />
         </a>

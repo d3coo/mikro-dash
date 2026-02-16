@@ -1,5 +1,5 @@
 import type { Handle } from '@sveltejs/kit';
-import { startBackgroundSync, shouldAutoStart } from '$lib/server/services/ps-background-sync';
+import { initPsRouterRules, hasPsStations } from '$lib/server/services/ps-background-sync';
 
 // Initialize background services on server start
 let initialized = false;
@@ -12,11 +12,11 @@ async function initializeServices() {
   // Delay 10s so the server can start serving pages first
   setTimeout(async () => {
     try {
-      if (await shouldAutoStart()) {
-        console.log('[Server] Starting PS background sync...');
-        startBackgroundSync();
+      if (await hasPsStations()) {
+        console.log('[Server] Initializing PS router rules...');
+        await initPsRouterRules();
       } else {
-        console.log('[Server] No PS stations configured, skipping background sync');
+        console.log('[Server] No PS stations configured, skipping initialization');
       }
     } catch (err) {
       console.error('[Server] Failed to initialize background services:', err);
