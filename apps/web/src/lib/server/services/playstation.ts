@@ -167,7 +167,10 @@ export async function setInternetRules(
 
 // ===== ROUTER RULES SYNC =====
 
-const WEBHOOK_URL = 'http://192.168.1.100:3000/api/playstation/webhook';
+function getWebhookUrl(): string {
+	const port = process.env.PORT || '3000';
+	return `http://192.168.1.100:${port}/api/playstation/webhook`;
+}
 const PS_LAN_IP_BASE = '192.168.1.';
 const PS_GUEST_IP_BASE = '10.10.10.';
 const PS_IP_OFFSET = 230;
@@ -284,8 +287,9 @@ export async function syncPsRouterRules(): Promise<void> {
 			// Single netwatch entry per station (LAN IP).
 			// Both up-script and down-script MUST be set for webhook detection.
 			const nwComment = `ps-watch:${station.name}`;
-			const upScript = `:do { /tool/fetch http-method=post keep-result=no url="${WEBHOOK_URL}\\?mac=${mac}&action=connect" } on-error={}`;
-			const downScript = `:do { /tool/fetch http-method=post keep-result=no url="${WEBHOOK_URL}\\?mac=${mac}&action=disconnect" } on-error={}`;
+			const webhookUrl = getWebhookUrl();
+			const upScript = `:do { /tool/fetch http-method=post keep-result=no url="${webhookUrl}\\?mac=${mac}&action=connect" } on-error={}`;
+			const downScript = `:do { /tool/fetch http-method=post keep-result=no url="${webhookUrl}\\?mac=${mac}&action=disconnect" } on-error={}`;
 
 			const existingEntry = psNetwatch.find((e) => e.comment === nwComment);
 			if (!existingEntry) {

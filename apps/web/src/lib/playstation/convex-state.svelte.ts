@@ -110,11 +110,27 @@ function mapStationStatus(status: any): StationStatus {
 
 	let costBreakdown: StationStatus['costBreakdown'] = null;
 	if (activeSession && segments.length > 0) {
-		const breakdown = segments.map((seg: any) => ({
-			mode: seg.mode || 'single',
-			minutes: Math.ceil((seg.endedAt ?? Date.now()) - seg.startedAt) / (1000 * 60),
-			cost: Math.round((seg.hourlyRateSnapshot * Math.ceil(((seg.endedAt ?? Date.now()) - seg.startedAt) / (1000 * 60))) / 60),
-		}));
+		// Account for paused time: subtract from the active (open-ended) segment
+		const totalPausedMs = activeSession.totalPausedMs || 0;
+		const currentlyPausedMs = activeSession.pausedAt ? (Date.now() - activeSession.pausedAt) : 0;
+		const sessionPauseMs = totalPausedMs + currentlyPausedMs;
+
+		const breakdown = segments.map((seg: any) => {
+			let durationMs: number;
+			if (seg.endedAt) {
+				// Completed segment - use raw duration
+				durationMs = seg.endedAt - seg.startedAt;
+			} else {
+				// Active segment - subtract session pause time
+				durationMs = Math.max(0, Date.now() - seg.startedAt - sessionPauseMs);
+			}
+			const minutes = Math.ceil(durationMs / (1000 * 60));
+			return {
+				mode: seg.mode || 'single',
+				minutes,
+				cost: Math.round((seg.hourlyRateSnapshot * minutes) / 60),
+			};
+		});
 		costBreakdown = {
 			total: breakdown.reduce((sum: number, b: any) => sum + b.cost, 0),
 			breakdown,
