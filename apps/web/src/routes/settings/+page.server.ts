@@ -12,34 +12,35 @@ import {
 import { getMikroTikClient, testRouterConnection } from '$lib/server/services/mikrotik';
 
 export const load: PageServerLoad = async () => {
-  const settings = await getSettings();
-  const packages = await getPackages();
+  // Fetch SQLite data and router data in parallel
+  const [settings, packages, routerData] = await Promise.all([
+    getSettings().catch(() => ({
+      mikrotik: { host: '192.168.1.109', user: 'admin', pass: 'need4speed' },
+      business: { name: 'AboYassen WiFi' },
+      wifi: { ssid: 'AboYassen' }
+    })),
+    getPackages().catch(() => []),
+    (async () => {
+      const client = await getMikroTikClient();
+      const [mikrotikProfiles, servers] = await Promise.all([
+        client.getHotspotUserProfiles(),
+        client.getHotspotServers()
+      ]);
+      return {
+        profiles: mikrotikProfiles.map(p => ({
+          id: p['.id'],
+          name: p.name,
+          rateLimit: p['rate-limit'],
+          sessionTimeout: p['session-timeout'],
+          sharedUsers: p['shared-users'],
+          macCookieTimeout: p['mac-cookie-timeout']
+        })),
+        hotspotServers: servers.map(s => ({ id: s['.id'], name: s.name }))
+      };
+    })().catch(() => ({ profiles: [] as any[], hotspotServers: [] as any[] }))
+  ]);
 
-  let profiles: { id: string; name: string; rateLimit?: string; sessionTimeout?: string; sharedUsers?: string; macCookieTimeout?: string }[] = [];
-  let hotspotServers: { id: string; name: string }[] = [];
-
-  try {
-    const client = await getMikroTikClient();
-    const mikrotikProfiles = await client.getHotspotUserProfiles();
-    profiles = mikrotikProfiles.map(p => ({
-      id: p['.id'],
-      name: p.name,
-      rateLimit: p['rate-limit'],
-      sessionTimeout: p['session-timeout'],
-      sharedUsers: p['shared-users'],
-      macCookieTimeout: p['mac-cookie-timeout']
-    }));
-
-    const servers = await client.getHotspotServers();
-    hotspotServers = servers.map(s => ({
-      id: s['.id'],
-      name: s.name
-    }));
-  } catch {
-    // Router not connected
-  }
-
-  return { settings, packages, profiles, hotspotServers };
+  return { settings, packages, profiles: routerData.profiles, hotspotServers: routerData.hotspotServers };
 };
 
 export const actions: Actions = {

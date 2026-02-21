@@ -8,7 +8,13 @@ import {
 import { fail } from '@sveltejs/kit';
 
 export const load: PageServerLoad = async () => {
-  const menuItems = await getPsMenuItems();
+  let menuItems: Awaited<ReturnType<typeof getPsMenuItems>> = [];
+
+  try {
+    menuItems = await getPsMenuItems();
+  } catch (error) {
+    console.error('Failed to get PS menu items:', error);
+  }
 
   // Group by category
   const categories = {

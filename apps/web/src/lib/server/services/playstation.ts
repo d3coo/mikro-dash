@@ -169,7 +169,8 @@ export async function setInternetRules(
 
 function getWebhookUrl(): string {
 	const port = process.env.PORT || '3000';
-	return `http://192.168.1.100:${port}/api/playstation/webhook`;
+	const host = process.env.WEBHOOK_HOST || '192.168.1.100';
+	return `http://${host}:${port}/api/playstation/webhook`;
 }
 const PS_LAN_IP_BASE = '192.168.1.';
 const PS_GUEST_IP_BASE = '10.10.10.';

@@ -8,41 +8,13 @@
  * @module
  */
 
-import type * as expenses from "../expenses.js";
-import type * as fnbSales from "../fnbSales.js";
-import type * as lib_dateUtils from "../lib/dateUtils.js";
-import type * as migrations_importFromSqlite from "../migrations/importFromSqlite.js";
-import type * as packages from "../packages.js";
-import type * as printTracking from "../printTracking.js";
-import type * as psMenuItems from "../psMenuItems.js";
-import type * as psSessionOrders from "../psSessionOrders.js";
-import type * as psSessions from "../psSessions.js";
-import type * as psStations from "../psStations.js";
-import type * as settings from "../settings.js";
-import type * as unifiedDailyStats from "../unifiedDailyStats.js";
-import type * as voucherUsage from "../voucherUsage.js";
-
 import type {
   ApiFromModules,
   FilterApi,
   FunctionReference,
 } from "convex/server";
 
-declare const fullApi: ApiFromModules<{
-  expenses: typeof expenses;
-  fnbSales: typeof fnbSales;
-  "lib/dateUtils": typeof lib_dateUtils;
-  "migrations/importFromSqlite": typeof migrations_importFromSqlite;
-  packages: typeof packages;
-  printTracking: typeof printTracking;
-  psMenuItems: typeof psMenuItems;
-  psSessionOrders: typeof psSessionOrders;
-  psSessions: typeof psSessions;
-  psStations: typeof psStations;
-  settings: typeof settings;
-  unifiedDailyStats: typeof unifiedDailyStats;
-  voucherUsage: typeof voucherUsage;
-}>;
+declare const fullApi: ApiFromModules<{}>;
 
 /**
  * A utility for referencing Convex functions in your app's public API.

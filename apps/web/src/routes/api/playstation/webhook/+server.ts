@@ -40,7 +40,7 @@ import {
  * module-scope maps and their cancellation by new connect requests fails.
  */
 
-const DISCONNECT_DEBOUNCE_MS = 5_000; // 5 seconds
+const DISCONNECT_DEBOUNCE_MS = 15_000; // 15 seconds — must survive 2-3 missed pings on 2.4GHz WiFi
 
 // Store disconnect timers on globalThis to survive Vite HMR module reloads.
 // Key: normalized MAC address. Value: setTimeout handle.

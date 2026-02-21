@@ -3,8 +3,7 @@ import type { RequestHandler } from './$types';
 import {
   recordFnbSale,
   getTodayFnbSalesWithItems,
-  getConvexClient,
-  api,
+  getFnbSales,
 } from '$lib/server/convex';
 
 /**
@@ -37,14 +36,7 @@ export const GET: RequestHandler = async ({ url }) => {
     const startDate = start ? parseInt(start, 10) : undefined;
     const endDate = end ? parseInt(end, 10) : undefined;
 
-    let sales;
-    if (startDate && endDate) {
-      const client = getConvexClient();
-      sales = await client.query(api.fnbSales.getByDateRange, { start: startDate, end: endDate });
-    } else {
-      const client = getConvexClient();
-      sales = await client.query(api.fnbSales.list);
-    }
+    const sales = await getFnbSales({ startDate, endDate });
 
     return json({
       success: true,
@@ -69,7 +61,7 @@ export const POST: RequestHandler = async ({ request }) => {
     const { menuItemId, quantity = 1 } = body;
 
     if (!menuItemId || typeof menuItemId !== 'string') {
-      return json({ error: 'menuItemId must be a valid Convex ID' }, { status: 400 });
+      return json({ error: 'menuItemId is required' }, { status: 400 });
     }
 
     if (typeof quantity !== 'number' || quantity <= 0) {

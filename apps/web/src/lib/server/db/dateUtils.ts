@@ -1,40 +1,26 @@
 /**
  * Business day utilities for Cairo time (UTC+2).
  * The business day resets at 10:00 AM Cairo time (08:00 UTC).
- *
- * If the current time is before 10:00 AM Cairo, we're still in yesterday's business day.
- * If the current time is at or after 10:00 AM Cairo, we're in today's business day.
  */
 
-const CAIRO_OFFSET_HOURS = 2; // UTC+2 (Egypt Standard Time, no DST)
-const RESET_HOUR_CAIRO = 10; // 10:00 AM Cairo
+const CAIRO_OFFSET_HOURS = 2;
+const RESET_HOUR_CAIRO = 10;
 const RESET_HOUR_UTC = RESET_HOUR_CAIRO - CAIRO_OFFSET_HOURS; // 08:00 UTC
 
-/**
- * Get the start timestamp (ms) of the current business day.
- * Business day starts at 10:00 AM Cairo (08:00 UTC).
- */
 export function getBusinessDayStartMs(now?: Date): number {
 	const current = now ?? new Date();
 	const dayStart = new Date(current);
 	dayStart.setUTCHours(RESET_HOUR_UTC, 0, 0, 0);
 
 	if (current.getTime() < dayStart.getTime()) {
-		// Before 10 AM Cairo — still in yesterday's business day
 		dayStart.setUTCDate(dayStart.getUTCDate() - 1);
 	}
 
 	return dayStart.getTime();
 }
 
-/**
- * Get the YYYY-MM-DD date string for the current business day (Cairo time).
- * At 08:00 UTC (10:00 Cairo), the Cairo calendar date is the same as UTC date.
- */
 export function getBusinessDayDate(now?: Date): string {
 	const startMs = getBusinessDayStartMs(now);
-	const start = new Date(startMs);
-	// Add Cairo offset to get the Cairo calendar date at the reset moment
 	const cairoTime = new Date(startMs + CAIRO_OFFSET_HOURS * 60 * 60 * 1000);
 	const year = cairoTime.getUTCFullYear();
 	const month = String(cairoTime.getUTCMonth() + 1).padStart(2, '0');

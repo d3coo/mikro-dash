@@ -82,7 +82,17 @@ export const load: PageServerLoad = async ({ url }) => {
     console.error('Failed to fetch vouchers from MikroTik:', error);
   }
 
-  const settings = await getSettings();
+  let settings;
+  try {
+    settings = await getSettings();
+  } catch (error) {
+    console.error('Failed to get settings from Convex:', error);
+    settings = {
+      mikrotik: { host: '192.168.1.109', user: 'admin', pass: 'need4speed' },
+      business: { name: 'AboYassen WiFi' },
+      wifi: { ssid: 'AboYassen' }
+    };
+  }
 
   return {
     vouchers,

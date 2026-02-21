@@ -79,6 +79,12 @@
     text-overflow: ellipsis;
   }
 
+  @media print {
+    .mobile-header {
+      display: none !important;
+    }
+  }
+
   @media (max-width: 768px) {
     .mobile-header {
       display: flex;

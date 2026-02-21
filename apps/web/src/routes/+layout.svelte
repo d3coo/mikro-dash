@@ -5,16 +5,8 @@
 	import BottomNav from '$lib/components/bottom-nav.svelte';
 	import { Toaster } from 'svelte-sonner';
 	import { navigating } from '$app/stores';
-	import { browser } from '$app/environment';
-	import { setupConvex } from 'convex-svelte';
-	import { PUBLIC_CONVEX_URL } from '$env/static/public';
 
 	let { children } = $props();
-
-	// Initialize Convex client for Svelte context
-	if (browser && PUBLIC_CONVEX_URL) {
-		setupConvex(PUBLIC_CONVEX_URL);
-	}
 
 	// Determine skeleton type based on target page
 	let targetPath = $derived($navigating?.to?.url?.pathname || '');

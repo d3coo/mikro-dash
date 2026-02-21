@@ -43,12 +43,16 @@ export const POST: RequestHandler = async ({ request, url }) => {
 
     const result = await endPsSession(targetSessionId!);
 
+    // Set cooldown to prevent auto-start after manual end
+    const { setManualEndCooldown } = await import('$lib/server/services/playstation');
+    setManualEndCooldown(result.stationId as string);
+
     return json({
       success: true,
       session: {
         id: result._id,
         stationId: result.stationId,
-        totalCost: result.totalCost ? result.totalCost / 100 : null,
+        totalCost: result.totalCost ?? null,
       }
     });
   } catch (error) {

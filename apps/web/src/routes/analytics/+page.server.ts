@@ -34,26 +34,22 @@ export const load: PageServerLoad = async ({ url }) => {
       ? { start: startDate, end: endDate }
       : undefined;
 
-    // Get unified analytics data
-    const unifiedAnalytics = await getUnifiedAnalytics(period, customRange);
-
-    // Get chart data
+    // Fetch all data in parallel
     const chartDays = period === 'month' ? 30 : period === 'week' ? 7 : 7;
-    const [revenueBySegment, profitBySegment] = await Promise.all([
+    const legacyPeriod = period === 'custom' ? 'month' : period;
+
+    const [unifiedAnalytics, revenueBySegment, profitBySegment, analyticsData, expensesList, packages] = await Promise.all([
+      getUnifiedAnalytics(period, customRange),
       getRevenueBySegmentChart(chartDays),
-      getProfitBySegmentChart(chartDays)
+      getProfitBySegmentChart(chartDays),
+      getAnalyticsData(legacyPeriod),
+      getExpenses(),
+      getPackages()
     ]);
 
-    // Get legacy analytics for backward compatibility
-    const legacyPeriod = period === 'custom' ? 'month' : period;
-    const analyticsData = await getAnalyticsData(legacyPeriod);
-
-    // Get expenses (optionally filtered by category)
-    const expensesList = await getExpenses();
     const filteredExpenses = categoryFilter
       ? expensesList.filter(e => e.category === categoryFilter)
       : expensesList;
-    const packages = await getPackages();
 
     return {
       period,

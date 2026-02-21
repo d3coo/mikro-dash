@@ -41,27 +41,55 @@ export interface DashboardData {
  * Get all dashboard data
  */
 export async function getDashboardData(): Promise<DashboardData> {
-  const settings = await getSettings();
+  let settings;
+  try {
+    settings = await getSettings();
+  } catch (error) {
+    console.error('Failed to get settings from Convex, using defaults:', error);
+    settings = {
+      mikrotik: { host: '192.168.1.109', user: 'admin', pass: 'need4speed' },
+      business: { name: 'AboYassen WiFi' },
+      wifi: { ssid: 'AboYassen' }
+    };
+  }
   let routerConnected = false;
   let vouchers: Voucher[] = [];
   let activeSessions: ActiveSession[] = [];
   let routerHealth: RouterHealth | null = null;
 
-  // Get vouchers with cache fallback (never throws)
-  try {
-    const voucherResult = await getVouchersWithFallback();
+  // Fetch router data and PS stats in parallel
+  const [voucherResult, routerResult, psResult] = await Promise.all([
+    // Vouchers (router + cache fallback)
+    getVouchersWithFallback().catch(error => {
+      console.error('Failed to get vouchers:', error);
+      return null;
+    }),
+    // Router health + active sessions
+    (async () => {
+      const client = await getMikroTikClient();
+      const [resources, sessions] = await Promise.all([
+        client.getSystemResources(),
+        getActiveSessions()
+      ]);
+      return { resources, sessions };
+    })().catch(error => {
+      console.error('Failed to get router health/sessions:', error);
+      return null;
+    }),
+    // PlayStation stats (local SQLite — instant)
+    Promise.all([getPsStations(), getActivePsSessions(), getTodayPsAnalytics()]).catch(error => {
+      console.error('Failed to get PlayStation stats:', error);
+      return null;
+    })
+  ]);
+
+  if (voucherResult) {
     vouchers = voucherResult.vouchers;
     routerConnected = voucherResult.source === 'router';
-  } catch (error) {
-    console.error('Failed to get vouchers:', error);
   }
 
-  // Try to get router health and active sessions
-  try {
-    const client = await getMikroTikClient();
-    const resources = await client.getSystemResources();
-
-    // Parse router health
+  if (routerResult) {
+    const { resources, sessions } = routerResult;
     const freeMemory = parseInt(resources['free-memory']) || 0;
     const totalMemory = parseInt(resources['total-memory']) || 1;
     const memoryUsed = totalMemory - freeMemory;
@@ -75,16 +103,13 @@ export async function getDashboardData(): Promise<DashboardData> {
       version: resources.version || 'Unknown',
       boardName: resources['board-name'] || 'MikroTik'
     };
-
-    // Get active sessions from router
-    activeSessions = await getActiveSessions();
-  } catch (error) {
-    console.error('Failed to get router health/sessions:', error);
+    activeSessions = sessions;
+  } else {
     // Fallback: use cached sessions if available
     try {
-      const cachedSessions = await getCachedSessions();
-      if (cachedSessions) {
-        activeSessions = cachedSessions.map(s => ({
+      const cached = await getCachedSessions();
+      if (cached) {
+        activeSessions = cached.map(s => ({
           id: s.id,
           user: s.voucherCode,
           address: s.ipAddress || '',
@@ -110,20 +135,16 @@ export async function getDashboardData(): Promise<DashboardData> {
       .reduce((sum, v) => sum + v.priceLE, 0)
   };
 
-  // PlayStation stats (from local DB, should always work)
+  // PlayStation stats
   let psStationsCount = 0;
   let psActiveSessionsCount = 0;
   let psTodayRevenueValue = 0;
 
-  try {
-    const psStations = await getPsStations();
-    const psActiveSessions = await getActivePsSessions();
-    const psAnalytics = await getTodayPsAnalytics();
+  if (psResult) {
+    const [psStations, psActiveSessions, psAnalytics] = psResult;
     psStationsCount = psStations.length;
     psActiveSessionsCount = psActiveSessions.length;
     psTodayRevenueValue = psAnalytics.totalRevenue;
-  } catch (error) {
-    console.error('Failed to get PlayStation stats:', error);
   }
 
   return {

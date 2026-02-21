@@ -18,32 +18,33 @@ export const load: PageServerLoad = async ({ url }) => {
   const profileFilter = url.searchParams.get('profile') || '';
   const printFilter = url.searchParams.get('print') || 'all'; // 'all', 'printed', 'unprinted'
 
-  let allVouchers: Voucher[] = [];
-  let routerConnected = false;
-  let profiles: string[] = [];
-  let dataSource: 'router' | 'cache' = 'router';
-  let lastSyncedAt: string | null = null;
-  let isStaleData = false;
-  const packages = await getPackages();
+  // Fetch packages, vouchers, printed codes, and settings in parallel
+  const [packages, voucherResult, printedCodes, settings] = await Promise.all([
+    getPackages().catch(error => {
+      console.error('Failed to get packages:', error);
+      return [] as Awaited<ReturnType<typeof getPackages>>;
+    }),
+    getVouchersWithFallback().catch(error => {
+      console.error('Failed to get vouchers:', error);
+      return { vouchers: [] as Voucher[], source: 'cache' as const, syncedAt: null, isStale: true };
+    }),
+    getAllPrintedVoucherCodes().catch(error => {
+      console.error('Failed to get printed voucher codes:', error);
+      return new Set<string>();
+    }),
+    getSettings().catch(() => ({
+      mikrotik: { host: '192.168.1.109', user: 'admin', pass: 'need4speed' },
+      business: { name: 'AboYassen WiFi' },
+      wifi: { ssid: 'AboYassen' }
+    }))
+  ]);
 
-  try {
-    // Use cache-aware function that falls back to cache if router unreachable
-    const result = await getVouchersWithFallback();
-    allVouchers = result.vouchers;
-    dataSource = result.source;
-    lastSyncedAt = result.syncedAt;
-    isStaleData = result.isStale;
-    routerConnected = result.source === 'router';
-
-    // Get unique profiles from vouchers
-    profiles = [...new Set(allVouchers.map(v => v.profile).filter(Boolean))];
-  } catch (error) {
-    console.error('Failed to get vouchers:', error);
-    routerConnected = false;
-  }
-
-  // Get printed voucher codes
-  const printedCodes = await getAllPrintedVoucherCodes();
+  const allVouchers = voucherResult.vouchers;
+  const dataSource = voucherResult.source;
+  const lastSyncedAt = voucherResult.syncedAt;
+  const isStaleData = voucherResult.isStale;
+  const routerConnected = voucherResult.source === 'router';
+  const profiles = [...new Set(allVouchers.map(v => v.profile).filter(Boolean))];
 
   // Add print status to vouchers
   const vouchersWithPrint: VoucherWithPrint[] = allVouchers.map(v => ({
@@ -99,8 +100,6 @@ export const load: PageServerLoad = async ({ url }) => {
   const unprintedAvailableCount = vouchersWithPrint.filter(
     v => v.status === 'available' && !v.isPrinted
   ).length;
-
-  const settings = await getSettings();
 
   return {
     vouchers: paginatedVouchers,

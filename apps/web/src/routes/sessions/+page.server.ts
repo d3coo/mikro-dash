@@ -16,14 +16,11 @@ export const load: PageServerLoad = async ({ url }) => {
   let servers: string[] = [];
 
   try {
-    const client = await getMikroTikClient();
-    await client.getSystemResources();
-    routerConnected = true;
-
     const result = await getDetailedSessions();
     sessions = result.sessions;
     profiles = result.profiles;
     servers = result.servers;
+    routerConnected = true;
 
     // Apply filters
     if (search) {

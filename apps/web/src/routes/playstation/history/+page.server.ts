@@ -29,16 +29,24 @@ export const load: PageServerLoad = async ({ url }) => {
       break;
   }
 
-  const sessions = await getPsSessionHistory({
-    stationId,
-    startDate,
-    endDate,
-    limit: 100,
-  });
-
-  const stations = await getPsStations();
+  const defaultAnalytics = { totalSessions: 0, totalMinutes: 0, totalRevenue: 0, totalOrders: 0, avgSessionMinutes: 0, avgRevenue: 0 };
   const analyticsPeriod = period === 'today' ? 'today' : period === 'week' ? 'week' : 'month';
-  const analytics = await getPsAnalytics(analyticsPeriod);
+
+  // Fetch all data in parallel (all SQLite — instant)
+  const [sessions, stations, analytics] = await Promise.all([
+    getPsSessionHistory({ stationId, startDate, endDate, limit: 100 }).catch(error => {
+      console.error('Failed to get PS session history:', error);
+      return [] as Awaited<ReturnType<typeof getPsSessionHistory>>;
+    }),
+    getPsStations().catch(error => {
+      console.error('Failed to get PS stations:', error);
+      return [] as Awaited<ReturnType<typeof getPsStations>>;
+    }),
+    getPsAnalytics(analyticsPeriod).catch(error => {
+      console.error('Failed to get PS analytics:', error);
+      return defaultAnalytics;
+    })
+  ]);
 
   return {
     sessions,

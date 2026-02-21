@@ -12,19 +12,21 @@ export const load: PageServerLoad = async ({ url }) => {
   const voucherPage = parseInt(url.searchParams.get('vp') || '1', 10);
   const wifiPage = parseInt(url.searchParams.get('wp') || '1', 10);
 
-  let data: Awaited<ReturnType<typeof getUsersPageData>> | null = null;
-  let routerConnected = false;
+  // Fetch router data and settings in parallel
+  const [routerData, settings] = await Promise.all([
+    getUsersPageData().then(data => ({ data, connected: true })).catch(error => {
+      console.error('Failed to connect to router:', error);
+      return { data: null as Awaited<ReturnType<typeof getUsersPageData>> | null, connected: false };
+    }),
+    getSettings().catch(() => ({
+      mikrotik: { host: '192.168.1.109', user: 'admin', pass: 'need4speed' },
+      business: { name: 'AboYassen WiFi' },
+      wifi: { ssid: 'AboYassen' }
+    }))
+  ]);
 
-  try {
-    const client = await getMikroTikClient();
-    await client.getSystemResources(); // Test connection
-    routerConnected = true;
-
-    data = await getUsersPageData();
-  } catch (error) {
-    console.error('Failed to connect to router:', error);
-    routerConnected = false;
-  }
+  const data = routerData.data;
+  const routerConnected = routerData.connected;
 
   // Paginate voucher users
   const voucherUsers = data?.voucherUsers || [];
@@ -45,8 +47,6 @@ export const load: PageServerLoad = async ({ url }) => {
     (wifiCurrentPage - 1) * PAGE_SIZE,
     wifiCurrentPage * PAGE_SIZE
   );
-
-  const settings = await getSettings();
 
   return {
     voucherUsers: paginatedVoucherUsers,

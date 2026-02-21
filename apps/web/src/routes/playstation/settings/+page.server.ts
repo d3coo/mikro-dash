@@ -12,7 +12,13 @@ import { getMikroTikClient } from '$lib/server/services/mikrotik';
 import { syncPsRouterRules, normalizeMac, setInternetRules } from '$lib/server/services/playstation';
 
 export const load: PageServerLoad = async () => {
-  const stations = await getPsStations();
+  let stations: Awaited<ReturnType<typeof getPsStations>> = [];
+
+  try {
+    stations = await getPsStations();
+  } catch (error) {
+    console.error('Failed to get PS stations:', error);
+  }
 
   // Sync all PS router rules in background (non-blocking)
   syncPsRouterRules().catch(() => {});

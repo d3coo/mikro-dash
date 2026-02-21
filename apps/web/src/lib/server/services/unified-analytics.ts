@@ -190,10 +190,33 @@ export async function getUnifiedAnalytics(
   const startMs = getBusinessDayEndMs(startDate) - 24 * 60 * 60 * 1000; // Business day start
   const endMs = getBusinessDayEndMs(endDate) - 1; // End of business day
 
-  // ===== WIFI SEGMENT =====
-  const vouchers = await getVouchers();
+  // Fetch all data sources in parallel
+  const includeActive = period === 'today' || endDate === getTodayDate();
+  const [vouchers, allExpenses, psHistory, activeSessions, fnbSummary] = await Promise.all([
+    getVouchers(),
+    getActiveExpenses(),
+    getPsSessionHistory({ startDate: startMs, endDate: endMs }),
+    includeActive ? getActivePsSessions() : Promise.resolve([]),
+    getFnbSalesSummary(startMs, endMs)
+  ]);
 
-  // Filter vouchers: either created in this period OR sold (used/exhausted) without timestamp
+  // ===== EXPENSES (calculated from pre-fetched data) =====
+  const calcExpenses = (category: string) => {
+    let total = 0;
+    for (const expense of allExpenses) {
+      if (expense.category !== category) continue;
+      if (expense.type === 'fixed_monthly') {
+        total += Math.round((expense.amount / 30) * daysInPeriod);
+      } else if (expense.type !== 'per_gb') {
+        total += Math.round((expense.amount / 30) * daysInPeriod);
+      }
+    }
+    return total;
+  };
+
+  const costPerGbPiasters = allExpenses.find(e => e.type === 'per_gb' && e.category === 'wifi')?.amount || 0;
+
+  // ===== WIFI SEGMENT =====
   const periodVouchers = vouchers.filter(v => {
     const createdAt = parseCreatedAt(v.comment);
     if (createdAt) {
@@ -207,22 +230,17 @@ export async function getUnifiedAnalytics(
 
   const wifiVouchersSold = periodVouchers.filter(v => v.status === 'used' || v.status === 'exhausted').length;
   const wifiRevenue = periodVouchers.filter(v => v.status === 'used' || v.status === 'exhausted')
-    .reduce((sum, v) => sum + v.priceLE, 0) * 100; // Convert to piasters
+    .reduce((sum, v) => sum + v.priceLE, 0) * 100;
   const wifiDataSoldBytes = periodVouchers.reduce((sum, v) => sum + v.bytesLimit, 0);
   const wifiDataUsedBytes = periodVouchers.reduce((sum, v) => sum + v.bytesTotal, 0);
   const wifiDataSoldGB = wifiDataSoldBytes / (1024 * 1024 * 1024);
   const wifiDataUsedGB = wifiDataUsedBytes / (1024 * 1024 * 1024);
 
-  // WiFi expenses: per_gb cost based on data sold + fixed expenses
-  const costPerGbPiasters = await getWifiCostPerGbPiasters();
   const wifiDataExpenses = Math.round(wifiDataSoldGB * costPerGbPiasters);
-  const wifiFixedExpenses = await calculateCategoryExpenses('wifi', daysInPeriod);
+  const wifiFixedExpenses = calcExpenses('wifi');
   const wifiExpenses = wifiDataExpenses + wifiFixedExpenses;
 
   // ===== PLAYSTATION SEGMENT (Gaming Time Only) =====
-  // Get completed PS sessions from Convex for the period
-  const psHistory = await getPsSessionHistory({ startDate: startMs, endDate: endMs });
-
   let psGamingRevenue = 0;
   let psSessions_count = psHistory.length;
   let psMinutes = 0;
@@ -230,47 +248,35 @@ export async function getUnifiedAnalytics(
   let psOrdersItemCount = 0;
 
   for (const session of psHistory) {
-    // Gaming revenue (totalCost is gaming cost only, set by end mutation)
     psGamingRevenue += session.totalCost || 0;
-
-    // Duration in minutes
     const endedAt = session.endedAt ?? Date.now();
     const durationMs = endedAt - session.startedAt - (session.totalPausedMs || 0);
     psMinutes += Math.floor(durationMs / (1000 * 60));
-
-    // Orders revenue from nested orders array
     for (const order of session.orders) {
       psOrdersRevenue += order.priceSnapshot * order.quantity;
       psOrdersItemCount += order.quantity;
     }
   }
 
-  // For today, also include active sessions (gaming cost only, not orders)
-  if (period === 'today' || endDate === getTodayDate()) {
-    const activeSessions = await getActivePsSessions();
-    for (const session of activeSessions) {
-      const now = Date.now();
-      const elapsedMs = now - session.startedAt - (session.totalPausedMs || 0);
-      const minutes = Math.ceil(elapsedMs / (1000 * 60));
-      psGamingRevenue += Math.round((session.hourlyRateSnapshot * minutes) / 60);
-      psMinutes += Math.floor(elapsedMs / (1000 * 60));
-    }
+  for (const session of activeSessions) {
+    const now = Date.now();
+    const elapsedMs = now - session.startedAt - (session.totalPausedMs || 0);
+    const minutes = Math.ceil(elapsedMs / (1000 * 60));
+    psGamingRevenue += Math.round((session.hourlyRateSnapshot * minutes) / 60);
+    psMinutes += Math.floor(elapsedMs / (1000 * 60));
   }
 
-  const psExpenses = await calculateCategoryExpenses('playstation', daysInPeriod);
+  const psExpenses = calcExpenses('playstation');
 
   // ===== F&B SEGMENT (Combined: PS Orders + Standalone F&B) =====
-  const fnbSummary = await getFnbSalesSummary(startMs, endMs);
   const standaloneRevenue = fnbSummary.totalRevenue;
   const standaloneItemsSold = fnbSummary.totalItemsSold;
-
-  // Combined F&B revenue = PS session orders + standalone F&B
   const fnbTotalRevenue = psOrdersRevenue + standaloneRevenue;
   const fnbTotalItemsSold = psOrdersItemCount + standaloneItemsSold;
-  const fnbExpenses = await calculateCategoryExpenses('fnb', daysInPeriod);
+  const fnbExpenses = calcExpenses('fnb');
 
   // ===== GENERAL EXPENSES =====
-  const generalExpenses = await calculateCategoryExpenses('general', daysInPeriod);
+  const generalExpenses = calcExpenses('general');
 
   // ===== CALCULATE TOTALS =====
   // Total revenue = WiFi + PS Gaming + F&B (which includes PS orders)
