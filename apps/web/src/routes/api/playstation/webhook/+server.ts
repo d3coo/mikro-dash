@@ -102,7 +102,6 @@ export const POST: RequestHandler = async ({ request, url }) => {
         console.log(`[Webhook] MAC ${normalizedMac}: reconnected, cancelled disconnect timer`);
       }
 
-      const previousState = getStationOnlineState(normalizedMac);
       setStationOnlineState(normalizedMac, 'up');
 
       // --- ASYNC SECTION (station lookup and session management) ---
@@ -136,10 +135,10 @@ export const POST: RequestHandler = async ({ request, url }) => {
         return json({ success: true, action: 'resumed' });
       }
 
-      // Auto-start session on first connect (no existing session)
-      const isFirstConnect = previousState !== 'up';
-      if (!activeSession && isFirstConnect) {
+      // Auto-start session if no active session exists
+      if (!activeSession) {
         if (isInManualEndCooldown(stationId)) {
+          console.log(`[Webhook] ${station.name}: in cooldown, no auto-start`);
           return json({ success: true, message: 'Station in cooldown, no auto-start' });
         }
 

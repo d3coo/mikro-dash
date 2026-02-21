@@ -103,7 +103,7 @@
   <div class="sidebar-footer">
     <div class="version-badge">
       <span class="dot"></span>
-      <span>v2.2.0</span>
+      <span>v3.1.0</span>
     </div>
   </div>
 </aside>

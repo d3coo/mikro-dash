@@ -12,10 +12,11 @@ let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 let _sqlite: Database.Database | null = null;
 
 function getDbPath(): string {
-	// In packaged Electron, RESOURCES_PATH is passed from the main process
-	const resourcesPath = process.env.RESOURCES_PATH;
-	if (resourcesPath) {
-		return resolve(resourcesPath, 'data.db');
+	// In packaged Electron, use persistent user data directory
+	// so the database survives app updates/reinstalls
+	const appDataPath = process.env.MIKRODASH_DATA_DIR;
+	if (appDataPath) {
+		return resolve(appDataPath, 'data.db');
 	}
 	// Fallback: use cwd (development mode)
 	return resolve(process.cwd(), 'data.db');

@@ -1,5 +1,6 @@
 const { app, BrowserWindow, shell } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { spawn } = require('child_process');
 
 let mainWindow;
@@ -11,6 +12,32 @@ const isPackaged = app.isPackaged;
 const appPath = isPackaged
 	? path.dirname(app.getPath('exe'))  // Next to the .exe
 	: path.join(__dirname, '..');        // Development: project root
+
+// Persistent data directory that survives app updates
+const dataDir = isPackaged
+	? path.join(app.getPath('userData'), 'data')  // %APPDATA%/MikroDash/data
+	: appPath;                                     // Development: project root
+
+// Ensure data directory exists
+if (isPackaged && !fs.existsSync(dataDir)) {
+	fs.mkdirSync(dataDir, { recursive: true });
+}
+
+// Migrate: if old DB exists in resources but not in new location, copy it
+if (isPackaged) {
+	const newDbPath = path.join(dataDir, 'data.db');
+	const oldDbPath = path.join(process.resourcesPath, 'data.db');
+	if (!fs.existsSync(newDbPath) && fs.existsSync(oldDbPath)) {
+		console.log('[Migration] Copying database from old location to', newDbPath);
+		fs.copyFileSync(oldDbPath, newDbPath);
+		// Also copy WAL/SHM if they exist
+		for (const ext of ['-wal', '-shm']) {
+			if (fs.existsSync(oldDbPath + ext)) {
+				fs.copyFileSync(oldDbPath + ext, newDbPath + ext);
+			}
+		}
+	}
+}
 
 // Server path - in asar when packaged
 const serverPath = isPackaged
@@ -84,7 +111,9 @@ function startServer() {
 				PORT: PORT.toString(),
 				NODE_PATH: nodeModulesPath,
 				WEBHOOK_HOST: '192.168.1.100',
-				// Pass resources path so server can find data.db and native modules
+				// Pass persistent data directory for database
+				MIKRODASH_DATA_DIR: dataDir,
+				// Pass resources path for native modules
 				RESOURCES_PATH: isPackaged ? process.resourcesPath : '',
 				// Tell Electron to run as Node.js
 				ELECTRON_RUN_AS_NODE: '1'
