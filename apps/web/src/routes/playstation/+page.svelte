@@ -6,7 +6,7 @@
   import { enhance } from '$app/forms';
   import { browser } from '$app/environment';
   import { createPsConvexState, type StationStatus as ConvexStationStatus } from '$lib/playstation/convex-state.svelte';
-  import type { Id } from '../../../convex/_generated/dataModel';
+  // IDs are now strings (SQLite integer IDs converted to strings)
 
   let { data } = $props();
 
@@ -88,7 +88,7 @@
   async function removeOrder(orderId: number | string) {
     // Use Convex mutation if available
     if (convex) {
-      await convex.removeOrder(orderId as Id<'psSessionOrders'>);
+      await convex.removeOrder(String(orderId));
       return; // Convex will update the UI automatically via subscription
     }
 
@@ -258,7 +258,9 @@
   let customStartTimeHour = $state<string>(''); // Hour for custom start (HH:mm format)
   let showEditStartTimeModal = $state(false);
   let editStartTimeSessionId = $state<AnyId | null>(null);
-  let editStartTimeHour = $state<string>(''); // Time only (HH:mm format) for editing
+  let editStartTimeHour = $state<string>(''); // Hour (01-12) for editing
+  let editStartTimeMinute = $state<string>(''); // Minute (00-59) for editing
+  let editStartTimePeriod = $state<'AM' | 'PM'>('AM'); // AM/PM for editing
   let endSessionMode = $state<'rounded' | 'zero' | 'custom'>('rounded');
   let customAmount = $state('');
 
@@ -545,11 +547,13 @@
   // Open edit start time modal
   function openEditStartTimeModal(sessionId: AnyId, currentStartTime: number) {
     editStartTimeSessionId = sessionId;
-    // Convert timestamp to time-only format (HH:mm)
+    // Convert timestamp to 12-hour format
     const date = new Date(currentStartTime);
-    const hours = date.getHours().toString().padStart(2, '0');
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    editStartTimeHour = `${hours}:${minutes}`;
+    let h = date.getHours();
+    editStartTimePeriod = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12; // Convert 0→12, 13→1, etc.
+    editStartTimeHour = h.toString().padStart(2, '0');
+    editStartTimeMinute = date.getMinutes().toString().padStart(2, '0');
     showEditStartTimeModal = true;
   }
 
@@ -558,20 +562,34 @@
     showEditStartTimeModal = false;
     editStartTimeSessionId = null;
     editStartTimeHour = '';
+    editStartTimeMinute = '';
+    editStartTimePeriod = 'AM';
   }
 
-  // Convert time string (HH:mm) to today's timestamp
+  // Convert 12-hour components to 24-hour time string
+  function to24h(hour: string, minute: string, period: 'AM' | 'PM'): string {
+    let h = parseInt(hour, 10);
+    if (period === 'AM' && h === 12) h = 0;
+    else if (period === 'PM' && h !== 12) h += 12;
+    return `${h.toString().padStart(2, '0')}:${minute}`;
+  }
+
+  // Convert time string (HH:mm 24h) to today's timestamp (or yesterday if result would be in the future)
   function timeToTodayTimestamp(timeStr: string): number {
     const [hours, minutes] = timeStr.split(':').map(Number);
-    const today = new Date();
-    today.setHours(hours, minutes, 0, 0);
-    return today.getTime();
+    const d = new Date();
+    d.setHours(hours, minutes, 0, 0);
+    if (d.getTime() > Date.now()) {
+      d.setDate(d.getDate() - 1);
+    }
+    return d.getTime();
   }
 
   // Open timer modal for active session
-  function openTimerModal(sessionId: AnyId, currentTimer: number | null) {
+  function openTimerModal(sessionId: AnyId, currentTimer: number | null, currentCostLimitPiasters: number | null) {
     activeSessionForTimer = sessionId;
     selectedDuration = currentTimer;
+    selectedCostLimit = currentCostLimitPiasters ? currentCostLimitPiasters / 100 : null;
     showTimerModal = true;
   }
 
@@ -580,6 +598,7 @@
     showTimerModal = false;
     activeSessionForTimer = null;
     selectedDuration = null;
+    selectedCostLimit = null;
   }
 
   // Open end session modal
@@ -1090,7 +1109,7 @@
                   class="set-timer-btn"
                   class:has-timer={timerInfo}
                   class:expired={timerInfo?.isExpired}
-                  onclick={() => openTimerModal(status.activeSession!.id, status.activeSession!.timerMinutes ?? null)}
+                  onclick={() => openTimerModal(status.activeSession!.id, status.activeSession!.timerMinutes ?? null, status.activeSession!.costLimitPiasters ?? null)}
                 >
                   <Timer class="w-4 h-4" />
                   {#if timerInfo}
@@ -1424,6 +1443,8 @@
                 toast.success('تم بدء الجلسة');
                 closeDurationModal();
                 await invalidateAll();
+              } else if (result.type === 'failure') {
+                toast.error(String(result.data?.error || 'فشل في بدء الجلسة'));
               } else {
                 toast.error('فشل في بدء الجلسة');
               }
@@ -1580,6 +1601,8 @@
                 toast.success('تمت إضافة الطلبات');
                 closeOrderModal();
                 await invalidateAll();
+              } else if (result.type === 'failure') {
+                toast.error(String(result.data?.error || 'فشل في إضافة الطلبات'));
               } else {
                 toast.error('فشل في إضافة الطلبات');
               }
@@ -1609,20 +1632,38 @@
         <button class="modal-close" onclick={closeTimerModal}>
           <X class="w-5 h-5" />
         </button>
-        <h3>تحديد المدة</h3>
+        <h3>إعدادات المؤقت</h3>
       </div>
       <div class="modal-body">
-        <div class="duration-grid">
-          {#each durationOptions as option}
-            <button
-              class="duration-option"
-              class:selected={selectedDuration === option.value}
-              onclick={() => selectedDuration = option.value}
-            >
-              <span class="duration-label">{option.label}</span>
-              <span class="duration-desc">{option.description}</span>
-            </button>
-          {/each}
+        <div class="limit-section">
+          <h4 class="limit-section-title">حد الوقت</h4>
+          <div class="duration-grid">
+            {#each durationOptions as option}
+              <button
+                class="duration-option"
+                class:selected={selectedDuration === option.value}
+                onclick={() => selectedDuration = option.value}
+              >
+                <span class="duration-label">{option.label}</span>
+                <span class="duration-desc">{option.description}</span>
+              </button>
+            {/each}
+          </div>
+        </div>
+        <div class="limit-section">
+          <h4 class="limit-section-title">حد السعر</h4>
+          <div class="duration-grid">
+            {#each costLimitOptions as option}
+              <button
+                class="duration-option"
+                class:selected={selectedCostLimit === option.value}
+                onclick={() => selectedCostLimit = option.value}
+              >
+                <span class="duration-label">{option.label}</span>
+                <span class="duration-desc">{option.description}</span>
+              </button>
+            {/each}
+          </div>
         </div>
       </div>
       <div class="modal-footer-rtl">
@@ -1635,6 +1676,8 @@
                 toast.success('تم تحديث المؤقت');
                 closeTimerModal();
                 await invalidateAll();
+              } else if (result.type === 'failure') {
+                toast.error(String(result.data?.error || 'فشل في تحديث المؤقت'));
               } else {
                 toast.error('فشل في تحديث المؤقت');
               }
@@ -1643,6 +1686,7 @@
         >
           <input type="hidden" name="sessionId" value={activeSessionForTimer} />
           <input type="hidden" name="timerMinutes" value={selectedDuration || ''} />
+          <input type="hidden" name="costLimit" value={selectedCostLimit || ''} />
           <button type="submit" class="btn btn-primary">
             <Timer class="w-4 h-4" />
             حفظ
@@ -1830,6 +1874,8 @@
                   toast.success(`تم إنهاء الجلسة - ${cost.toFixed(1)} ج.م`);
                   closeEndSessionModal();
                   await invalidateAll();
+                } else if (result.type === 'failure') {
+                  toast.error(String(result.data?.error || 'فشل في إنهاء الجلسة'));
                 } else {
                   toast.error('فشل في إنهاء الجلسة');
                 }
@@ -1882,6 +1928,8 @@
                 showZeroConfirmModal = false;
                 closeEndSessionModal();
                 await invalidateAll();
+              } else if (result.type === 'failure') {
+                toast.error(String(result.data?.error || 'فشل في إنهاء الجلسة'));
               } else {
                 toast.error('فشل في إنهاء الجلسة');
               }
@@ -1948,6 +1996,8 @@
                 toast.success(editingChargeId ? 'تم تحديث الرسوم' : 'تم إضافة الرسوم');
                 closeChargeModal();
                 await invalidateAll();
+              } else if (result.type === 'failure') {
+                toast.error(String(result.data?.error || 'فشل في حفظ الرسوم'));
               } else {
                 toast.error('فشل في حفظ الرسوم');
               }
@@ -2043,6 +2093,8 @@
                 toast.success('تم تحويل الجلسة بنجاح');
                 closeTransferModal();
                 await invalidateAll();
+              } else if (result.type === 'failure') {
+                toast.error(String(result.data?.error || 'فشل في تحويل الجلسة'));
               } else {
                 toast.error('فشل في تحويل الجلسة');
               }
@@ -2118,6 +2170,8 @@
                 toast.success('تم نقل الجلسة بنجاح');
                 closeSwitchStationModal();
                 await invalidateAll();
+              } else if (result.type === 'failure') {
+                toast.error(String(result.data?.error || 'فشل في نقل الجلسة'));
               } else {
                 toast.error('فشل في نقل الجلسة');
               }
@@ -2159,11 +2213,47 @@
             <span class="today-date">{new Date().toLocaleDateString('ar-EG', { weekday: 'long', month: 'short', day: 'numeric' })}</span>
           </div>
           <div class="time-input-large">
-            <input
-              type="time"
-              class="big-time-input"
-              bind:value={editStartTimeHour}
-            />
+            <div class="time-12h-picker">
+              <div class="time-12h-toggle">
+                <button
+                  class="period-btn"
+                  class:active={editStartTimePeriod === 'AM'}
+                  onclick={() => editStartTimePeriod = 'AM'}
+                >ص</button>
+                <button
+                  class="period-btn"
+                  class:active={editStartTimePeriod === 'PM'}
+                  onclick={() => editStartTimePeriod = 'PM'}
+                >م</button>
+              </div>
+              <div class="time-12h-fields">
+                <input
+                  type="number"
+                  class="time-12h-input"
+                  min="1" max="12"
+                  bind:value={editStartTimeHour}
+                  onchange={(e) => {
+                    let v = parseInt(e.currentTarget.value, 10);
+                    if (isNaN(v) || v < 1) v = 1;
+                    if (v > 12) v = 12;
+                    editStartTimeHour = v.toString().padStart(2, '0');
+                  }}
+                />
+                <span class="time-12h-sep">:</span>
+                <input
+                  type="number"
+                  class="time-12h-input"
+                  min="0" max="59"
+                  bind:value={editStartTimeMinute}
+                  onchange={(e) => {
+                    let v = parseInt(e.currentTarget.value, 10);
+                    if (isNaN(v) || v < 0) v = 0;
+                    if (v > 59) v = 59;
+                    editStartTimeMinute = v.toString().padStart(2, '0');
+                  }}
+                />
+              </div>
+            </div>
           </div>
           <p class="edit-time-note">سيتم إعادة حساب التكلفة تلقائياً</p>
         </div>
@@ -2178,6 +2268,8 @@
                 toast.success('تم تعديل وقت البداية');
                 closeEditStartTimeModal();
                 await invalidateAll();
+              } else if (result.type === 'failure') {
+                toast.error(String(result.data?.error || 'فشل في تعديل وقت البداية'));
               } else {
                 toast.error('فشل في تعديل وقت البداية');
               }
@@ -2185,8 +2277,8 @@
           }}
         >
           <input type="hidden" name="sessionId" value={editStartTimeSessionId} />
-          <input type="hidden" name="newStartTime" value={editStartTimeHour ? timeToTodayTimestamp(editStartTimeHour) : ''} />
-          <button type="submit" class="btn btn-primary btn-lg" disabled={!editStartTimeHour}>
+          <input type="hidden" name="newStartTime" value={editStartTimeHour && editStartTimeMinute ? timeToTodayTimestamp(to24h(editStartTimeHour, editStartTimeMinute, editStartTimePeriod)) : ''} />
+          <button type="submit" class="btn btn-primary btn-lg" disabled={!editStartTimeHour || !editStartTimeMinute}>
             <Clock class="w-5 h-5" />
             حفظ
           </button>
@@ -3365,7 +3457,7 @@
 
   /* Edit Time Modal - Improved */
   .modal-time-edit {
-    max-width: 320px;
+    max-width: 340px;
   }
 
   .modal-time-edit .modal-header h3 {
@@ -3409,24 +3501,82 @@
     justify-content: center;
   }
 
-  .big-time-input {
+  .time-12h-picker {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .time-12h-fields {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid rgba(99, 102, 241, 0.4);
+    border-radius: 12px;
+    padding: 12px 20px;
+  }
+
+  .time-12h-input {
     font-size: 36px;
     font-family: monospace;
     font-weight: 700;
     text-align: center;
-    padding: 16px 32px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 2px solid rgba(99, 102, 241, 0.4);
-    border-radius: 12px;
+    background: transparent;
+    border: none;
     color: var(--color-text);
-    width: 240px;
-    transition: all 0.2s;
+    width: 72px;
+    -moz-appearance: textfield;
   }
 
-  .big-time-input:focus {
+  .time-12h-input::-webkit-outer-spin-button,
+  .time-12h-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  .time-12h-input:focus {
     outline: none;
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+    background: rgba(99, 102, 241, 0.1);
+    border-radius: 8px;
+  }
+
+  .time-12h-sep {
+    font-size: 36px;
+    font-family: monospace;
+    font-weight: 700;
+    color: var(--color-text);
+    opacity: 0.5;
+  }
+
+  .time-12h-toggle {
+    display: flex;
+    gap: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 2px;
+  }
+
+  .period-btn {
+    padding: 6px 20px;
+    font-size: 16px;
+    font-weight: 600;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: transparent;
+    color: var(--color-text-muted);
+  }
+
+  .period-btn.active {
+    background: var(--color-primary);
+    color: white;
+  }
+
+  .period-btn:not(.active):hover {
+    background: rgba(255, 255, 255, 0.1);
   }
 
   .edit-time-note {

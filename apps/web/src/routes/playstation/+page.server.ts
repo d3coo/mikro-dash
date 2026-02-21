@@ -7,6 +7,7 @@ import {
   addPsSessionOrder,
   removePsSessionOrder,
   updatePsSessionTimer,
+  updatePsSessionCostLimit,
   addPsSessionCharge,
   updatePsSessionCharge,
   deletePsSessionCharge,
@@ -15,6 +16,7 @@ import {
   switchPsStation,
 } from '$lib/server/convex';
 import * as monitorControl from '$lib/server/services/monitor-control';
+import { setManualEndCooldown } from '$lib/server/services/playstation';
 import { fail } from '@sveltejs/kit';
 
 /**
@@ -95,6 +97,9 @@ export const actions: Actions = {
       const ordersCost = result.ordersCost || 0;
       const totalCost = (result.totalCost || 0) + ordersCost;
 
+      // Set cooldown to prevent auto-start after manual end
+      setManualEndCooldown(result.stationId as string);
+
       // Send notification to monitor (async, don't wait)
       const station = await getPsStationById(result.stationId);
       if (station?.monitorIp) {
@@ -122,6 +127,9 @@ export const actions: Actions = {
       const result = await endPsSession(sessionId, undefined, customCost);
       const ordersCost = result.ordersCost || 0;
       const totalCost = customCost !== undefined ? customCost : (result.totalCost || 0) + ordersCost;
+
+      // Set cooldown to prevent auto-start after manual end
+      setManualEndCooldown(result.stationId as string);
 
       // Send notification to monitor (async, don't wait)
       const station = await getPsStationById(result.stationId);
@@ -200,6 +208,7 @@ export const actions: Actions = {
     const formData = await request.formData();
     const sessionId = formData.get('sessionId') as string;
     const timerMinutes = formData.get('timerMinutes') as string;
+    const costLimit = formData.get('costLimit') as string;
 
     if (!sessionId) {
       return fail(400, { error: 'Session ID is required' });
@@ -208,6 +217,10 @@ export const actions: Actions = {
     try {
       const timer = timerMinutes ? parseInt(timerMinutes, 10) : undefined;
       await updatePsSessionTimer(sessionId, timer);
+
+      const costLimitPiasters = costLimit ? parseInt(costLimit, 10) * 100 : undefined;
+      await updatePsSessionCostLimit(sessionId, costLimitPiasters);
+
       return { success: true };
     } catch (error) {
       return fail(400, { error: error instanceof Error ? error.message : 'Failed to set timer' });
